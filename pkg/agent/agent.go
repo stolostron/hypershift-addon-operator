@@ -301,6 +301,9 @@ func (c *agentController) runHypershiftInstallJob() error {
 		return nil
 	}
 
+	awsMountPath := "/var/.aws"
+	secretAWSCredKey := "credentials"
+
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-hypershift-install-job", c.addonName),
@@ -322,7 +325,7 @@ func (c *agentController) runHypershiftInstallJob() error {
 								Secret: &corev1.SecretVolumeSource{
 									SecretName: hypershiftBucketSecretName,
 									Items: []corev1.KeyToPath{
-										corev1.KeyToPath{Key: "credentials", Path: "credentials"},
+										corev1.KeyToPath{Key: secretAWSCredKey, Path: secretAWSCredKey},
 									},
 								},
 							},
@@ -331,18 +334,19 @@ func (c *agentController) runHypershiftInstallJob() error {
 					Containers: []corev1.Container{
 						corev1.Container{
 							Name:    "hypershift-installer",
-							Image:   "busybox",
-							Command: []string{"sleep", "3600"},
+							Image:   "golang:1.17",
+							Command: []string{"/bin/sh"},
+							Args: []string{"-c", "go get -u github.com/openshift/hypershift@latest;sleep 600;"},
 							VolumeMounts: []corev1.VolumeMount{
 								corev1.VolumeMount{
 									Name:      hypershiftBucketSecretName,
 									ReadOnly:  true,
-									MountPath: "/var/.aws",
+									MountPath: awsMountPath,
 								},
 							},
 							Env: []corev1.EnvVar{
 								corev1.EnvVar{
-									Name: "oidc_bucket",
+									Name: "BUCKET_NAME",
 									ValueFrom: &corev1.EnvVarSource{
 										SecretKeyRef: &corev1.SecretKeySelector{
 											LocalObjectReference: corev1.LocalObjectReference{Name: hypershiftBucketSecretName},
@@ -351,13 +355,18 @@ func (c *agentController) runHypershiftInstallJob() error {
 									},
 								},
 								corev1.EnvVar{
-									Name: "bucket_region",
+									Name: "REGION",
 									ValueFrom: &corev1.EnvVarSource{
 										SecretKeyRef: &corev1.SecretKeySelector{
 											LocalObjectReference: corev1.LocalObjectReference{Name: hypershiftBucketSecretName},
 											Key:                  "region",
 										},
 									},
+								},
+
+								corev1.EnvVar{
+									Name:  "AWS_CREDS",
+									Value: fmt.Sprintf("%s/%s", awsMountPath, secretAWSCredKey),
 								},
 							},
 						},
