@@ -1,31 +1,31 @@
 kind: Deployment
 apiVersion: apps/v1
 metadata:
-  name: helloworld-agent
+  name: {{ .AddonName }}
   namespace: {{ .AddonInstallNamespace }}
   labels:
-    app: helloworld-agent
+    app: {{ .AddonName }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: helloworld-agent
+      app: {{ .AddonName }}
   template:
     metadata:
       labels:
-        app: helloworld-agent
+        app: {{ .AddonName }}
     spec:
-      serviceAccountName: helloworld-agent-sa
+      serviceAccountName: {{ .AgentServiceAccountName }}
       volumes:
       - name: hub-config
         secret:
           secretName: {{ .KubeConfigSecret }}
       containers:
-      - name: helloworld-agent
+      - name: {{ .AddonName }}
         image: {{ .Image }}
         imagePullPolicy: IfNotPresent
         args:
-          - "/helloworld"
+          - "./hypershift-addon"
           - "agent"
           - "--hub-kubeconfig=/var/run/hub/kubeconfig"
           - "--cluster-name={{ .ClusterName }}"

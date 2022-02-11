@@ -36,7 +36,7 @@ var (
 
 const (
 	hypershiftAddonImageName = "HYPERSHIFT_ADDON_IMAGE_NAME"
-	defaultHypershiftImage   = "quay.io/open-cluster-management/helloworld-addon:latest"
+	defaultHypershiftImage   = "quay.io/ianzhang366/hypershift-addon-operator:latest"
 	templatePath             = "manifests/templates"
 )
 
@@ -65,7 +65,7 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 		)
 
 		agentAddon, err := addonfactory.NewAgentAddonFactory(componentName, fs, templatePath).
-			WithGetValuesFuncs(getValues, addonfactory.GetValuesFromAddonAnnotation).
+			WithGetValuesFuncs(getValueForAgentTemplate, addonfactory.GetValuesFromAddonAnnotation).
 			WithAgentRegistrationOption(registrationOption).
 			WithInstallStrategy(frameworkagent.InstallAllStrategy(hypershiftagent.AgentInstallationNamespace)).
 			BuildTemplateAgentAddon()
@@ -99,9 +99,9 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 	return cmd
 }
 
-func newRegistrationOption(kubeConfig *rest.Config, recorder events.Recorder, addonName, agentName string) *frameworkagent.RegistrationOption {
+func newRegistrationOption(kubeConfig *rest.Config, recorder events.Recorder, componentName, agentName string) *frameworkagent.RegistrationOption {
 	return &frameworkagent.RegistrationOption{
-		CSRConfigurations: frameworkagent.KubeClientSignerConfigurations(addonName, agentName),
+		CSRConfigurations: frameworkagent.KubeClientSignerConfigurations(componentName, agentName),
 		CSRApproveCheck:   utils.DefaultCSRApprover(agentName),
 		PermissionConfig: func(cluster *clusterv1.ManagedCluster, addon *addonapiv1alpha1.ManagedClusterAddOn) error {
 			kubeclient, err := kubernetes.NewForConfig(kubeConfig)
@@ -110,7 +110,7 @@ func newRegistrationOption(kubeConfig *rest.Config, recorder events.Recorder, ad
 			}
 
 			for _, file := range agentPermissionFiles {
-				if err := applyManifestFromFile(file, cluster.Name, addon.Name, kubeclient, recorder); err != nil {
+				if err := applyAgentPermissionManifestFromFile(file, cluster.Name, addon.Name, kubeclient, recorder); err != nil {
 					return err
 				}
 			}
@@ -120,14 +120,17 @@ func newRegistrationOption(kubeConfig *rest.Config, recorder events.Recorder, ad
 	}
 }
 
-func applyManifestFromFile(file, clusterName, addonName string, kubeclient *kubernetes.Clientset, recorder events.Recorder) error {
-	groups := frameworkagent.DefaultGroups(clusterName, addonName)
+func applyAgentPermissionManifestFromFile(file, clusterName, componentName string, kubeclient *kubernetes.Clientset, recorder events.Recorder) error {
+	groups := frameworkagent.DefaultGroups(clusterName, componentName)
 	config := struct {
-		ClusterName string
-		Group       string
+		ClusterName            string
+		Group                  string
+		RoleAndRolebindingName string
 	}{
 		ClusterName: clusterName,
-		Group:       groups[0],
+
+		Group:                  groups[0],
+		RoleAndRolebindingName: fmt.Sprintf("open-cluster-management:%s:agent", componentName),
 	}
 
 	results := resourceapply.ApplyDirectly(
@@ -140,7 +143,10 @@ func applyManifestFromFile(file, clusterName, addonName string, kubeclient *kube
 			if err != nil {
 				return nil, err
 			}
-			return assets.MustCreateAssetFromTemplate(name, template, config).Data, nil
+
+			data := assets.MustCreateAssetFromTemplate(name, template, config).Data
+
+			return data, nil
 		},
 		file,
 	)
@@ -154,7 +160,8 @@ func applyManifestFromFile(file, clusterName, addonName string, kubeclient *kube
 	return nil
 }
 
-func getValues(cluster *clusterv1.ManagedCluster,
+// getValues prepare values for templates at manifests/templates
+func getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 	addon *addonapiv1alpha1.ManagedClusterAddOn) (addonfactory.Values, error) {
 	installNamespace := addon.Spec.InstallNamespace
 	if len(installNamespace) == 0 {
@@ -167,15 +174,21 @@ func getValues(cluster *clusterv1.ManagedCluster,
 	}
 
 	manifestConfig := struct {
-		KubeConfigSecret      string
-		ClusterName           string
-		AddonInstallNamespace string
-		Image                 string
+		KubeConfigSecret        string
+		ClusterName             string
+		AddonName               string
+		AddonInstallNamespace   string
+		Image                   string
+		SpokeRolebindingName    string
+		AgentServiceAccountName string
 	}{
-		KubeConfigSecret:      fmt.Sprintf("%s-hub-kubeconfig", addon.Name),
-		AddonInstallNamespace: installNamespace,
-		ClusterName:           cluster.Name,
-		Image:                 image,
+		KubeConfigSecret:        fmt.Sprintf("%s-hub-kubeconfig", addon.Name),
+		AddonInstallNamespace:   installNamespace,
+		ClusterName:             cluster.Name,
+		AddonName:               fmt.Sprintf("%s-agent", addon.Name),
+		Image:                   image,
+		SpokeRolebindingName:    addon.Name,
+		AgentServiceAccountName: fmt.Sprintf("%s-agent-sa", addon.Name),
 	}
 
 	return addonfactory.StructToValues(manifestConfig), nil

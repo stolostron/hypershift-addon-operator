@@ -20,7 +20,9 @@ import (
 )
 
 const (
-	componentName = "hypershift-addon-operator"
+	// this should match managedclusteraddon cr's spec value in order to trigger the reconcile
+	// for this addon.
+	componentName = "hypershift-addon"
 )
 
 func main() {
@@ -28,8 +30,6 @@ func main() {
 
 	pflag.CommandLine.SetNormalizeFunc(utilflag.WordSepNormalizeFunc)
 	pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
-
-	pflag.Parse()
 
 	var logger logr.Logger
 
@@ -51,7 +51,7 @@ func main() {
 
 func newCommand(logger logr.Logger) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "addon",
+		Use:   "hypershift-addon",
 		Short: "hypershift addon for acm.",
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := cmd.Help(); err != nil {
