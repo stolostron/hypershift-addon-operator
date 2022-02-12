@@ -12,6 +12,7 @@ import (
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/spf13/cobra"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -334,9 +335,9 @@ func (c *agentController) runHypershiftInstallJob() error {
 					Containers: []corev1.Container{
 						corev1.Container{
 							Name:    "hypershift-installer",
-							Image:   "golang:1.17",
+							Image:   util.DefaultHypershiftImage,
 							Command: []string{"/bin/sh"},
-							Args: []string{"-c", "go get -u github.com/openshift/hypershift@latest;sleep 600;"},
+							Args:    []string{"-c", "sleep 600;"},
 							VolumeMounts: []corev1.VolumeMount{
 								corev1.VolumeMount{
 									Name:      hypershiftBucketSecretName,

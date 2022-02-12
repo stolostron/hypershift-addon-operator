@@ -20,6 +20,7 @@ import (
 	"k8s.io/component-base/version"
 
 	hypershiftagent "github.com/stolostron/hypershift-addon-operator/pkg/agent"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	frameworkagent "open-cluster-management.io/addon-framework/pkg/agent"
@@ -36,7 +37,6 @@ var (
 
 const (
 	hypershiftAddonImageName = "HYPERSHIFT_ADDON_IMAGE_NAME"
-	defaultHypershiftImage   = "quay.io/ianzhang366/hypershift-addon-operator:latest"
 	templatePath             = "manifests/templates"
 )
 
@@ -170,7 +170,7 @@ func getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 
 	image := os.Getenv(hypershiftAddonImageName)
 	if len(image) == 0 {
-		image = defaultHypershiftImage
+		image = util.DefaultHypershiftImage
 	}
 
 	manifestConfig := struct {

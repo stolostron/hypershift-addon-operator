@@ -70,12 +70,17 @@ run: fmt vet ## Run a controller from your host.
 	go run cmd/main.go
 
 .PHONY: docker-build
-docker-build: #test ## Build docker image with the manager.
+docker-build: build-hypershift #test ## Build docker image with the manager.
 	docker build -t ${IMG} .
 
 .PHONY: docker-push
 docker-push: ## Push docker image with the manager.
 	docker push ${IMG}
+
+
+.PHONY: build-hypershift
+build-hypershift: ## Push docker image with the manager.
+	build/build-hypershift.sh
 
 ##@ Deployment
 
