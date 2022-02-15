@@ -132,7 +132,7 @@ func (o *AgentOptions) runAgent(ctx context.Context, controllerContext *controll
 	go secretSyncAgentController.Run(ctx, 1)
 
 	// retry 5 times, in case something wrong with creating the hypershift install job
-	go retry(5, time.Second*10, controllerObj.runHypershiftInstallJob)
+	go retry(1, time.Second*10, controllerObj.runHypershiftInstall)
 
 	go leaseUpdater.Start(ctx)
 
@@ -389,5 +389,42 @@ func (c *agentController) runHypershiftInstallJob() error {
 }
 
 func (c *agentController) runHypershiftInstall() error {
-	ops := hyperinstall.Options{}
+	c.log.Info("enter runHypershiftInstall")
+	defer c.log.Info("exit runHypershiftInstall")
+	// 	ctx := context.TODO()
+	// 	se, err := c.hubKubeClient.CoreV1().Secrets(c.bucketSecretNamespace).Get(ctx, hypershiftBucketSecretName, metav1.GetOptions{})
+	// 	if err != nil {
+	// 		c.log.Error(err, fmt.Sprintf("failed to get bucket secret from hub at %s/%s", c.clusterName, hypershiftBucketSecretName))
+	//
+	// 		return err
+	// 	}
+
+	// 	ops := hyperinstall.Options{
+	// 		Namespace:                  "hypershift",
+	// 		HyperShiftImage:            "quay.io/hypershift/hypershift-operator:latest",
+	// 		HyperShiftOperatorReplicas: int32(1),
+	// 		Development:                false,
+	// 		Render:                     false,
+	// 		ExcludeEtcdManifests:       false,
+	// 		EnableOCPClusterMonitoring: false,
+	// 		EnableCIDebugOutput:        false,
+	// 		PrivatePlatform:            "None",
+	//
+	// 		OIDCStorageProviderS3Credentials: string(se.Data["credentials"]),
+	// 		OIDCStorageProviderS3Region:      string(se.Data["region"]),
+	// 		OIDCStorageProviderS3BucketName:  string(se.Data["bucket"]),
+	// 	}
+
+	cmd := hyperinstall.NewCommand()
+
+	cmd.DebugFlags()
+
+	cmd.FParseErrWhitelist = cobra.FParseErrWhitelist{UnknownFlags: true}
+
+	if err := cmd.Execute(); err != nil {
+		c.log.Error(err, "failed to run the hypershift install command")
+		return err
+	}
+
+	return nil
 }
