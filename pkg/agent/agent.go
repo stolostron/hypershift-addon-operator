@@ -27,6 +27,8 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 
+	hyperinstall "github.com/openshift/hypershift/cmd/install"
+
 	"open-cluster-management.io/addon-framework/pkg/lease"
 	"open-cluster-management.io/addon-framework/pkg/version"
 	addonv1alpha1client "open-cluster-management.io/api/client/addon/clientset/versioned"
@@ -384,4 +386,8 @@ func (c *agentController) runHypershiftInstallJob() error {
 	}
 
 	return nil
+}
+
+func (c *agentController) runHypershiftInstall() error {
+	ops := hyperinstall.Options{}
 }
