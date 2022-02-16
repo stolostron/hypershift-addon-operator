@@ -23,7 +23,7 @@ spec:
       containers:
       - name: {{ .AddonName }}
         image: {{ .Image }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         args:
           - "./hypershift-addon"
           - "agent"

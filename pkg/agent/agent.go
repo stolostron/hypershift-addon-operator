@@ -3,7 +3,9 @@ package agent
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -12,10 +14,8 @@ import (
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/spf13/cobra"
-	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 
-	batchv1 "k8s.io/api/batch/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -42,6 +42,10 @@ const (
 	hypershiftSecretAnnotationKey = "hypershift.openshift.io/cluster"
 
 	hypershiftBucketSecretName = "hypershift-operator-oidc-provider-s3-credentials"
+
+	hypershiftOperatorImage = "quay.io/hypershift/hypershift-operator:latest"
+
+	defaultSyncInterval = 5 * time.Minute
 )
 
 func NewAgentCommand(addonName string, logger logr.Logger) *cobra.Command {
@@ -107,7 +111,7 @@ func (o *AgentOptions) runAgent(ctx context.Context, controllerContext *controll
 
 	spokeInformerFactory := informers.NewSharedInformerFactoryWithOptions(
 		spokeKubeClient,
-		10*time.Minute,
+		defaultSyncInterval,
 	)
 
 	// create an agent contoller
@@ -131,8 +135,8 @@ func (o *AgentOptions) runAgent(ctx context.Context, controllerContext *controll
 
 	go secretSyncAgentController.Run(ctx, 1)
 
-	// retry 5 times, in case something wrong with creating the hypershift install job
-	go retry(1, time.Second*10, controllerObj.runHypershiftInstall)
+	// retry 3 times, in case something wrong with creating the hypershift install job
+	go retry(3, time.Second*10, controllerObj.runHypershiftInstall)
 
 	go leaseUpdater.Start(ctx)
 
@@ -261,165 +265,57 @@ func retry(attempts int, sleep time.Duration, f func() error) {
 	return
 }
 
-func (c *agentController) runHypershiftInstallJob() error {
-	c.log.Info("entry runHypershiftInstallJob")
-	defer c.log.Info("exit runHypershiftInstallJob")
-
+func (c *agentController) runHypershiftInstall() error {
+	c.log.Info("enter runHypershiftInstall")
+	defer c.log.Info("exit runHypershiftInstall")
 	ctx := context.TODO()
-	mgmAddon, err := c.addonClient.AddonV1alpha1().ManagedClusterAddOns(c.clusterName).Get(ctx, c.addonName, metav1.GetOptions{})
-	if err != nil {
-		c.log.Error(err, "failed to get managedclusterAddon CR from hub")
-		return nil
-	}
 
-	if !mgmAddon.DeletionTimestamp.IsZero() {
+	hyperShiftOperatorDeployNamespace := "hypershift"
+	hypershiftOperatorName := "operator"
+
+	if _, err := c.hubKubeClient.AppsV1().Deployments(hyperShiftOperatorDeployNamespace).Get(ctx,
+		hypershiftOperatorName, metav1.GetOptions{}); err == nil || !apierrors.IsNotFound(err) {
+		c.log.Info(fmt.Sprintf("hypershift operator %s/%s deployment exists, wont reinstall it. with err: %v", hyperShiftOperatorDeployNamespace, hypershiftOperatorName, err))
 		return nil
 	}
 
 	se, err := c.hubKubeClient.CoreV1().Secrets(c.bucketSecretNamespace).Get(ctx, hypershiftBucketSecretName, metav1.GetOptions{})
 	if err != nil {
-		c.log.Error(err, fmt.Sprintf("failed to get bucket secret from hub at %s/%s", c.clusterName, hypershiftBucketSecretName))
+		c.log.Error(err, fmt.Sprintf("failed to get bucket secret from hub at %s/%s, will retry.", c.clusterName, hypershiftBucketSecretName))
 
 		return err
 	}
 
-	out := func(in *corev1.Secret) *corev1.Secret {
-		out := &corev1.Secret{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "Secret",
-				APIVersion: corev1.SchemeGroupVersion.String(),
-			},
-		}
+	bucketName := string(se.Data["bucket"])
+	bucketRegion := string(se.Data["region"])
+	bucketCreds := se.Data["credentials"]
 
-		out.SetName(in.GetName())
-		out.SetNamespace(c.addonNamespace)
-		out.Data = in.Data
-
-		return out
-	}(se)
-
-	_, err = c.spokeKubeClient.CoreV1().Secrets(c.addonNamespace).Create(ctx, out, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		c.log.Error(err, "failed to create bucket's secret on spoke cluster")
+	file, err := ioutil.TempFile("", ".aws-creds")
+	if err != nil { // likely a unrecoverable error, don't retry
+		c.log.Error(err, "failed to create temp file for hoding aws credentials")
 		return nil
 	}
 
-	awsMountPath := "/var/.aws"
-	secretAWSCredKey := "credentials"
+	credsFile := file.Name()
+	defer os.Remove(credsFile)
 
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-hypershift-install-job", c.addonName),
-			Namespace: c.addonNamespace,
-		},
-
-		Spec: batchv1.JobSpec{
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s-hypershift-install-pod", c.addonName),
-					Namespace: c.addonNamespace,
-				},
-				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyOnFailure,
-					Volumes: []corev1.Volume{
-						corev1.Volume{
-							Name: hypershiftBucketSecretName,
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: hypershiftBucketSecretName,
-									Items: []corev1.KeyToPath{
-										corev1.KeyToPath{Key: secretAWSCredKey, Path: secretAWSCredKey},
-									},
-								},
-							},
-						},
-					},
-					Containers: []corev1.Container{
-						corev1.Container{
-							Name:    "hypershift-installer",
-							Image:   util.DefaultHypershiftImage,
-							Command: []string{"/bin/sh"},
-							Args:    []string{"-c", "sleep 600;"},
-							VolumeMounts: []corev1.VolumeMount{
-								corev1.VolumeMount{
-									Name:      hypershiftBucketSecretName,
-									ReadOnly:  true,
-									MountPath: awsMountPath,
-								},
-							},
-							Env: []corev1.EnvVar{
-								corev1.EnvVar{
-									Name: "BUCKET_NAME",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{Name: hypershiftBucketSecretName},
-											Key:                  "bucket",
-										},
-									},
-								},
-								corev1.EnvVar{
-									Name: "REGION",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{Name: hypershiftBucketSecretName},
-											Key:                  "region",
-										},
-									},
-								},
-
-								corev1.EnvVar{
-									Name:  "AWS_CREDS",
-									Value: fmt.Sprintf("%s/%s", awsMountPath, secretAWSCredKey),
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	_, err = c.spokeKubeClient.BatchV1().Jobs(c.addonNamespace).Create(ctx, job, metav1.CreateOptions{})
-	if err != nil {
-		c.log.Error(err, "failed to run the hypershift install job")
+	c.log.Info(credsFile)
+	if err := ioutil.WriteFile(credsFile, bucketCreds, 0644); err != nil { // likely a unrecoverable error, don't retry
+		c.log.Error(err, "failed to write to temp file for aws credentials")
 		return nil
 	}
-
-	return nil
-}
-
-func (c *agentController) runHypershiftInstall() error {
-	c.log.Info("enter runHypershiftInstall")
-	defer c.log.Info("exit runHypershiftInstall")
-	// 	ctx := context.TODO()
-	// 	se, err := c.hubKubeClient.CoreV1().Secrets(c.bucketSecretNamespace).Get(ctx, hypershiftBucketSecretName, metav1.GetOptions{})
-	// 	if err != nil {
-	// 		c.log.Error(err, fmt.Sprintf("failed to get bucket secret from hub at %s/%s", c.clusterName, hypershiftBucketSecretName))
-	//
-	// 		return err
-	// 	}
-
-	// 	ops := hyperinstall.Options{
-	// 		Namespace:                  "hypershift",
-	// 		HyperShiftImage:            "quay.io/hypershift/hypershift-operator:latest",
-	// 		HyperShiftOperatorReplicas: int32(1),
-	// 		Development:                false,
-	// 		Render:                     false,
-	// 		ExcludeEtcdManifests:       false,
-	// 		EnableOCPClusterMonitoring: false,
-	// 		EnableCIDebugOutput:        false,
-	// 		PrivatePlatform:            "None",
-	//
-	// 		OIDCStorageProviderS3Credentials: string(se.Data["credentials"]),
-	// 		OIDCStorageProviderS3Region:      string(se.Data["region"]),
-	// 		OIDCStorageProviderS3BucketName:  string(se.Data["bucket"]),
-	// 	}
 
 	cmd := hyperinstall.NewCommand()
 
-	cmd.DebugFlags()
+	cmd.FParseErrWhitelist.UnknownFlags = true
 
-	cmd.FParseErrWhitelist = cobra.FParseErrWhitelist{UnknownFlags: true}
+	cmd.SetArgs([]string{
+		"--hypershift-image", hypershiftOperatorImage,
+		"--namespace", hyperShiftOperatorDeployNamespace,
+		"--oidc-storage-provider-s3-bucket-name", bucketName,
+		"--oidc-storage-provider-s3-region", bucketRegion,
+		"--oidc-storage-provider-s3-credentials", credsFile,
+	})
 
 	if err := cmd.Execute(); err != nil {
 		c.log.Error(err, "failed to run the hypershift install command")
