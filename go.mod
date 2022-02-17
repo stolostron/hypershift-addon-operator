@@ -15,7 +15,8 @@ require (
 	k8s.io/client-go v0.23.1
 	k8s.io/component-base v0.23.1
 	open-cluster-management.io/addon-framework v0.2.1-0.20220127024850-e62ac4257168
-	open-cluster-management.io/api v0.5.1-0.20220112073018-2d280a97a052
+	open-cluster-management.io/api v0.6.0
+	sigs.k8s.io/controller-runtime v0.11.0
 )
 
 require (
@@ -131,7 +132,6 @@ require (
 	sigs.k8s.io/cluster-api-provider-aws v1.1.0 // indirect
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.2.0-alpha.1 // indirect
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.0.0-00010101000000-000000000000 // indirect
-	sigs.k8s.io/controller-runtime v0.11.0 // indirect
 	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect
 	sigs.k8s.io/kube-storage-version-migrator v0.0.4 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.0 // indirect

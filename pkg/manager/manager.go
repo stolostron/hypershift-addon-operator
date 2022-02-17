@@ -19,7 +19,6 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/component-base/version"
 
-	hypershiftagent "github.com/stolostron/hypershift-addon-operator/pkg/agent"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
@@ -67,7 +66,7 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 		agentAddon, err := addonfactory.NewAgentAddonFactory(componentName, fs, templatePath).
 			WithGetValuesFuncs(getValueForAgentTemplate, addonfactory.GetValuesFromAddonAnnotation).
 			WithAgentRegistrationOption(registrationOption).
-			WithInstallStrategy(frameworkagent.InstallAllStrategy(hypershiftagent.AgentInstallationNamespace)).
+			WithInstallStrategy(frameworkagent.InstallAllStrategy(util.AgentInstallationNamespace)).
 			BuildTemplateAgentAddon()
 		if err != nil {
 			log.Error(err, "failed to build agent")
@@ -165,7 +164,7 @@ func getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 	addon *addonapiv1alpha1.ManagedClusterAddOn) (addonfactory.Values, error) {
 	installNamespace := addon.Spec.InstallNamespace
 	if len(installNamespace) == 0 {
-		installNamespace = hypershiftagent.AgentInstallationNamespace
+		installNamespace = util.AgentInstallationNamespace
 	}
 
 	image := os.Getenv(hypershiftAddonImageName)
@@ -174,21 +173,23 @@ func getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 	}
 
 	manifestConfig := struct {
-		KubeConfigSecret        string
-		ClusterName             string
-		AddonName               string
-		AddonInstallNamespace   string
-		Image                   string
-		SpokeRolebindingName    string
-		AgentServiceAccountName string
+		KubeConfigSecret               string
+		ClusterName                    string
+		AddonName                      string
+		AddonInstallNamespace          string
+		HypershiftBucketNamespaceOnHub string
+		Image                          string
+		SpokeRolebindingName           string
+		AgentServiceAccountName        string
 	}{
-		KubeConfigSecret:        fmt.Sprintf("%s-hub-kubeconfig", addon.Name),
-		AddonInstallNamespace:   installNamespace,
-		ClusterName:             cluster.Name,
-		AddonName:               fmt.Sprintf("%s-agent", addon.Name),
-		Image:                   image,
-		SpokeRolebindingName:    addon.Name,
-		AgentServiceAccountName: fmt.Sprintf("%s-agent-sa", addon.Name),
+		KubeConfigSecret:               fmt.Sprintf("%s-hub-kubeconfig", addon.Name),
+		AddonInstallNamespace:          installNamespace,
+		HypershiftBucketNamespaceOnHub: util.HypershiftBucketNamespaceOnHub,
+		ClusterName:                    cluster.Name,
+		AddonName:                      fmt.Sprintf("%s-agent", addon.Name),
+		Image:                          image,
+		SpokeRolebindingName:           addon.Name,
+		AgentServiceAccountName:        fmt.Sprintf("%s-agent-sa", addon.Name),
 	}
 
 	return addonfactory.StructToValues(manifestConfig), nil
