@@ -133,7 +133,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("failed to create hubConfig from flag, err: %w", err)
 	}
 
-	hubClient, err := client.New(hubConfig, client.Options{})
+	hubClient, err := client.New(hubConfig, client.Options{Scheme: scheme})
 	if err != nil {
 		return fmt.Errorf("failed to create hubClient, err: %w", err)
 	}
@@ -212,6 +212,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	mcAddOn := &addonv1alpha1.ManagedClusterAddOn{}
 
 	if err := c.hubClient.Get(ctx, mcAddOnKey, mcAddOn); err != nil {
+		c.log.Error(err, fmt.Sprintf("failed to get managedclusteraddon resource from hub"))
 		return ctrl.Result{}, err
 	}
 
@@ -228,8 +229,15 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		Data: se.Data,
 	}
 
-	res, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, seTmp, func() error { return nil })
-	c.log.Info(fmt.Sprintf("CreateOrUpdate result: %s", res))
+	nilFunc := func() error { return nil }
+
+	_, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, seTmp, nilFunc)
+	if err != nil {
+		c.log.Error(err, fmt.Sprintf("failed to createOrUpdate hostedcluster secret %s/%s to hub", seTmp.GetNamespace(), seTmp.GetName()))
+	} else {
+		c.log.Info(fmt.Sprintf("createOrUpdate hostedcluster secret %s/%s to hub", seTmp.GetNamespace(), seTmp.GetName()))
+
+	}
 
 	return ctrl.Result{}, err
 
