@@ -2,56 +2,80 @@ package agent
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
+	"os"
 	"time"
 
 	"github.com/go-logr/logr"
-	"github.com/openshift/library-go/pkg/controller/controllercmd"
-	"github.com/openshift/library-go/pkg/controller/factory"
 	"github.com/openshift/library-go/pkg/operator/events"
-	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/spf13/cobra"
-	"github.com/stolostron/hypershift-addon-operator/pkg/util"
-	corev1 "k8s.io/api/core/v1"
 
-	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
+
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
+
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/informers"
-	corev1informers "k8s.io/client-go/informers/core/v1"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
-	corev1lister "k8s.io/client-go/listers/core/v1"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+
+	hyperinstall "github.com/openshift/hypershift/cmd/install"
 
 	"open-cluster-management.io/addon-framework/pkg/lease"
-	"open-cluster-management.io/addon-framework/pkg/version"
-	addonv1alpha1client "open-cluster-management.io/api/client/addon/clientset/versioned"
+	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 )
 
 const (
-	// addOnAgentInstallationNamespace is the namespace on the managed cluster to install the addon agent.
-	AgentInstallationNamespace = "default"
-	addonAgentName             = "hypershift-addon-agent"
-
 	hypershiftSecretAnnotationKey = "hypershift.openshift.io/cluster"
-
-	hypershiftBucketSecretName = "hypershift-operator-oidc-provider-s3-credentials"
+	hypershiftBucketSecretName    = "hypershift-operator-oidc-provider-s3-credentials"
+	hypershiftOperatorImage       = "quay.io/hypershift/hypershift-operator:latest"
 )
+
+var (
+	scheme           = runtime.NewScheme()
+	hyperOperatorKey = types.NamespacedName{Name: "operator", Namespace: "hypershift"}
+)
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(addonv1alpha1.AddToScheme(scheme))
+
+	//+kubebuilder:scaffold:scheme
+}
 
 func NewAgentCommand(addonName string, logger logr.Logger) *cobra.Command {
 	o := NewAgentOptions(addonName, logger)
 
-	cmd := controllercmd.
-		NewControllerCommandConfig(addonName, version.Get(), o.runAgent).
-		NewCommand()
-	cmd.Use = "agent"
-	cmd.Short = fmt.Sprintf("Start the %s's agent", addonName)
+	ctx := context.TODO()
+
+	cmd := &cobra.Command{
+		Use:   "agent",
+		Short: fmt.Sprintf("Start the %s's agent", addonName),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return o.runControllerManager(ctx)
+		},
+	}
 
 	o.AddFlags(cmd)
+
+	cmd.FParseErrWhitelist.UnknownFlags = true
+
 	return cmd
 }
 
@@ -63,6 +87,8 @@ type AgentOptions struct {
 	AddonName             string
 	AddonNamespace        string
 	BucketSecretNamespace string
+	MetricAddr            string
+	ProbeAddr             string
 }
 
 // NewWorkloadAgentOptions returns the flags with default value set
@@ -75,48 +101,64 @@ func (o *AgentOptions) AddFlags(cmd *cobra.Command) {
 	// This command only supports reading from config
 	flags.StringVar(&o.HubKubeconfigFile, "hub-kubeconfig", o.HubKubeconfigFile, "Location of kubeconfig file to connect to hub cluster.")
 	flags.StringVar(&o.SpokeClusterName, "cluster-name", o.SpokeClusterName, "Name of spoke cluster.")
-	flags.StringVar(&o.AddonNamespace, "addon-namespace", o.AddonNamespace, "Installation namespace of addon.")
-	flags.StringVar(&o.BucketSecretNamespace, "hypershfit-bucket-namespace", o.BucketSecretNamespace, "Namespace that holds the hypershift bucket")
+	flags.StringVar(&o.AddonNamespace, "addon-namespace", util.AgentInstallationNamespace, "Installation namespace of addon.")
+	flags.StringVar(&o.BucketSecretNamespace, "hypershfit-bucket-namespace", util.HypershiftBucketNamespaceOnHub, "Namespace that holds the hypershift bucket on hub")
+
+	flags.StringVar(&o.MetricAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
+	flags.StringVar(&o.ProbeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 }
 
-// RunAgent starts the controllers on agent to process work from hub.
-func (o *AgentOptions) runAgent(ctx context.Context, controllerContext *controllercmd.ControllerContext) error {
-	// build kubeclient of managed cluster
-	spokeKubeClient, err := kubernetes.NewForConfig(controllerContext.KubeConfig)
+func (o *AgentOptions) runControllerManager(ctx context.Context) error {
+	log := o.Log.WithName("controller-manager-setup")
+
+	flag.Parse()
+
+	spokeConfig := ctrl.GetConfigOrDie()
+	mgr, err := ctrl.NewManager(spokeConfig, ctrl.Options{
+		Scheme:                 scheme,
+		MetricsBindAddress:     o.MetricAddr,
+		Port:                   9443,
+		HealthProbeBindAddress: o.ProbeAddr,
+		LeaderElection:         false,
+	})
+
 	if err != nil {
-		return err
+		log.Error(err, "unable to start manager")
+		return fmt.Errorf("unable to create manager, err: %w", err)
 	}
 
 	// build kubeinformerfactory of hub cluster
-	hubRestConfig, err := clientcmd.BuildConfigFromFlags("" /* leave masterurl as empty */, o.HubKubeconfigFile)
+	hubConfig, err := clientcmd.BuildConfigFromFlags("" /* leave masterurl as empty */, o.HubKubeconfigFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create hubConfig from flag, err: %w", err)
 	}
 
-	hubKubeClient, err := kubernetes.NewForConfig(hubRestConfig)
+	hubClient, err := client.New(hubConfig, client.Options{})
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create hubClient, err: %w", err)
 	}
 
-	addonClient, err := addonv1alpha1client.NewForConfig(hubRestConfig)
+	spokeKubeClient, err := kubernetes.NewForConfig(spokeConfig)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create spoke client, err: %w", err)
 	}
 
-	spokeInformerFactory := informers.NewSharedInformerFactoryWithOptions(
-		spokeKubeClient,
-		10*time.Minute,
-	)
+	aCtrl := &agentController{
+		hubClient:             hubClient,
+		spokeUncachedClient:   spokeKubeClient,
+		spokeClient:           mgr.GetClient(),
+		log:                   o.Log.WithName("agent-reconciler"),
+		clusterName:           o.SpokeClusterName,
+		addonName:             o.AddonName,
+		addonNamespace:        o.AddonNamespace,
+		bucketSecretNamespace: o.BucketSecretNamespace,
+	}
 
-	// create an agent contoller
-	controllerObj, secretSyncAgentController := newAgentController(
-		hubKubeClient,
-		spokeKubeClient,
-		addonClient,
-		spokeInformerFactory.Core().V1().Secrets(),
-		controllerContext.EventRecorder,
-		o,
-	)
+	// retry 3 times, in case something wrong with creating the hypershift install job
+	if err := aCtrl.installHypershiftOperatorWithRetires(3, time.Second*10, aCtrl.runHypershiftInstall); err != nil {
+		log.Error(err, "failed to install hypershift Operator")
+		return err
+	}
 
 	// create a lease updater
 	leaseUpdater := lease.NewLeaseUpdater(
@@ -125,106 +167,56 @@ func (o *AgentOptions) runAgent(ctx context.Context, controllerContext *controll
 		o.AddonNamespace,
 	)
 
-	go spokeInformerFactory.Start(ctx.Done())
-
-	go secretSyncAgentController.Run(ctx, 1)
-
-	// retry 5 times, in case something wrong with creating the hypershift install job
-	go retry(5, time.Second*10, controllerObj.runHypershiftInstallJob)
-
 	go leaseUpdater.Start(ctx)
 
-	<-ctx.Done()
-	return nil
+	log.Info("starting manager")
+
+	//+kubebuilder:scaffold:builder
+	if err = aCtrl.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create agent controller: %s, err: %w", util.AddonControllerName, err)
+	}
+
+	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		return fmt.Errorf("unable to set up health check, err: %w", err)
+	}
+	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		return fmt.Errorf("unable to set up ready check, err: %w", err)
+	}
+
+	return mgr.Start(ctrl.SetupSignalHandler())
 }
 
 type agentController struct {
-	hubKubeClient         kubernetes.Interface
-	spokeKubeClient       kubernetes.Interface
-	addonClient           addonv1alpha1client.Interface
-	lister                corev1lister.SecretLister
-	recorder              events.Recorder
+	hubClient             client.Client
+	spokeUncachedClient   *kubernetes.Clientset
+	spokeClient           client.Client //local for agent
 	log                   logr.Logger
+	recorder              events.Recorder
 	clusterName           string
 	addonName             string
 	addonNamespace        string
 	bucketSecretNamespace string
 }
 
-func newAgentController(
-	hubKubeClient kubernetes.Interface,
-	spokeKubeClient kubernetes.Interface,
-	addonClient addonv1alpha1client.Interface,
-	secretInformers corev1informers.SecretInformer,
-	recorder events.Recorder,
-	agentOption *AgentOptions,
-) (*agentController, factory.Controller) {
-	c := &agentController{
-		hubKubeClient:   hubKubeClient,
-		spokeKubeClient: spokeKubeClient,
-		addonClient:     addonClient,
-		lister:          secretInformers.Lister(),
-		recorder:        recorder,
-		clusterName:     agentOption.SpokeClusterName,
-		addonName:       agentOption.AddonName,
-		addonNamespace:  agentOption.AddonNamespace,
+func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
+	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
-		bucketSecretNamespace: agentOption.BucketSecretNamespace,
-		log:                   agentOption.Log,
+	se := &corev1.Secret{}
+	if err := c.spokeClient.Get(ctx, req.NamespacedName, se); err != nil {
+		c.log.Error(err, "failed to get the hostedcluster secret")
+		return ctrl.Result{}, nil
 	}
 
-	keyF := func(obj runtime.Object) string {
-		key, _ := cache.MetaNamespaceKeyFunc(obj)
-		return key
+	mcAddOnKey := types.NamespacedName{Name: c.addonName, Namespace: c.clusterName}
+	mcAddOn := &addonv1alpha1.ManagedClusterAddOn{}
+
+	if err := c.hubClient.Get(ctx, mcAddOnKey, mcAddOn); err != nil {
+		return ctrl.Result{}, err
 	}
 
-	filter := func(obj interface{}) bool {
-		metaObj, ok := obj.(metav1.ObjectMetaAccessor)
-		if !ok {
-			c.log.Error(fmt.Errorf("failed to run Accessor"), "")
-			return false
-		}
-
-		an := metaObj.GetObjectMeta().GetAnnotations()
-
-		if len(an) == 0 || len(an[hypershiftSecretAnnotationKey]) == 0 {
-			return false
-		}
-
-		return true
-	}
-
-	return c, factory.New().WithFilteredEventsInformersQueueKeyFunc(
-		keyF, filter, secretInformers.Informer()).
-		WithSync(c.sync).ToController(addonAgentName, recorder)
-}
-
-func (c *agentController) sync(ctx context.Context, syncCtx factory.SyncContext) error {
-	key := syncCtx.QueueKey()
-	c.log.Info(fmt.Sprintf("Reconciling addon deploy %q", key))
-	defer c.log.Info(fmt.Sprintf("Done reconcile addon deploy %q", key))
-
-	ns, name, err := cache.SplitMetaNamespaceKey(key)
-	if err != nil {
-		// ignore addon whose key is not in format: namespace/name
-		return nil
-	}
-
-	se, err := c.lister.Secrets(ns).Get(name)
-
-	switch {
-	case apierrors.IsNotFound(err):
-		return nil
-	case err != nil:
-		return err
-	}
-
-	addon, err := c.addonClient.AddonV1alpha1().ManagedClusterAddOns(c.clusterName).Get(ctx, c.addonName, metav1.GetOptions{})
-	if err != nil {
-		return err
-	}
-	if !addon.DeletionTimestamp.IsZero() {
-		return nil
+	if !mcAddOn.GetDeletionTimestamp().IsZero() {
+		return ctrl.Result{}, nil
 	}
 
 	seTmp := &corev1.Secret{
@@ -236,151 +228,104 @@ func (c *agentController) sync(ctx context.Context, syncCtx factory.SyncContext)
 		Data: se.Data,
 	}
 
-	_, _, err = resourceapply.ApplySecret(ctx, c.hubKubeClient.CoreV1(), c.recorder, seTmp)
-	return err
+	res, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, seTmp, func() error { return nil })
+	c.log.Info(fmt.Sprintf("CreateOrUpdate result: %s", res))
+
+	return ctrl.Result{}, err
+
 }
 
-func retry(attempts int, sleep time.Duration, f func() error) {
-	if err := f(); err != nil {
-		if attempts--; attempts > 0 {
-			// Add some randomness to prevent creating a Thundering Herd
-			jitter := time.Duration(rand.Int63n(int64(sleep)))
-			sleep = sleep + jitter/2
+func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
+	filterByAnnotation := func(obj client.Object) bool {
+		an := obj.GetAnnotations()
 
-			time.Sleep(sleep)
-
-			retry(attempts, 2*sleep, f)
-			return
+		if len(an) == 0 || len(an[hypershiftSecretAnnotationKey]) == 0 {
+			return false
 		}
 
-		return
+		return true
 	}
 
-	return
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&corev1.Secret{}).
+		WithEventFilter(predicate.NewPredicateFuncs(filterByAnnotation)).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		Complete(c)
 }
 
-func (c *agentController) runHypershiftInstallJob() error {
-	c.log.Info("entry runHypershiftInstallJob")
-	defer c.log.Info("exit runHypershiftInstallJob")
+func (c *agentController) installHypershiftOperatorWithRetires(attempts int, sleep time.Duration, f func() error) error {
+	var err error
+	for i := attempts; i > 0; i-- {
+		err = f()
 
+		if err == nil {
+			return nil
+		}
+
+		// Add some randomness to prevent creating a Thundering Herd
+		jitter := time.Duration(rand.Int63n(int64(sleep)))
+		sleep = sleep + jitter/2
+		time.Sleep(sleep)
+
+		sleep = 2 * sleep
+
+	}
+
+	return fmt.Errorf("failed to install the hypershift operator and apply its crd after %v retires, err: %w", attempts, err)
+}
+
+func (c *agentController) runHypershiftInstall() error {
+	c.log.Info("enter runHypershiftInstall")
+	defer c.log.Info("exit runHypershiftInstall")
 	ctx := context.TODO()
-	mgmAddon, err := c.addonClient.AddonV1alpha1().ManagedClusterAddOns(c.clusterName).Get(ctx, c.addonName, metav1.GetOptions{})
-	if err != nil {
-		c.log.Error(err, "failed to get managedclusterAddon CR from hub")
+
+	if _, err := c.spokeUncachedClient.AppsV1().Deployments(hyperOperatorKey.Namespace).Get(ctx, hyperOperatorKey.Name, metav1.GetOptions{}); err == nil || !apierrors.IsNotFound(err) {
+		c.log.Info(fmt.Sprintf("hypershift operator %s deployment exists, wont reinstall it. with err: %v", hyperOperatorKey, err))
 		return nil
 	}
 
-	if !mgmAddon.DeletionTimestamp.IsZero() {
-		return nil
-	}
-
-	se, err := c.hubKubeClient.CoreV1().Secrets(c.bucketSecretNamespace).Get(ctx, hypershiftBucketSecretName, metav1.GetOptions{})
-	if err != nil {
-		c.log.Error(err, fmt.Sprintf("failed to get bucket secret from hub at %s/%s", c.clusterName, hypershiftBucketSecretName))
-
+	bucketSecretKey := types.NamespacedName{Name: hypershiftBucketSecretName, Namespace: c.bucketSecretNamespace}
+	se := &corev1.Secret{}
+	if err := c.hubClient.Get(ctx, bucketSecretKey, se); err != nil {
+		c.log.Error(err, fmt.Sprintf("failed to get bucket secret(%s) from hub, will retry.", bucketSecretKey))
 		return err
 	}
 
-	out := func(in *corev1.Secret) *corev1.Secret {
-		out := &corev1.Secret{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "Secret",
-				APIVersion: corev1.SchemeGroupVersion.String(),
-			},
-		}
+	bucketName := string(se.Data["bucket"])
+	bucketRegion := string(se.Data["region"])
+	bucketCreds := se.Data["credentials"]
 
-		out.SetName(in.GetName())
-		out.SetNamespace(c.addonNamespace)
-		out.Data = in.Data
-
-		return out
-	}(se)
-
-	_, err = c.spokeKubeClient.CoreV1().Secrets(c.addonNamespace).Create(ctx, out, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		c.log.Error(err, "failed to create bucket's secret on spoke cluster")
+	file, err := ioutil.TempFile("", ".aws-creds")
+	if err != nil { // likely a unrecoverable error, don't retry
+		c.log.Error(err, "failed to create temp file for hoding aws credentials")
 		return nil
 	}
 
-	awsMountPath := "/var/.aws"
-	secretAWSCredKey := "credentials"
+	credsFile := file.Name()
+	defer os.Remove(credsFile)
 
-	job := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-hypershift-install-job", c.addonName),
-			Namespace: c.addonNamespace,
-		},
-
-		Spec: batchv1.JobSpec{
-			Template: corev1.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      fmt.Sprintf("%s-hypershift-install-pod", c.addonName),
-					Namespace: c.addonNamespace,
-				},
-				Spec: corev1.PodSpec{
-					RestartPolicy: corev1.RestartPolicyOnFailure,
-					Volumes: []corev1.Volume{
-						corev1.Volume{
-							Name: hypershiftBucketSecretName,
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
-									SecretName: hypershiftBucketSecretName,
-									Items: []corev1.KeyToPath{
-										corev1.KeyToPath{Key: secretAWSCredKey, Path: secretAWSCredKey},
-									},
-								},
-							},
-						},
-					},
-					Containers: []corev1.Container{
-						corev1.Container{
-							Name:    "hypershift-installer",
-							Image:   util.DefaultHypershiftImage,
-							Command: []string{"/bin/sh"},
-							Args:    []string{"-c", "sleep 600;"},
-							VolumeMounts: []corev1.VolumeMount{
-								corev1.VolumeMount{
-									Name:      hypershiftBucketSecretName,
-									ReadOnly:  true,
-									MountPath: awsMountPath,
-								},
-							},
-							Env: []corev1.EnvVar{
-								corev1.EnvVar{
-									Name: "BUCKET_NAME",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{Name: hypershiftBucketSecretName},
-											Key:                  "bucket",
-										},
-									},
-								},
-								corev1.EnvVar{
-									Name: "REGION",
-									ValueFrom: &corev1.EnvVarSource{
-										SecretKeyRef: &corev1.SecretKeySelector{
-											LocalObjectReference: corev1.LocalObjectReference{Name: hypershiftBucketSecretName},
-											Key:                  "region",
-										},
-									},
-								},
-
-								corev1.EnvVar{
-									Name:  "AWS_CREDS",
-									Value: fmt.Sprintf("%s/%s", awsMountPath, secretAWSCredKey),
-								},
-							},
-						},
-					},
-				},
-			},
-		},
+	c.log.Info(credsFile)
+	if err := ioutil.WriteFile(credsFile, bucketCreds, 0644); err != nil { // likely a unrecoverable error, don't retry
+		c.log.Error(err, "failed to write to temp file for aws credentials")
+		return nil
 	}
 
-	_, err = c.spokeKubeClient.BatchV1().Jobs(c.addonNamespace).Create(ctx, job, metav1.CreateOptions{})
-	if err != nil {
-		c.log.Error(err, "failed to run the hypershift install job")
-		return nil
+	//hypershiftInstall will get the inClusterConfig and use it to apply resources
+	cmd := hyperinstall.NewCommand()
+
+	cmd.FParseErrWhitelist.UnknownFlags = true
+
+	cmd.SetArgs([]string{
+		"--hypershift-image", hypershiftOperatorImage,
+		"--namespace", hyperOperatorKey.Namespace,
+		"--oidc-storage-provider-s3-bucket-name", bucketName,
+		"--oidc-storage-provider-s3-region", bucketRegion,
+		"--oidc-storage-provider-s3-credentials", credsFile,
+	})
+
+	if err := cmd.Execute(); err != nil {
+		c.log.Error(err, "failed to run the hypershift install command")
+		return err
 	}
 
 	return nil

@@ -23,13 +23,14 @@ spec:
       containers:
       - name: {{ .AddonName }}
         image: {{ .Image }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         args:
           - "./hypershift-addon"
           - "agent"
           - "--hub-kubeconfig=/var/run/hub/kubeconfig"
           - "--cluster-name={{ .ClusterName }}"
           - "--addon-namespace={{ .AddonInstallNamespace }}"
+          - "--hypershfit-bucket-namespace={{ .ClusterName }}"
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub

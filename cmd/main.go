@@ -14,15 +14,10 @@ import (
 	"github.com/spf13/pflag"
 	"github.com/stolostron/hypershift-addon-operator/pkg/agent"
 	"github.com/stolostron/hypershift-addon-operator/pkg/manager"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"go.uber.org/zap"
 	utilflag "k8s.io/component-base/cli/flag"
 	"open-cluster-management.io/addon-framework/pkg/version"
-)
-
-const (
-	// this should match managedclusteraddon cr's spec value in order to trigger the reconcile
-	// for this addon.
-	componentName = "hypershift-addon"
 )
 
 func main() {
@@ -67,8 +62,8 @@ func newCommand(logger logr.Logger) *cobra.Command {
 		cmd.Version = v
 	}
 
-	cmd.AddCommand(manager.NewManagerCommand(componentName, logger.WithName("manager")))
-	cmd.AddCommand(agent.NewAgentCommand(componentName, logger.WithName("agent")))
+	cmd.AddCommand(manager.NewManagerCommand(util.AddonControllerName, logger.WithName("manager")))
+	cmd.AddCommand(agent.NewAgentCommand(util.AddonControllerName, logger.WithName("agent")))
 
 	return cmd
 }
