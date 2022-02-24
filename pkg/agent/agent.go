@@ -215,13 +215,17 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	hubSecretKey := types.NamespacedName{Name: req.Name, Namespace: c.clusterName}
 	hubMirrorSecret := c.scaffoldHostedclusterSecret(hubSecretKey)
 	deleteMirror := func() error {
-		return c.hubClient.Delete(ctx, hubMirrorSecret)
+		err := c.hubClient.Delete(ctx, hubMirrorSecret)
+		if err != nil {
+			c.log.Error(err, "failed to delete secret on hub")
+		}
+		return err
 	}
 
 	se := &corev1.Secret{}
 	if err := c.spokeClient.Get(ctx, req.NamespacedName, se); err != nil {
 		if apierrors.IsNotFound(err) {
-			c.log.Info("remove hostedcluster's secret on hub, since hostedcluster is gone")
+			c.log.Info(fmt.Sprintf("remove hostedcluster's secret(%s) on hub, since hostedcluster is gone", hubSecretKey))
 			return ctrl.Result{}, deleteMirror()
 		}
 
