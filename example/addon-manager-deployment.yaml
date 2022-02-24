@@ -10,19 +10,19 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: hypershift-addon-manager-sa
-    namespace: default
+    namespace: open-cluster-management
 ---
 kind: ServiceAccount
 apiVersion: v1
 metadata:
   name: hypershift-addon-manager-sa
-  namespace: default
+  namespace: open-cluster-management
 ---
 kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: hypershift-addon-manager
-  namespace: default
+  namespace: open-cluster-management
   labels:
     app: hypershift-addon-manager
 spec:

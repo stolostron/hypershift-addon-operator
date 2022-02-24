@@ -249,7 +249,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err != nil {
 		c.log.Error(err, fmt.Sprintf("failed to createOrUpdate hostedcluster secret %s to hub", hubSecretKey))
 	} else {
-		c.log.Info(fmt.Sprintf("createOrUpdate hostedcluster secret %s/%s to hub", hubSecretKey))
+		c.log.Info(fmt.Sprintf("createOrUpdate hostedcluster secret %s to hub", hubSecretKey))
 	}
 
 	return ctrl.Result{}, err
