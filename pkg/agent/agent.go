@@ -35,16 +35,19 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
+	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
 	hyperinstall "github.com/openshift/hypershift/cmd/install"
 
 	"open-cluster-management.io/addon-framework/pkg/lease"
-	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
+
+	workv1 "open-cluster-management.io/api/work/v1"
 )
 
 const (
 	hypershiftSecretAnnotationKey = "hypershift.openshift.io/cluster"
 	hypershiftBucketSecretName    = "hypershift-operator-oidc-provider-s3-credentials"
 	hypershiftOperatorImage       = "quay.io/hypershift/hypershift-operator:latest"
+	kindAppliedManifestWork       = "AppliedManifestWork"
 )
 
 var (
@@ -54,7 +57,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(addonv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(hyperv1alpha1.AddToScheme(scheme))
 
 	//+kubebuilder:scaffold:scheme
 }
@@ -198,81 +201,120 @@ type agentController struct {
 	bucketSecretNamespace string
 }
 
-func (c *agentController) scaffoldHostedclusterSecret(k types.NamespacedName) *corev1.Secret {
-	return &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      k.Name,
-			Namespace: k.Namespace,
-			Labels:    map[string]string{"synced-from-spoke": "true"},
+func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedName) []*corev1.Secret {
+	return []*corev1.Secret{
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("%s-admin-kubeconfig", hcKey.Name),
+				Namespace: hcKey.Namespace,
+				Labels:    map[string]string{"synced-from-spoke": "true"},
+			},
+		},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      fmt.Sprintf("%s-kubeadmin-password", hcKey.Name),
+				Namespace: hcKey.Namespace,
+				Labels:    map[string]string{"synced-from-spoke": "true"},
+			},
 		},
 	}
+}
+
+func getKey(obj metav1.Object) types.NamespacedName {
+	return types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}
 }
 
 func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
-	hubSecretKey := types.NamespacedName{Name: req.Name, Namespace: c.clusterName}
-	hubMirrorSecret := c.scaffoldHostedclusterSecret(hubSecretKey)
-	deleteMirror := func() error {
-		err := c.hubClient.Delete(ctx, hubMirrorSecret)
-		if err != nil {
-			c.log.Error(err, "failed to delete secret on hub")
+	hcSecrets := c.scaffoldHostedclusterSecrets(req.NamespacedName)
+	deleteMirrorSecrets := func() error {
+		var lastErr error
+
+		for _, se := range hcSecrets {
+			se.SetNamespace(c.clusterName)
+			if err := c.hubClient.Delete(ctx, se); err != nil {
+				lastErr = err
+				c.log.Error(err, fmt.Sprintf("failed to delete secret(%s) on hub", getKey(se)))
+			}
 		}
-		return err
+
+		return lastErr
 	}
 
-	se := &corev1.Secret{}
-	if err := c.spokeClient.Get(ctx, req.NamespacedName, se); err != nil {
+	hc := &hyperv1alpha1.HostedCluster{}
+	if err := c.spokeClient.Get(ctx, req.NamespacedName, hc); err != nil {
 		if apierrors.IsNotFound(err) {
-			c.log.Info(fmt.Sprintf("remove hostedcluster's secret(%s) on hub, since hostedcluster is gone", hubSecretKey))
-			return ctrl.Result{}, deleteMirror()
+			c.log.Info(fmt.Sprintf("remove hostedcluster(%s) secrets on hub, since hostedcluster is gone", req.NamespacedName))
+			return ctrl.Result{}, deleteMirrorSecrets()
 		}
 
-		c.log.Error(err, "failed to get the hostedcluster secret")
+		c.log.Error(err, "failed to get the hostedcluster")
 		return ctrl.Result{}, nil
 	}
 
-	mcAddOnKey := types.NamespacedName{Name: c.addonName, Namespace: c.clusterName}
-	mcAddOn := &addonv1alpha1.ManagedClusterAddOn{}
-
-	if err := c.hubClient.Get(ctx, mcAddOnKey, mcAddOn); err != nil {
-		c.log.Error(err, fmt.Sprintf("failed to get managedclusteraddon resource from hub"))
-		return ctrl.Result{}, err
+	if !hc.GetDeletionTimestamp().IsZero() {
+		return ctrl.Result{}, nil
 	}
 
-	if !mcAddOn.GetDeletionTimestamp().IsZero() {
-		return ctrl.Result{}, deleteMirror()
+	createOrUpdateMirrorSecrets := func() error {
+		var lastErr error
+
+		for _, se := range hcSecrets {
+			hubMirrorSecret := se.DeepCopy()
+			if err := c.spokeClient.Get(ctx, getKey(se), se); err != nil {
+				lastErr = err
+				c.log.Error(err, fmt.Sprintf("failed to get hostedcluster secret %s on local cluster, skip this one", getKey(se)))
+				continue
+			}
+
+			hubMirrorSecret.SetNamespace(c.clusterName)
+			hubMirrorSecret.Data = se.Data
+
+			nilFunc := func() error { return nil }
+
+			_, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, hubMirrorSecret, nilFunc)
+			if err != nil {
+				lastErr = err
+				c.log.Error(err, fmt.Sprintf("failed to createOrUpdate hostedcluster secret %s to hub", getKey(hubMirrorSecret)))
+			} else {
+				c.log.Info(fmt.Sprintf("createOrUpdate hostedcluster secret %s to hub", getKey(hubMirrorSecret)))
+			}
+		}
+
+		return lastErr
 	}
 
-	hubMirrorSecret.Data = se.Data
+	return ctrl.Result{}, createOrUpdateMirrorSecrets()
+}
 
-	nilFunc := func() error { return nil }
+func isOwnerByAppliedManifestWork(ref []metav1.OwnerReference) bool {
+	n := len(ref)
 
-	_, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, hubMirrorSecret, nilFunc)
-	if err != nil {
-		c.log.Error(err, fmt.Sprintf("failed to createOrUpdate hostedcluster secret %s to hub", hubSecretKey))
-	} else {
-		c.log.Info(fmt.Sprintf("createOrUpdate hostedcluster secret %s to hub", hubSecretKey))
+	if n == 0 {
+		return false
 	}
 
-	return ctrl.Result{}, err
+	for _, r := range ref {
+		if r.APIVersion == workv1.GroupVersion.String() && r.Kind == kindAppliedManifestWork {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
-	filterByAnnotation := func(obj client.Object) bool {
-		an := obj.GetAnnotations()
+	filterByOwner := func(obj client.Object) bool {
+		owners := obj.GetOwnerReferences()
 
-		if len(an) == 0 || len(an[hypershiftSecretAnnotationKey]) == 0 {
-			return false
-		}
-
-		return true
+		return isOwnerByAppliedManifestWork(owners)
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.Secret{}).
-		WithEventFilter(predicate.NewPredicateFuncs(filterByAnnotation)).
+		For(&hyperv1alpha1.HostedCluster{}).
+		WithEventFilter(predicate.NewPredicateFuncs(filterByOwner)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(c)
 }
