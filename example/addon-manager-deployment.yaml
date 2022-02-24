@@ -47,6 +47,6 @@ spec:
           args:
             - ./hypershift-addon
             - manager
-            - '--namespace=default'
+            - '--namespace=open-cluster-management'
           imagePullPolicy: Always
       serviceAccount: hypershift-addon-manager-sa

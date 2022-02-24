@@ -30,7 +30,7 @@ spec:
           - "--hub-kubeconfig=/var/run/hub/kubeconfig"
           - "--cluster-name={{ .ClusterName }}"
           - "--addon-namespace={{ .AddonInstallNamespace }}"
-          - "--hypershfit-bucket-namespace={{ .ClusterName }}"
+          - "--hypershfit-bucket-namespace={{ .HypershiftBucketNamespaceOnHub }}"
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub
