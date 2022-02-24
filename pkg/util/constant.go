@@ -5,9 +5,8 @@ const (
 	// AgentInstallationNamespace is the namespace on the managed cluster to install the addon agent.
 	AgentInstallationNamespace = "open-cluster-management-agent-addon"
 
-	//HypershiftBucketNamespaceOnHub by default it some be the managedcluster's namespace.
-	//If other namespace specified, then you need to give the addon secret RBAC for the namespace
-	HypershiftBucketNamespaceOnHub = "local-cluster"
+	//HypershiftBucketNamespaceOnHub which should be the same as the addon manager's namespace
+	HypershiftBucketNamespaceOnHub = "open-cluster-management"
 
 	AddonControllerName = "hypershift-addon"
 )

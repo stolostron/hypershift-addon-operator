@@ -198,12 +198,37 @@ type agentController struct {
 	bucketSecretNamespace string
 }
 
+func (c *agentController) scaffoldHostedclusterSecret(k types.NamespacedName) *corev1.Secret {
+	return &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      k.Name,
+			Namespace: k.Namespace,
+			Labels:    map[string]string{"synced-from-spoke": "true"},
+		},
+	}
+}
+
 func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
+	hubSecretKey := types.NamespacedName{Name: req.Name, Namespace: c.clusterName}
+	hubMirrorSecret := c.scaffoldHostedclusterSecret(hubSecretKey)
+	deleteMirror := func() error {
+		err := c.hubClient.Delete(ctx, hubMirrorSecret)
+		if err != nil {
+			c.log.Error(err, "failed to delete secret on hub")
+		}
+		return err
+	}
+
 	se := &corev1.Secret{}
 	if err := c.spokeClient.Get(ctx, req.NamespacedName, se); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.log.Info(fmt.Sprintf("remove hostedcluster's secret(%s) on hub, since hostedcluster is gone", hubSecretKey))
+			return ctrl.Result{}, deleteMirror()
+		}
+
 		c.log.Error(err, "failed to get the hostedcluster secret")
 		return ctrl.Result{}, nil
 	}
@@ -217,30 +242,21 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if !mcAddOn.GetDeletionTimestamp().IsZero() {
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, deleteMirror()
 	}
 
-	seTmp := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      se.Name,
-			Namespace: c.clusterName,
-			Labels:    map[string]string{"synced-from-spoke": "true"},
-		},
-		Data: se.Data,
-	}
+	hubMirrorSecret.Data = se.Data
 
 	nilFunc := func() error { return nil }
 
-	_, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, seTmp, nilFunc)
+	_, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, hubMirrorSecret, nilFunc)
 	if err != nil {
-		c.log.Error(err, fmt.Sprintf("failed to createOrUpdate hostedcluster secret %s/%s to hub", seTmp.GetNamespace(), seTmp.GetName()))
+		c.log.Error(err, fmt.Sprintf("failed to createOrUpdate hostedcluster secret %s to hub", hubSecretKey))
 	} else {
-		c.log.Info(fmt.Sprintf("createOrUpdate hostedcluster secret %s/%s to hub", seTmp.GetNamespace(), seTmp.GetName()))
-
+		c.log.Info(fmt.Sprintf("createOrUpdate hostedcluster secret %s to hub", hubSecretKey))
 	}
 
 	return ctrl.Result{}, err
-
 }
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
