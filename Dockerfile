@@ -1,4 +1,4 @@
-FROM quay.io/bitnami/golang:1.17 AS builder
+FROM registry.ci.openshift.org/stolostron/builder:go1.17-linux AS builder
 WORKDIR /go/src/github.com/stolostron/hypershift-addon-operator
 COPY . .
 ENV GO_PACKAGE github.com/stolostron/hypershift-addon-operator
@@ -15,5 +15,4 @@ ENV USER_UID=1001
 # Add the binaries
 COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift-addon .
 
-# Embed hypershift binary
-# COPY bin/hypershift .
+USER ${USER_UID}
