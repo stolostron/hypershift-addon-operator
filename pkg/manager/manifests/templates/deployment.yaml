@@ -31,6 +31,7 @@ spec:
           - "--cluster-name={{ .ClusterName }}"
           - "--addon-namespace={{ .AddonInstallNamespace }}"
           - "--hypershfit-bucket-namespace={{ .HypershiftBucketNamespaceOnHub }}"
+          - "--hypershfit-operator-image={{ .HypershiftOperatorImage }}"
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub

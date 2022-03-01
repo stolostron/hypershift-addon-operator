@@ -35,8 +35,9 @@ var (
 )
 
 const (
-	hypershiftAddonImageName = "HYPERSHIFT_ADDON_IMAGE_NAME"
-	templatePath             = "manifests/templates"
+	hypershiftAddonImageName    = "HYPERSHIFT_ADDON_IMAGE_NAME"
+	hypershiftOperatorImageName = "HYPERSHIFT_OPERATOR_IMAGE_NAME"
+	templatePath                = "manifests/templates"
 )
 
 //go:embed manifests
@@ -167,9 +168,14 @@ func getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		installNamespace = util.AgentInstallationNamespace
 	}
 
-	image := os.Getenv(hypershiftAddonImageName)
-	if len(image) == 0 {
-		image = util.DefaultHypershiftImage
+	addonImage := os.Getenv(hypershiftAddonImageName)
+	if len(addonImage) == 0 {
+		addonImage = util.DefaultHypershiftAddonImage
+	}
+
+	operatorImage := os.Getenv(hypershiftOperatorImageName)
+	if len(operatorImage) == 0 {
+		operatorImage = util.DefaultHypershiftOperatorImage
 	}
 
 	manifestConfig := struct {
@@ -178,6 +184,7 @@ func getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		AddonName                      string
 		AddonInstallNamespace          string
 		HypershiftBucketNamespaceOnHub string
+		HypershiftOperatorImage        string
 		Image                          string
 		SpokeRolebindingName           string
 		AgentServiceAccountName        string
@@ -187,7 +194,8 @@ func getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		HypershiftBucketNamespaceOnHub: util.HypershiftBucketNamespaceOnHub,
 		ClusterName:                    cluster.Name,
 		AddonName:                      fmt.Sprintf("%s-agent", addon.Name),
-		Image:                          image,
+		Image:                          addonImage,
+		HypershiftOperatorImage:        operatorImage,
 		SpokeRolebindingName:           addon.Name,
 		AgentServiceAccountName:        fmt.Sprintf("%s-agent-sa", addon.Name),
 	}

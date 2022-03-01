@@ -46,7 +46,6 @@ import (
 const (
 	hypershiftSecretAnnotationKey = "hypershift.openshift.io/cluster"
 	hypershiftBucketSecretName    = "hypershift-operator-oidc-provider-s3-credentials"
-	hypershiftOperatorImage       = "quay.io/hypershift/hypershift-operator:latest"
 	kindAppliedManifestWork       = "AppliedManifestWork"
 )
 
@@ -84,14 +83,15 @@ func NewAgentCommand(addonName string, logger logr.Logger) *cobra.Command {
 
 // AgentOptions defines the flags for workload agent
 type AgentOptions struct {
-	Log                   logr.Logger
-	HubKubeconfigFile     string
-	SpokeClusterName      string
-	AddonName             string
-	AddonNamespace        string
-	BucketSecretNamespace string
-	MetricAddr            string
-	ProbeAddr             string
+	Log                     logr.Logger
+	HubKubeconfigFile       string
+	SpokeClusterName        string
+	AddonName               string
+	AddonNamespace          string
+	BucketSecretNamespace   string
+	HypershiftOperatorImage string
+	MetricAddr              string
+	ProbeAddr               string
 }
 
 // NewWorkloadAgentOptions returns the flags with default value set
@@ -106,6 +106,7 @@ func (o *AgentOptions) AddFlags(cmd *cobra.Command) {
 	flags.StringVar(&o.SpokeClusterName, "cluster-name", o.SpokeClusterName, "Name of spoke cluster.")
 	flags.StringVar(&o.AddonNamespace, "addon-namespace", util.AgentInstallationNamespace, "Installation namespace of addon.")
 	flags.StringVar(&o.BucketSecretNamespace, "hypershfit-bucket-namespace", util.HypershiftBucketNamespaceOnHub, "Namespace that holds the hypershift bucket on hub")
+	flags.StringVar(&o.HypershiftOperatorImage, "hypershfit-operator-image", util.DefaultHypershiftOperatorImage, "The HyperShift operator image to deploy")
 
 	flags.StringVar(&o.MetricAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flags.StringVar(&o.ProbeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -155,6 +156,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		addonName:             o.AddonName,
 		addonNamespace:        o.AddonNamespace,
 		bucketSecretNamespace: o.BucketSecretNamespace,
+		operatorImage:         o.HypershiftOperatorImage,
 	}
 
 	// retry 3 times, in case something wrong with creating the hypershift install job
@@ -199,18 +201,19 @@ type agentController struct {
 	addonName             string
 	addonNamespace        string
 	bucketSecretNamespace string
+	operatorImage         string
 }
 
 func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedName) []*corev1.Secret {
 	return []*corev1.Secret{
-		&corev1.Secret{
+		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("%s-admin-kubeconfig", hcKey.Name),
 				Namespace: hcKey.Namespace,
 				Labels:    map[string]string{"synced-from-spoke": "true"},
 			},
 		},
-		&corev1.Secret{
+		{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      fmt.Sprintf("%s-kubeadmin-password", hcKey.Name),
 				Namespace: hcKey.Namespace,
@@ -382,7 +385,7 @@ func (c *agentController) runHypershiftInstall() error {
 	cmd.FParseErrWhitelist.UnknownFlags = true
 
 	cmd.SetArgs([]string{
-		"--hypershift-image", hypershiftOperatorImage,
+		"--hypershift-image", c.operatorImage,
 		"--namespace", hyperOperatorKey.Namespace,
 		"--oidc-storage-provider-s3-bucket-name", bucketName,
 		"--oidc-storage-provider-s3-region", bucketRegion,

@@ -1,5 +1,5 @@
 # Repo hosting the image with path
-REPO ?= ""
+REPO ?= "quay.io/stolostron/"
 
 # Image URL to use all building/pushing image targets
 IMG ?= $(REPO)hypershift-addon-operator:latest
