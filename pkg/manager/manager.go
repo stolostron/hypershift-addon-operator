@@ -178,25 +178,23 @@ func getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 	}
 
 	manifestConfig := struct {
-		KubeConfigSecret               string
-		ClusterName                    string
-		AddonName                      string
-		AddonInstallNamespace          string
-		HypershiftBucketNamespaceOnHub string
-		HypershiftOperatorImage        string
-		Image                          string
-		SpokeRolebindingName           string
-		AgentServiceAccountName        string
+		KubeConfigSecret        string
+		ClusterName             string
+		AddonName               string
+		AddonInstallNamespace   string
+		HypershiftOperatorImage string
+		Image                   string
+		SpokeRolebindingName    string
+		AgentServiceAccountName string
 	}{
-		KubeConfigSecret:               fmt.Sprintf("%s-hub-kubeconfig", addon.Name),
-		AddonInstallNamespace:          installNamespace,
-		HypershiftBucketNamespaceOnHub: util.HypershiftBucketNamespaceOnHub,
-		ClusterName:                    cluster.Name,
-		AddonName:                      fmt.Sprintf("%s-agent", addon.Name),
-		Image:                          addonImage,
-		HypershiftOperatorImage:        operatorImage,
-		SpokeRolebindingName:           addon.Name,
-		AgentServiceAccountName:        fmt.Sprintf("%s-agent-sa", addon.Name),
+		KubeConfigSecret:        fmt.Sprintf("%s-hub-kubeconfig", addon.Name),
+		AddonInstallNamespace:   installNamespace,
+		ClusterName:             cluster.Name,
+		AddonName:               fmt.Sprintf("%s-agent", addon.Name),
+		Image:                   addonImage,
+		HypershiftOperatorImage: operatorImage,
+		SpokeRolebindingName:    addon.Name,
+		AgentServiceAccountName: fmt.Sprintf("%s-agent-sa", addon.Name),
 	}
 
 	return addonfactory.StructToValues(manifestConfig), nil

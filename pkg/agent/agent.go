@@ -88,7 +88,6 @@ type AgentOptions struct {
 	SpokeClusterName        string
 	AddonName               string
 	AddonNamespace          string
-	BucketSecretNamespace   string
 	HypershiftOperatorImage string
 	MetricAddr              string
 	ProbeAddr               string
@@ -105,7 +104,6 @@ func (o *AgentOptions) AddFlags(cmd *cobra.Command) {
 	flags.StringVar(&o.HubKubeconfigFile, "hub-kubeconfig", o.HubKubeconfigFile, "Location of kubeconfig file to connect to hub cluster.")
 	flags.StringVar(&o.SpokeClusterName, "cluster-name", o.SpokeClusterName, "Name of spoke cluster.")
 	flags.StringVar(&o.AddonNamespace, "addon-namespace", util.AgentInstallationNamespace, "Installation namespace of addon.")
-	flags.StringVar(&o.BucketSecretNamespace, "hypershfit-bucket-namespace", util.HypershiftBucketNamespaceOnHub, "Namespace that holds the hypershift bucket on hub")
 	flags.StringVar(&o.HypershiftOperatorImage, "hypershfit-operator-image", util.DefaultHypershiftOperatorImage, "The HyperShift operator image to deploy")
 
 	flags.StringVar(&o.MetricAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -148,15 +146,14 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	aCtrl := &agentController{
-		hubClient:             hubClient,
-		spokeUncachedClient:   spokeKubeClient,
-		spokeClient:           mgr.GetClient(),
-		log:                   o.Log.WithName("agent-reconciler"),
-		clusterName:           o.SpokeClusterName,
-		addonName:             o.AddonName,
-		addonNamespace:        o.AddonNamespace,
-		bucketSecretNamespace: o.BucketSecretNamespace,
-		operatorImage:         o.HypershiftOperatorImage,
+		hubClient:           hubClient,
+		spokeUncachedClient: spokeKubeClient,
+		spokeClient:         mgr.GetClient(),
+		log:                 o.Log.WithName("agent-reconciler"),
+		clusterName:         o.SpokeClusterName,
+		addonName:           o.AddonName,
+		addonNamespace:      o.AddonNamespace,
+		operatorImage:       o.HypershiftOperatorImage,
 	}
 
 	// retry 3 times, in case something wrong with creating the hypershift install job
@@ -192,16 +189,15 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 }
 
 type agentController struct {
-	hubClient             client.Client
-	spokeUncachedClient   *kubernetes.Clientset
-	spokeClient           client.Client //local for agent
-	log                   logr.Logger
-	recorder              events.Recorder
-	clusterName           string
-	addonName             string
-	addonNamespace        string
-	bucketSecretNamespace string
-	operatorImage         string
+	hubClient           client.Client
+	spokeUncachedClient *kubernetes.Clientset
+	spokeClient         client.Client //local for agent
+	log                 logr.Logger
+	recorder            events.Recorder
+	clusterName         string
+	addonName           string
+	addonNamespace      string
+	operatorImage       string
 }
 
 func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedName) []*corev1.Secret {
@@ -353,7 +349,7 @@ func (c *agentController) runHypershiftInstall() error {
 		return nil
 	}
 
-	bucketSecretKey := types.NamespacedName{Name: hypershiftBucketSecretName, Namespace: c.bucketSecretNamespace}
+	bucketSecretKey := types.NamespacedName{Name: hypershiftBucketSecretName, Namespace: c.clusterName}
 	se := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, bucketSecretKey, se); err != nil {
 		c.log.Error(err, fmt.Sprintf("failed to get bucket secret(%s) from hub, will retry.", bucketSecretKey))
