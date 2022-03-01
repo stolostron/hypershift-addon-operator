@@ -66,7 +66,6 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 		agentAddon, err := addonfactory.NewAgentAddonFactory(componentName, fs, templatePath).
 			WithGetValuesFuncs(getValueForAgentTemplate, addonfactory.GetValuesFromAddonAnnotation).
 			WithAgentRegistrationOption(registrationOption).
-			WithInstallStrategy(frameworkagent.InstallAllStrategy(util.AgentInstallationNamespace)).
 			BuildTemplateAgentAddon()
 		if err != nil {
 			log.Error(err, "failed to build agent")
