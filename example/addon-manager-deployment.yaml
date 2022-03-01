@@ -43,10 +43,15 @@ spec:
       securityContext: {}
       containers:
         - name: hypershift-addon-agent
-          image: 'quay.io/ianzhang366/hypershift-addon-operator:latest'
+          image: 'quay.io/stolostron/hypershift-addon-operator:latest'
           args:
             - ./hypershift-addon
             - manager
             - '--namespace=open-cluster-management'
           imagePullPolicy: Always
+          env:
+            - name: HYPERSHIFT_OPERATOR_IMAGE_NAME
+              value: 'quay.io/hypershift/hypershift-operator:latest'
+            - name: HYPERSHIFT_ADDON_IMAGE_NAME
+              value: 'quay.io/stolostron/hypershift-addon-operator:latest'
       serviceAccount: hypershift-addon-manager-sa
