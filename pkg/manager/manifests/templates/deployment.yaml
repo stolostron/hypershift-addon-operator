@@ -30,7 +30,6 @@ spec:
           - "--hub-kubeconfig=/var/run/hub/kubeconfig"
           - "--cluster-name={{ .ClusterName }}"
           - "--addon-namespace={{ .AddonInstallNamespace }}"
-          - "--hypershfit-bucket-namespace={{ .HypershiftBucketNamespaceOnHub }}"
           - "--hypershfit-operator-image={{ .HypershiftOperatorImage }}"
         volumeMounts:
           - name: hub-config
