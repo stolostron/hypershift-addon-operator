@@ -227,12 +227,21 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
+	hubMirrorSecretName := func(name string) string {
+		// The secret stored on hub, and we should reflect the namespace on the name field, otherwise the name
+		// may conflict on hub.
+		// Note: the name generation rules need to be reproducible.
+		// TODO(zhujian7): consider the case len(namespace)+len(name)>253, then create the secret will fail,
+		// we may need to hash the name?
+		return fmt.Sprintf("%s-%s", req.NamespacedName.Namespace, name)
+	}
 	hcSecrets := c.scaffoldHostedclusterSecrets(req.NamespacedName)
 	deleteMirrorSecrets := func() error {
 		var lastErr error
 
 		for _, se := range hcSecrets {
 			se.SetNamespace(c.clusterName)
+			se.SetName(hubMirrorSecretName(se.Name))
 			if err := c.hubClient.Delete(ctx, se); err != nil {
 				lastErr = err
 				c.log.Error(err, fmt.Sprintf("failed to delete secret(%s) on hub", getKey(se)))
@@ -259,7 +268,11 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	createOrUpdateMirrorSecrets := func() error {
 		var lastErr error
-
+		hypershiftDeploymentAnnoKey := "hypershift.open-cluster-management.io/hypershiftdeployemnt"
+		hypershiftDeploymentAnnoValue, ok := hc.GetAnnotations()[hypershiftDeploymentAnnoKey]
+		if !ok || len(hypershiftDeploymentAnnoValue) == 0 {
+			lastErr = fmt.Errorf("failed to get hypershift deployment annotation from hosted cluster")
+		}
 		for _, se := range hcSecrets {
 			hubMirrorSecret := se.DeepCopy()
 			if err := c.spokeClient.Get(ctx, getKey(se), se); err != nil {
@@ -269,6 +282,10 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			}
 
 			hubMirrorSecret.SetNamespace(c.clusterName)
+			hubMirrorSecret.SetName(hubMirrorSecretName(se.Name))
+			if len(hypershiftDeploymentAnnoValue) != 0 {
+				hubMirrorSecret.SetAnnotations(map[string]string{hypershiftDeploymentAnnoKey: hypershiftDeploymentAnnoValue})
+			}
 			hubMirrorSecret.Data = se.Data
 
 			nilFunc := func() error { return nil }
