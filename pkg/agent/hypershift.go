@@ -254,7 +254,7 @@ func (c *agentController) runHypershiftInstall() error {
 	}
 
 	if _, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, deploy, noOp(deploy)); err != nil {
-		c.log.Error(err, fmt.Sprintf("failed to CreateOrUpdate the existing hypershift operator %s", getKey(deploy) ))
+		c.log.Error(err, fmt.Sprintf("failed to CreateOrUpdate the existing hypershift operator %s", getKey(deploy)))
 		return err
 
 	}
