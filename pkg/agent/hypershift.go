@@ -3,11 +3,12 @@ package agent
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"math/rand"
+	"math/big"
 	"os"
 	"time"
 
@@ -86,7 +87,7 @@ func (c *agentController) runHypershiftCmdWithRetires(attempts int, sleep time.D
 		}
 
 		// Add some randomness to prevent creating a Thundering Herd
-		jitter := time.Duration(rand.Int63n(int64(sleep)))
+		jitter := time.Duration(getRandInt(int64(sleep)))
 		sleep = sleep + jitter/2
 		time.Sleep(sleep)
 
@@ -95,6 +96,15 @@ func (c *agentController) runHypershiftCmdWithRetires(attempts int, sleep time.D
 	}
 
 	return fmt.Errorf("failed to install the hypershift operator and apply its crd after %v retires, err: %w", attempts, err)
+}
+
+func getRandInt(m int64) int64 {
+	n, err := rand.Int(rand.Reader, big.NewInt(m))
+	if err != nil {
+		return m
+	}
+
+	return n.Int64()
 }
 
 func (c *agentController) runHypershiftCleanup() error {
@@ -208,7 +218,7 @@ func (c *agentController) runHypershiftInstall() error {
 	defer os.Remove(credsFile)
 
 	c.log.Info(credsFile)
-	if err := ioutil.WriteFile(credsFile, bucketCreds, 0644); err != nil { // likely a unrecoverable error, don't retry
+	if err := ioutil.WriteFile(credsFile, bucketCreds, 0600); err != nil { // likely a unrecoverable error, don't retry
 		c.log.Error(err, "failed to write to temp file for aws credentials")
 		return nil
 	}
