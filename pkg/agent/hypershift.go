@@ -243,7 +243,7 @@ func (c *agentController) runHypershiftInstall() error {
 
 	deploy = &appsv1.Deployment{}
 	if err := c.spokeUncachedClient.Get(ctx, hyperOperatorKey, deploy); err == nil || !apierrors.IsNotFound(err) {
-		c.log.Info(fmt.Sprintf("hypershift operator %s deployment not found after install", hyperOperatorKey, err))
+		c.log.Info(fmt.Sprintf("hypershift operator %s deployment not found after install, err: %v", hyperOperatorKey, err))
 		return nil
 	}
 
