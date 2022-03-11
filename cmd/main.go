@@ -64,6 +64,7 @@ func newCommand(logger logr.Logger) *cobra.Command {
 
 	cmd.AddCommand(manager.NewManagerCommand(util.AddonControllerName, logger.WithName("manager")))
 	cmd.AddCommand(agent.NewAgentCommand(util.AddonControllerName, logger.WithName("agent")))
+	cmd.AddCommand(agent.NewCleanupCommand(util.AddonControllerName, logger.WithName("cleanup")))
 
 	return cmd
 }

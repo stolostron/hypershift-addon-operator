@@ -1,0 +1,29 @@
+kind: Job
+apiVersion: batch/v1
+metadata:
+  name: {{ .AddonName }}-cleanup
+  namespace: {{ .AddonInstallNamespace }}
+  labels:
+    "open-cluster-management.io/addon-pre-delete": ""
+spec:
+  manualSelector: true
+  selector:
+    matchLabels:
+      job: {{ .AddonName }}-cleanup
+  template:
+    metadata:
+      labels:
+        job: {{ .AddonName }}-cleanup
+    spec:
+      serviceAccountName: {{ .AgentServiceAccountName }}
+      restartPolicy: Never
+      containers:
+      - name: {{ .AddonName }}
+        image: {{ .Image }}
+        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+        args:
+          - "./hypershift-addon"
+          - "cleanup"
+          - "--addon-namespace={{ .Values.addonInstallNamespace }}"
