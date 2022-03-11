@@ -21,8 +21,6 @@ spec:
       - name: {{ .AddonName }}
         image: {{ .Image }}
         imagePullPolicy: {{ .Values.global.imagePullPolicy }}
-        resources:
-          {{- toYaml .Values.resources | nindent 10 }}
         args:
           - "./hypershift-addon"
           - "cleanup"

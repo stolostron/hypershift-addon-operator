@@ -89,11 +89,16 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 		return nil
 	}
 
-	cmd := controllercmd.
-		NewControllerCommandConfig(componentName, version.Get(), runController).
-		NewCommand()
+	cmdConfig := controllercmd.
+		NewControllerCommandConfig(componentName, version.Get(), runController)
+
+	cmd := cmdConfig.NewCommand()
 	cmd.Use = "manager"
 	cmd.Short = fmt.Sprintf("Start the %s's manager", componentName)
+
+	// add disable leader election flag
+	flags := cmd.Flags()
+	flags.BoolVar(&cmdConfig.DisableLeaderElection, "disable-leader-election", true, "Disable leader election for the agent.")
 
 	return cmd
 }
