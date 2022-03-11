@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -10,11 +9,10 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/go-logr/logr"
-	hyperv1 "github.com/openshift/hypershift/api/v1alpha1"
-	hyperinstall "github.com/openshift/hypershift/cmd/install"
 	"github.com/spf13/cobra"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -112,50 +110,47 @@ func (c *agentController) runHypershiftCleanup() error {
 	defer c.log.Info("exit runHypershiftCleanup")
 	ctx := context.TODO()
 
-	deploy := &appsv1.Deployment{}
+	// 	deploy := &appsv1.Deployment{}
+	//
+	// 	if err := c.spokeUncachedClient.Get(ctx, hyperOperatorKey, deploy); err != nil {
+	// 		if !apierrors.IsNotFound(err) {
+	// 			c.log.Info(fmt.Sprintf("can't get hypershift operator %s deployment exists, with err: %v", hyperOperatorKey, err))
+	// 			return err
+	// 		}
+	//
+	// 		return nil
+	// 	}
+	//
+	// 	c.log.Info(deploy.GetName())
 
-	if err := c.spokeUncachedClient.Get(ctx, hyperOperatorKey, deploy); err != nil {
-		if !apierrors.IsNotFound(err) {
-			c.log.Info(fmt.Sprintf("can't get hypershift operator %s deployment exists, with err: %v", hyperOperatorKey, err))
-			return err
-		}
+	// 	a := deploy.GetAnnotations()
+	// 	if len(a) == 0 || len(a[hypershiftAddonAnnotationKey]) == 0 {
+	// 		c.log.Info("skip, hypershift operator is not deployed by addon agent")
+	// 		return nil
+	// 	}
 
-		return nil
-	}
-
-	c.log.Info(deploy.GetName())
-
-	a := deploy.GetAnnotations()
-	if len(a) == 0 || len(a[hypershiftAddonAnnotationKey]) == 0 {
-		c.log.Info("skip, hypershift operator is not deployed by addon agent")
-		return nil
+	args := []string{
+		"install",
+		"render",
+		"--hypershift-image", c.operatorImage,
+		"--namespace", hyperOperatorKey.Namespace,
+		"--format", "json",
 	}
 
 	//hypershiftInstall will get the inClusterConfig and use it to apply resources
-	opts := &hyperinstall.Options{
-		Namespace:       hyperOperatorKey.Namespace,
-		HyperShiftImage: c.operatorImage,
-		PrivatePlatform: string(hyperv1.NonePlatform),
-	}
+	cmd := exec.Command("hypershift", args...)
 
-	cmd := hyperinstall.NewRenderCommand(opts)
+	c.log.Info(cmd.String())
 
-	cmd.FParseErrWhitelist.UnknownFlags = true
-	cmd.SetArgs([]string{
-		"--format", hyperinstall.RenderFormatJson,
-	})
-
-	renderTemplate := new(bytes.Buffer)
-	cmd.SetOut(renderTemplate)
-
-	if err := cmd.Execute(); err != nil {
-		c.log.Error(err, "failed to render the hypershift manifests")
+	renderTemplate, err := cmd.Output()
+	if err != nil {
+		c.log.Error(err, fmt.Sprintf("failed to run the hypershift install render command"))
 		return err
 	}
 
 	d := map[string]interface{}{}
 
-	if err := json.Unmarshal(renderTemplate.Bytes(), &d); err != nil {
+	if err := json.Unmarshal(renderTemplate, &d); err != nil {
 		c.log.Error(err, "failed to Unmarshal") // this is likely an unrecoverable
 		return nil
 	}
@@ -223,20 +218,19 @@ func (c *agentController) runHypershiftInstall() error {
 		return nil
 	}
 
-	//hypershiftInstall will get the inClusterConfig and use it to apply resources
-	cmd := hyperinstall.NewCommand()
-
-	cmd.FParseErrWhitelist.UnknownFlags = true
-
-	cmd.SetArgs([]string{
+	args := []string{
+		"install",
 		"--hypershift-image", c.operatorImage,
 		"--namespace", hyperOperatorKey.Namespace,
 		"--oidc-storage-provider-s3-bucket-name", bucketName,
 		"--oidc-storage-provider-s3-region", bucketRegion,
 		"--oidc-storage-provider-s3-credentials", credsFile,
-	})
+	}
 
-	if err := cmd.Execute(); err != nil {
+	//hypershiftInstall will get the inClusterConfig and use it to apply resources
+	cmd := exec.Command("hypershift", args...)
+
+	if err := cmd.Run(); err != nil {
 		c.log.Error(err, "failed to run the hypershift install command")
 		return err
 	}
