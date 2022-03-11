@@ -270,7 +270,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	createOrUpdateMirrorSecrets := func() error {
 		var lastErr error
-		hypershiftDeploymentAnnoKey := "hypershift.open-cluster-management.io/hypershiftdeployemnt"
+		hypershiftDeploymentAnnoKey := "cluster.open-cluster-management.io/hypershiftdeployment"
 		hypershiftDeploymentAnnoValue, ok := hc.GetAnnotations()[hypershiftDeploymentAnnoKey]
 		if !ok || len(hypershiftDeploymentAnnoValue) == 0 {
 			lastErr = fmt.Errorf("failed to get hypershift deployment annotation from hosted cluster")
