@@ -4,7 +4,7 @@ metadata:
   name: {{ .AddonName }}-cleanup
   namespace: {{ .AddonInstallNamespace }}
   labels:
-    "open-cluster-management.io/addon-pre-delete": ""
+    "open-cluster-management.io/addon-pre-delete": "" # this fetaure require the acm2.5
 spec:
   manualSelector: true
   selector:
