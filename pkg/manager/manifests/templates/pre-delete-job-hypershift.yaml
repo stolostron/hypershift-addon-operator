@@ -20,8 +20,8 @@ spec:
       containers:
       - name: {{ .AddonName }}
         image: {{ .Image }}
-        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+        imagePullPolicy: Always
         args:
           - "./hypershift-addon"
           - "cleanup"
-          - "--addon-namespace={{ .Values.addonInstallNamespace }}"
+          - "--addon-namespace={{ .AddonInstallNamespace }}"
