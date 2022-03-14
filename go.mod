@@ -2,12 +2,6 @@ module github.com/stolostron/hypershift-addon-operator
 
 go 1.17
 
-replace (
-	github.com/stolostron/hypershift-addon-operator/pkg/agent => ./pkg/agent
-	github.com/stolostron/hypershift-addon-operator/pkg/manager => ./pkg/manager
-	github.com/stolostron/hypershift-addon-operator/pkg/util => ./pkg/util
-)
-
 require (
 	github.com/go-logr/logr v1.2.1
 	github.com/go-logr/zapr v1.2.0

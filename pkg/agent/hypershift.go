@@ -110,24 +110,24 @@ func (c *agentController) runHypershiftCleanup() error {
 	defer c.log.Info("exit runHypershiftCleanup")
 	ctx := context.TODO()
 
- 	deploy := &appsv1.Deployment{}
+	deploy := &appsv1.Deployment{}
 
- 	if err := c.spokeUncachedClient.Get(ctx, hyperOperatorKey, deploy); err != nil {
- 		if !apierrors.IsNotFound(err) {
- 			c.log.Info(fmt.Sprintf("can't get hypershift operator %s deployment exists, with err: %v", hyperOperatorKey, err))
- 			return err
- 		}
+	if err := c.spokeUncachedClient.Get(ctx, hyperOperatorKey, deploy); err != nil {
+		if !apierrors.IsNotFound(err) {
+			c.log.Info(fmt.Sprintf("can't get hypershift operator %s deployment exists, with err: %v", hyperOperatorKey, err))
+			return err
+		}
 
- 		return nil
- 	}
+		return nil
+	}
 
- 	c.log.Info(deploy.GetName())
+	c.log.Info(deploy.GetName())
 
- 	a := deploy.GetAnnotations()
- 	if len(a) == 0 || len(a[hypershiftAddonAnnotationKey]) == 0 {
- 		c.log.Info("skip, hypershift operator is not deployed by addon agent")
- 		return nil
- 	}
+	a := deploy.GetAnnotations()
+	if len(a) == 0 || len(a[hypershiftAddonAnnotationKey]) == 0 {
+		c.log.Info("skip, hypershift operator is not deployed by addon agent")
+		return nil
+	}
 
 	args := []string{
 		"install",
@@ -138,7 +138,9 @@ func (c *agentController) runHypershiftCleanup() error {
 	}
 
 	//hypershiftInstall will get the inClusterConfig and use it to apply resources
-	cmd := exec.Command("hypershift", args...)
+	//
+	//skip the GoSec since we intent to run the hypershift binary
+	cmd := exec.Command("hypershift", args...) //#nosec G204
 
 	c.log.Info(cmd.String())
 
@@ -228,7 +230,9 @@ func (c *agentController) runHypershiftInstall() error {
 	}
 
 	//hypershiftInstall will get the inClusterConfig and use it to apply resources
-	cmd := exec.Command("hypershift", args...)
+	//
+	//skip the GoSec since we intent to run the hypershift binary
+	cmd := exec.Command("hypershift", args...) //#nosec G204
 
 	if err := cmd.Run(); err != nil {
 		c.log.Error(err, "failed to run the hypershift install command")
