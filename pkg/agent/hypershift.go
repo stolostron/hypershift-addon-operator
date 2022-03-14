@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -24,8 +25,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 )
 
 var (
@@ -64,6 +68,7 @@ func (o *AgentOptions) runCleanup(ctx context.Context) error {
 	aCtrl := &agentController{
 		spokeUncachedClient: c,
 		log:                 o.Log.WithName("agent-reconciler"),
+		clusterName:         o.SpokeClusterName,
 	}
 
 	// retry 3 times, in case something wrong with deleting the hypershift install job
@@ -110,22 +115,8 @@ func (c *agentController) runHypershiftCleanup() error {
 	defer c.log.Info("exit runHypershiftCleanup")
 	ctx := context.TODO()
 
-	deploy := &appsv1.Deployment{}
-
-	if err := c.spokeUncachedClient.Get(ctx, hyperOperatorKey, deploy); err != nil {
-		if !apierrors.IsNotFound(err) {
-			c.log.Info(fmt.Sprintf("can't get hypershift operator %s deployment exists, with err: %v", hyperOperatorKey, err))
-			return err
-		}
-
-		return nil
-	}
-
-	c.log.Info(deploy.GetName())
-
-	a := deploy.GetAnnotations()
-	if len(a) == 0 || len(a[hypershiftAddonAnnotationKey]) == 0 {
-		c.log.Info("skip, hypershift operator is not deployed by addon agent")
+	if !c.isManagedclusterAddonMarked(ctx) {
+		c.log.Info(fmt.Sprintf("skip the hypershift operator deleting, not created by %s", util.AddonControllerName))
 		return nil
 	}
 
@@ -175,7 +166,7 @@ func (c *agentController) runHypershiftCleanup() error {
 		u.SetUnstructuredContent(v)
 
 		if err := c.spokeUncachedClient.Delete(ctx, &u); !apierrors.IsNotFound(err) {
-			c.log.Error(err, fmt.Sprintf("failed to delete %s, %s", u.GetKind(), getKey(&u)))
+			c.log.Error(err, fmt.Sprintf("failed to delete %s, %s", u.GetKind(), client.ObjectKeyFromObject(&u)))
 		}
 
 	}
@@ -239,33 +230,62 @@ func (c *agentController) runHypershiftInstall() error {
 		return err
 	}
 
-	deploy = &appsv1.Deployment{}
-	if err := c.spokeUncachedClient.Get(ctx, hyperOperatorKey, deploy); err == nil || !apierrors.IsNotFound(err) {
+	return c.markManagedclusterAddon(ctx)
+}
+
+func (c *agentController) markManagedclusterAddon(ctx context.Context) error {
+	addonCfg := &addonv1alpha1.ManagedClusterAddOn{}
+	addonCfgKey := types.NamespacedName{Name: util.AddonControllerName, Namespace: c.clusterName}
+
+	if err := c.spokeUncachedClient.Get(ctx, addonCfgKey, addonCfg); err == nil {
+
 		c.log.Info(fmt.Sprintf("hypershift operator %s deployment not found after install, err: %v", hyperOperatorKey, err))
 		return nil
 	}
 
-	a := deploy.GetAnnotations()
+	if !addonCfg.GetDeletionTimestamp().IsZero() {
+		c.log.Info("deleting the hypershift addon")
+		return nil
+	}
+
+	a := addonCfg.GetAnnotations()
 	if len(a) == 0 {
 		a = map[string]string{}
 	}
 
-	a[hypershiftAddonAnnotationKey] = "installer"
+	a[hypershiftAddonAnnotationKey] = util.AddonControllerName
 
-	deploy.SetAnnotations(a)
+	addonCfg.SetAnnotations(a)
 
 	// a placeholder for later use
-	noOp := func(in *appsv1.Deployment) controllerutil.MutateFn {
+	noOp := func(in *addonv1alpha1.ManagedClusterAddOn) controllerutil.MutateFn {
 		return func() error {
 			return nil
 		}
 	}
 
-	if _, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, deploy, noOp(deploy)); err != nil {
-		c.log.Error(err, fmt.Sprintf("failed to CreateOrUpdate the existing hypershift operator %s", getKey(deploy)))
+	if _, err := controllerutil.CreateOrPatch(ctx, c.spokeUncachedClient, addonCfg, noOp(addonCfg)); err != nil {
+		c.log.Error(err, fmt.Sprintf("failed to CreateOrPatch the existing hypershift operator %s", client.ObjectKeyFromObject(addonCfg)))
 		return err
 
 	}
 
 	return nil
+}
+
+func (c *agentController) isManagedclusterAddonMarked(ctx context.Context) bool {
+	addonCfg := &addonv1alpha1.ManagedClusterAddOn{}
+	addonCfgKey := types.NamespacedName{Name: util.AddonControllerName, Namespace: c.clusterName}
+
+	if err := c.spokeUncachedClient.Get(ctx, addonCfgKey, addonCfg); err == nil {
+		c.log.Info(fmt.Sprintf("hypershift operator %s deployment not found after install, err: %v", hyperOperatorKey, err))
+		return false
+	}
+
+	a := addonCfg.GetAnnotations()
+	if len(a) == 0 || len(a[hypershiftAddonAnnotationKey]) == 0 {
+		return false
+	}
+
+	return true
 }
