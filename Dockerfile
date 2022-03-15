@@ -17,6 +17,5 @@ ENV USER_UID=1001
 COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift-addon .
 COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift /usr/bin
 
-ENV  PATH="/go/src/github.com/stolostron/hypershift-addon-operator/bin:$PATH"
 
 USER ${USER_UID}
