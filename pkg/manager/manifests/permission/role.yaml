@@ -9,4 +9,4 @@ rules:
     verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: ["addon.open-cluster-management.io"]
     resources: ["managedclusteraddons"]
-    verbs: ["get", "list", "watch", "update"]
+    verbs: ["get", "list", "watch", "update", "patch"]

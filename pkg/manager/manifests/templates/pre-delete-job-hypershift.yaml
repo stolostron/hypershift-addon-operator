@@ -4,7 +4,7 @@ metadata:
   name: {{ .AddonName }}-cleanup
   namespace: {{ .AddonInstallNamespace }}
   labels:
-    "open-cluster-management.io/addon-pre-delete": ""
+    "open-cluster-management.io/addon-pre-delete": "" # this fetaure require the acm2.5
 spec:
   manualSelector: true
   selector:
@@ -16,14 +16,21 @@ spec:
         job: {{ .AddonName }}-cleanup
     spec:
       serviceAccountName: {{ .AgentServiceAccountName }}
+      volumes:
+      - name: hub-config
+        secret:
+          secretName: {{ .KubeConfigSecret }}
       restartPolicy: Never
       containers:
       - name: {{ .AddonName }}
         image: {{ .Image }}
-        imagePullPolicy: {{ .Values.global.imagePullPolicy }}
-        resources:
-          {{- toYaml .Values.resources | nindent 10 }}
+        imagePullPolicy: Always
         args:
           - "./hypershift-addon"
           - "cleanup"
-          - "--addon-namespace={{ .Values.addonInstallNamespace }}"
+          - "--hub-kubeconfig=/var/run/hub/kubeconfig"
+          - "--addon-namespace={{ .AddonInstallNamespace }}"
+          - "--cluster-name={{ .ClusterName }}"
+        volumeMounts:
+          - name: hub-config
+            mountPath: /var/run/hub

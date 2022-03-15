@@ -41,7 +41,7 @@ import (
 )
 
 const (
-	hypershiftAddonAnnotationKey = "addon.hypershift.open-cluster-management.io"
+	hypershiftAddonAnnotationKey = "hypershift.open-cluster-management.io/createBy"
 	hypershiftBucketSecretName   = "hypershift-operator-oidc-provider-s3-credentials"
 	kindAppliedManifestWork      = "AppliedManifestWork"
 )
@@ -54,7 +54,6 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(hyperv1alpha1.AddToScheme(scheme))
-
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -221,10 +220,6 @@ func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedNam
 	}
 }
 
-func getKey(obj metav1.Object) types.NamespacedName {
-	return types.NamespacedName{Name: obj.GetName(), Namespace: obj.GetNamespace()}
-}
-
 func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
@@ -246,7 +241,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			se.SetName(hubMirrorSecretName(se.Name))
 			if err := c.hubClient.Delete(ctx, se); err != nil {
 				lastErr = err
-				c.log.Error(err, fmt.Sprintf("failed to delete secret(%s) on hub", getKey(se)))
+				c.log.Error(err, fmt.Sprintf("failed to delete secret(%s) on hub", client.ObjectKeyFromObject(se)))
 			}
 		}
 
@@ -277,9 +272,9 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		}
 		for _, se := range hcSecrets {
 			hubMirrorSecret := se.DeepCopy()
-			if err := c.spokeClient.Get(ctx, getKey(se), se); err != nil {
+			if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(se), se); err != nil {
 				lastErr = err
-				c.log.Error(err, fmt.Sprintf("failed to get hostedcluster secret %s on local cluster, skip this one", getKey(se)))
+				c.log.Error(err, fmt.Sprintf("failed to get hostedcluster secret %s on local cluster, skip this one", client.ObjectKeyFromObject(se)))
 				continue
 			}
 
@@ -295,9 +290,9 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			_, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, hubMirrorSecret, nilFunc)
 			if err != nil {
 				lastErr = err
-				c.log.Error(err, fmt.Sprintf("failed to createOrUpdate hostedcluster secret %s to hub", getKey(hubMirrorSecret)))
+				c.log.Error(err, fmt.Sprintf("failed to createOrUpdate hostedcluster secret %s to hub", client.ObjectKeyFromObject(hubMirrorSecret)))
 			} else {
-				c.log.Info(fmt.Sprintf("createOrUpdate hostedcluster secret %s to hub", getKey(hubMirrorSecret)))
+				c.log.Info(fmt.Sprintf("createOrUpdate hostedcluster secret %s to hub", client.ObjectKeyFromObject(hubMirrorSecret)))
 			}
 		}
 

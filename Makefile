@@ -62,7 +62,7 @@ vendor:
 	go mod vendor
 
 .PHONY: build
-build: vendor fmt vet ## Build manager binary.
+build: vendor fmt vet build-hypershift ## Build manager binary.
 	GOFLAGS="" go build -o bin/hypershift-addon cmd/main.go
 
 .PHONY: run
@@ -70,7 +70,7 @@ run: fmt vet ## Run a controller from your host.
 	go run cmd/main.go
 
 .PHONY: docker-build
-docker-build:   #test ## Build docker image with the manager.
+docker-build:   # Build docker image with the manager.
 	docker build -t ${IMG} .
 
 .PHONY: docker-push
@@ -80,7 +80,7 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: build-hypershift
 build-hypershift: ## Push docker image with the manager.
-	build/build-hypershift.sh
+	TargetHypershiftRelease="main" build/build-hypershift.sh
 
 ##@ Deployment
 
