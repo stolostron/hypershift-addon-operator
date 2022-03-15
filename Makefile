@@ -61,9 +61,14 @@ vendor:
 	go mod tidy -compat=1.17
 	go mod vendor
 
-.PHONY: build
-build: vendor fmt vet build-hypershift ## Build manager binary.
+.PHONY: build-downstream
+build-downstream: vendor fmt vet ## Build manager binary.
 	GOFLAGS="" go build -o bin/hypershift-addon cmd/main.go
+
+
+.PHONY: build
+build: build-downstream build-hypershift ## Build manager binary.
+
 
 .PHONY: run
 run: fmt vet ## Run a controller from your host.
