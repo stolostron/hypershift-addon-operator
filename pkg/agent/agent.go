@@ -47,8 +47,7 @@ const (
 )
 
 var (
-	scheme           = runtime.NewScheme()
-	hyperOperatorKey = types.NamespacedName{Name: "operator", Namespace: "hypershift"}
+	scheme = runtime.NewScheme()
 )
 
 func init() {
@@ -87,6 +86,7 @@ type AgentOptions struct {
 	HypershiftOperatorImage string
 	MetricAddr              string
 	ProbeAddr               string
+	PullSecretName          string
 }
 
 // NewWorkloadAgentOptions returns the flags with default value set
@@ -100,6 +100,8 @@ func (o *AgentOptions) AddFlags(cmd *cobra.Command) {
 	flags.StringVar(&o.HubKubeconfigFile, "hub-kubeconfig", o.HubKubeconfigFile, "Location of kubeconfig file to connect to hub cluster.")
 	flags.StringVar(&o.SpokeClusterName, "cluster-name", o.SpokeClusterName, "Name of spoke cluster.")
 	flags.StringVar(&o.AddonNamespace, "addon-namespace", util.AgentInstallationNamespace, "Installation namespace of addon.")
+	flags.StringVar(&o.PullSecretName, "multicluster-pull-secret", util.MulticlusterHubPullSecret, "Pull secret that will be injected to hypershift serviceaccount")
+
 	flags.StringVar(&o.HypershiftOperatorImage, "hypershfit-operator-image", util.DefaultHypershiftOperatorImage, "The HyperShift operator image to deploy")
 
 	flags.StringVar(&o.MetricAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -145,12 +147,10 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		hubClient:           hubClient,
 		spokeUncachedClient: spokeKubeClient,
 		spokeClient:         mgr.GetClient(),
-		log:                 o.Log.WithName("agent-reconciler"),
-		clusterName:         o.SpokeClusterName,
-		addonName:           o.AddonName,
-		addonNamespace:      o.AddonNamespace,
-		operatorImage:       o.HypershiftOperatorImage,
 	}
+
+	o.Log = o.Log.WithName("agent-reconciler")
+	aCtrl.plugInOption(o)
 
 	// retry 3 times, in case something wrong with creating the hypershift install job
 	if err := aCtrl.runHypershiftCmdWithRetires(3, time.Second*10, aCtrl.runHypershiftInstall); err != nil {
@@ -199,6 +199,16 @@ type agentController struct {
 	addonName           string
 	addonNamespace      string
 	operatorImage       string
+	pullSecret          string
+}
+
+func (c *agentController) plugInOption(o *AgentOptions) {
+	c.log = o.Log
+	c.clusterName = o.SpokeClusterName
+	c.addonName = o.AddonName
+	c.addonNamespace = o.AddonNamespace
+	c.operatorImage = o.HypershiftOperatorImage
+	c.pullSecret = o.PullSecretName
 }
 
 func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedName) []*corev1.Secret {
