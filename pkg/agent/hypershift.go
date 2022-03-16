@@ -157,6 +157,7 @@ func (c *agentController) runHypershiftCleanup() error {
 	}
 
 	for _, item := range items {
+		item := item
 		if err := c.spokeUncachedClient.Delete(ctx, &item); err != nil && !apierrors.IsNotFound(err) {
 			c.log.Error(err, fmt.Sprintf("failed to delete %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
 		}
@@ -260,6 +261,7 @@ func (c *agentController) runHypershiftInstall() error {
 
 	//TODO: @ianzhang366 fix the dependecy issue and use better way to inject the pull secret
 	for _, item := range items {
+		item := item
 		if item.GetKind() == "ServiceAccount" {
 			sa := &corev1.ServiceAccount{
 				ImagePullSecrets: []corev1.LocalObjectReference{
