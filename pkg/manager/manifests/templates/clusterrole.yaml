@@ -21,6 +21,7 @@ rules:
   resources:
   - secret
   - configmap
+  - namespace
   verbs:
   - create
   - delete
