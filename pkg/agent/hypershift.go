@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -22,7 +23,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	"k8s.io/client-go/tools/clientcmd"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -66,17 +66,6 @@ func (o *AgentOptions) runCleanup(ctx context.Context) error {
 
 	flag.Parse()
 
-	// build kubeinformerfactory of hub cluster
-	hubConfig, err := clientcmd.BuildConfigFromFlags("" /* leave masterurl as empty */, o.HubKubeconfigFile)
-	if err != nil {
-		return fmt.Errorf("failed to create hubConfig from flag, err: %w", err)
-	}
-
-	hubClient, err := client.New(hubConfig, client.Options{Scheme: scheme})
-	if err != nil {
-		return fmt.Errorf("failed to create hubClient, err: %w", err)
-	}
-
 	spokeConfig := ctrl.GetConfigOrDie()
 
 	c, err := ctrlClient.New(spokeConfig, ctrlClient.Options{})
@@ -85,7 +74,6 @@ func (o *AgentOptions) runCleanup(ctx context.Context) error {
 	}
 
 	aCtrl := &agentController{
-		hubClient:           hubClient,
 		spokeUncachedClient: c,
 	}
 
@@ -212,7 +200,7 @@ func (c *agentController) runHypershiftInstall() error {
 
 	if err, ok := c.deploymentExist(ctx); ok {
 		c.log.Error(err, "hypershift operator already exist or failed to get deployment, skip install")
-		return err
+		return nil
 	}
 
 	bucketSecretKey := types.NamespacedName{Name: hypershiftBucketSecretName, Namespace: c.clusterName}
@@ -234,7 +222,7 @@ func (c *agentController) runHypershiftInstall() error {
 	credsFile := file.Name()
 	defer os.Remove(credsFile)
 
-	c.log.Info(credsFile)
+	c.log.Info(fmt.Sprintf("aws config at: %s", credsFile))
 	if err := ioutil.WriteFile(credsFile, bucketCreds, 0600); err != nil { // likely a unrecoverable error, don't retry
 		return fmt.Errorf("failed to write to temp file for aws credentials, err: %w", err)
 	}
@@ -247,12 +235,26 @@ func (c *agentController) runHypershiftInstall() error {
 		"install",
 		"render",
 		"--format", "json",
-		"--hypershift-image", c.operatorImage,
 		"--namespace", hypershiftOperatorKey.Namespace,
 		"--oidc-storage-provider-s3-bucket-name", bucketName,
 		"--oidc-storage-provider-s3-region", bucketRegion,
 		"--oidc-storage-provider-s3-credentials", credsFile,
 	}
+
+	if c.withOverride {
+		imageStreamFile, err := c.readInDownstreamOverride()
+		if err != nil {
+			return fmt.Errorf("failed to read the downstream image override configmap, err: %w", err)
+		}
+
+		defer os.Remove(imageStreamFile.Name())
+
+		args = append(args, "--image-refs", imageStreamFile.Name())
+	} else {
+		args = append(args, "--hypershift-image", c.operatorImage)
+	}
+
+	c.log.Info(fmt.Sprintf("hypershift install args: %v", args))
 
 	items, err := c.runHypershiftRender(args)
 	if err != nil {
@@ -344,7 +346,7 @@ func (c *agentController) ensurePullSecret(ctx context.Context) error {
 func (c *agentController) isDeploymentMarked(ctx context.Context) bool {
 	obj := &appsv1.Deployment{}
 
-	if err := c.hubClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
+	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
 		c.log.Info(fmt.Sprintf("hypershift operator %s deployment not found after install, err: %v", hypershiftOperatorKey, err))
 		return false
 	}
@@ -369,4 +371,34 @@ func (c *agentController) deploymentExist(ctx context.Context) (error, bool) {
 	}
 
 	return nil, true
+}
+
+func (c *agentController) readInDownstreamOverride() (*os.File, error) {
+	cm := &corev1.ConfigMap{}
+	cmKey := types.NamespacedName{Name: util.HypershiftDownstreamOverride, Namespace: c.addonNamespace}
+
+	if err := c.spokeUncachedClient.Get(context.TODO(), cmKey, cm); err != nil {
+		return nil, fmt.Errorf("failed to get the downstream image override configmap, err: %w", err)
+	}
+
+	d := cm.Data[util.HypershiftOverrideKey]
+
+	im, err := base64.StdEncoding.DecodeString(d)
+	if err != nil {
+		return nil, err
+	}
+
+	file, err := ioutil.TempFile("", "hypershift-imagestream")
+	if err != nil { // likely a unrecoverable error, don't retry
+		return nil, fmt.Errorf("failed to create temp file for hoding aws credentials, err: %w", err)
+	}
+
+	f := file.Name()
+
+	c.log.Info(fmt.Sprintf("imagestream at: %s", f))
+	if err := ioutil.WriteFile(f, im, 0600); err != nil {
+		return nil, fmt.Errorf("failed to write to temp file for imagestream, err: %w", err)
+	}
+
+	return file, nil
 }

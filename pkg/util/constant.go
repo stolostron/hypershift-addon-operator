@@ -10,5 +10,7 @@ const (
 
 	MulticlusterHubPullSecret = "multiclusterhub-operator-pull-secret"
 
-	AddonControllerName = "hypershift-addon"
+	HypershiftDownstreamOverride = "hypershift-addon-manager-downstream-override"
+	HypershiftOverrideKey        = "imagestream"
+	AddonControllerName          = "hypershift-addon"
 )
