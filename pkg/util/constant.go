@@ -8,7 +8,7 @@ const (
 	// AgentInstallationNamespace is the namespace on the managed cluster to install the addon agent.
 	AgentInstallationNamespace = "open-cluster-management-agent-addon"
 
-	MulticlusterHubPullSecret = "multiclusterhub-operator-pull-secret"
+	MulticlusterHubPullSecret = "open-cluster-management-image-pull-credentials"
 
 	HypershiftDownstreamOverride = "hypershift-addon-manager-downstream-override"
 	HypershiftOverrideKey        = "imagestream"
