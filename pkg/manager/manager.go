@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"embed"
+	"encoding/base64"
 	"fmt"
 	"os"
 
@@ -12,12 +13,17 @@ import (
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/spf13/cobra"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/component-base/version"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
@@ -33,6 +39,10 @@ var (
 	genericCodecs = serializer.NewCodecFactory(genericScheme)
 	genericCodec  = genericCodecs.UniversalDeserializer()
 )
+
+func init() {
+	utilruntime.Must(clientgoscheme.AddToScheme(genericScheme))
+}
 
 const (
 	hypershiftAddonImageName    = "HYPERSHIFT_ADDON_IMAGE_NAME"
@@ -51,7 +61,15 @@ var agentPermissionFiles = []string{
 	"manifests/permission/rolebinding.yaml",
 }
 
+type override struct {
+	client.Client
+	log               logr.Logger
+	operatorNamespace string
+	withOverride      bool
+}
+
 func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
+	var withOverride bool
 	runController := func(ctx context.Context, controllerContext *controllercmd.ControllerContext) error {
 		mgr, err := addonmanager.New(controllerContext.KubeConfig)
 		if err != nil {
@@ -64,8 +82,21 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 			utilrand.String(5),
 		)
 
+		hubClient, err := client.New(controllerContext.KubeConfig, client.Options{Scheme: genericScheme})
+		if err != nil {
+			log.Error(err, "failed to create hub client to fetch downstream image override configmap")
+			return err
+		}
+
+		o := &override{
+			Client:            hubClient,
+			log:               log.WithName("override-values"),
+			operatorNamespace: controllerContext.OperatorNamespace,
+			withOverride:      withOverride,
+		}
+
 		agentAddon, err := addonfactory.NewAgentAddonFactory(componentName, fs, templatePath).
-			WithGetValuesFuncs(getValueForAgentTemplate, addonfactory.GetValuesFromAddonAnnotation).
+			WithGetValuesFuncs(o.getValueForAgentTemplate, addonfactory.GetValuesFromAddonAnnotation).
 			WithAgentRegistrationOption(registrationOption).
 			BuildTemplateAgentAddon()
 		if err != nil {
@@ -99,6 +130,7 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 	// add disable leader election flag
 	flags := cmd.Flags()
 	flags.BoolVar(&cmdConfig.DisableLeaderElection, "disable-leader-election", true, "Disable leader election for the agent.")
+	flags.BoolVar(&withOverride, "with-image-override", false, "Use image from override configmap")
 
 	return cmd
 }
@@ -165,7 +197,7 @@ func applyAgentPermissionManifestFromFile(file, clusterName, componentName strin
 }
 
 // getValues prepare values for templates at manifests/templates
-func getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
+func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 	addon *addonapiv1alpha1.ManagedClusterAddOn) (addonfactory.Values, error) {
 	installNamespace := addon.Spec.InstallNamespace
 	if len(installNamespace) == 0 {
@@ -182,24 +214,45 @@ func getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		operatorImage = util.DefaultHypershiftOperatorImage
 	}
 
+	content := ""
+
+	if o.withOverride {
+		cm := &corev1.ConfigMap{}
+		cmKey := types.NamespacedName{Name: util.HypershiftDownstreamOverride, Namespace: o.operatorNamespace}
+		if err := o.Client.Get(context.TODO(), cmKey, cm); err != nil {
+			return nil, fmt.Errorf("failed to get override configmap, err: %w", err)
+		}
+
+		c := cm.Data[util.HypershiftOverrideKey]
+		content = base64.StdEncoding.EncodeToString([]byte(c))
+	}
+
 	manifestConfig := struct {
-		KubeConfigSecret        string
-		ClusterName             string
-		AddonName               string
-		AddonInstallNamespace   string
-		HypershiftOperatorImage string
-		Image                   string
-		SpokeRolebindingName    string
-		AgentServiceAccountName string
+		KubeConfigSecret                    string
+		ClusterName                         string
+		AddonName                           string
+		AddonInstallNamespace               string
+		HypershiftOperatorImage             string
+		Image                               string
+		SpokeRolebindingName                string
+		AgentServiceAccountName             string
+		HypershiftDownstreamOverride        string
+		HypershiftOverrideKey               string
+		HypershiftDownstreamOverrideContent string
+		HyeprshiftImageOverride             bool
 	}{
-		KubeConfigSecret:        fmt.Sprintf("%s-hub-kubeconfig", addon.Name),
-		AddonInstallNamespace:   installNamespace,
-		ClusterName:             cluster.Name,
-		AddonName:               fmt.Sprintf("%s-agent", addon.Name),
-		Image:                   addonImage,
-		HypershiftOperatorImage: operatorImage,
-		SpokeRolebindingName:    addon.Name,
-		AgentServiceAccountName: fmt.Sprintf("%s-agent-sa", addon.Name),
+		KubeConfigSecret:                    fmt.Sprintf("%s-hub-kubeconfig", addon.Name),
+		AddonInstallNamespace:               installNamespace,
+		ClusterName:                         cluster.Name,
+		AddonName:                           fmt.Sprintf("%s-agent", addon.Name),
+		Image:                               addonImage,
+		HypershiftOperatorImage:             operatorImage,
+		SpokeRolebindingName:                addon.Name,
+		AgentServiceAccountName:             fmt.Sprintf("%s-agent-sa", addon.Name),
+		HyeprshiftImageOverride:             o.withOverride,
+		HypershiftOverrideKey:               util.HypershiftOverrideKey,
+		HypershiftDownstreamOverride:        util.HypershiftDownstreamOverride,
+		HypershiftDownstreamOverrideContent: content,
 	}
 
 	return addonfactory.StructToValues(manifestConfig), nil

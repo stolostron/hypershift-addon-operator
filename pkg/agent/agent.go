@@ -87,6 +87,7 @@ type AgentOptions struct {
 	MetricAddr              string
 	ProbeAddr               string
 	PullSecretName          string
+	WithOverride            bool
 }
 
 // NewWorkloadAgentOptions returns the flags with default value set
@@ -103,6 +104,8 @@ func (o *AgentOptions) AddFlags(cmd *cobra.Command) {
 	flags.StringVar(&o.PullSecretName, "multicluster-pull-secret", util.MulticlusterHubPullSecret, "Pull secret that will be injected to hypershift serviceaccount")
 
 	flags.StringVar(&o.HypershiftOperatorImage, "hypershfit-operator-image", util.DefaultHypershiftOperatorImage, "The HyperShift operator image to deploy")
+
+	flags.BoolVar(&o.WithOverride, "with-image-override", false, "Use image from override configmap")
 
 	flags.StringVar(&o.MetricAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flags.StringVar(&o.ProbeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -200,6 +203,7 @@ type agentController struct {
 	addonNamespace      string
 	operatorImage       string
 	pullSecret          string
+	withOverride        bool
 }
 
 func (c *agentController) plugInOption(o *AgentOptions) {
@@ -209,6 +213,7 @@ func (c *agentController) plugInOption(o *AgentOptions) {
 	c.addonNamespace = o.AddonNamespace
 	c.operatorImage = o.HypershiftOperatorImage
 	c.pullSecret = o.PullSecretName
+	c.withOverride = o.WithOverride
 }
 
 func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedName) []*corev1.Secret {
@@ -249,7 +254,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		for _, se := range hcSecrets {
 			se.SetNamespace(c.clusterName)
 			se.SetName(hubMirrorSecretName(se.Name))
-			if err := c.hubClient.Delete(ctx, se); err != nil {
+			if err := c.hubClient.Delete(ctx, se); err != nil && !apierrors.IsNotFound(err) {
 				lastErr = err
 				c.log.Error(err, fmt.Sprintf("failed to delete secret(%s) on hub", client.ObjectKeyFromObject(se)))
 			}
