@@ -254,7 +254,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		for _, se := range hcSecrets {
 			se.SetNamespace(c.clusterName)
 			se.SetName(hubMirrorSecretName(se.Name))
-			if err := c.hubClient.Delete(ctx, se); err != nil {
+			if err := c.hubClient.Delete(ctx, se); err != nil && !apierrors.IsNotFound(err) {
 				lastErr = err
 				c.log.Error(err, fmt.Sprintf("failed to delete secret(%s) on hub", client.ObjectKeyFromObject(se)))
 			}

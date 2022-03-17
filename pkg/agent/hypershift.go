@@ -121,39 +121,6 @@ func getRandInt(m int64) int64 {
 	return n.Int64()
 }
 
-func (c *agentController) runHypershiftCleanup() error {
-	c.log.Info("enter runHypershiftCleanup")
-	defer c.log.Info("exit runHypershiftCleanup")
-	ctx := context.TODO()
-
-	if !c.isDeploymentMarked(ctx) {
-		c.log.Info(fmt.Sprintf("skip the hypershift operator deleting, not created by %s", util.AddonControllerName))
-		return nil
-	}
-
-	args := []string{
-		"install",
-		"render",
-		"--hypershift-image", c.operatorImage,
-		"--namespace", hypershiftOperatorKey.Namespace,
-		"--format", "json",
-	}
-
-	items, err := c.runHypershiftRender(args)
-	if err != nil {
-		return err
-	}
-
-	for _, item := range items {
-		item := item
-		if err := c.spokeUncachedClient.Delete(ctx, &item); err != nil && !apierrors.IsNotFound(err) {
-			c.log.Error(err, fmt.Sprintf("failed to delete %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
-		}
-	}
-
-	return nil
-}
-
 func (c *agentController) runHypershiftRender(args []string) ([]unstructured.Unstructured, error) {
 	out := []unstructured.Unstructured{}
 	//hypershiftInstall will get the inClusterConfig and use it to apply resources
@@ -191,6 +158,39 @@ func (c *agentController) runHypershiftRender(args []string) ([]unstructured.Uns
 	}
 
 	return out, nil
+}
+
+func (c *agentController) runHypershiftCleanup() error {
+	c.log.Info("enter runHypershiftCleanup")
+	defer c.log.Info("exit runHypershiftCleanup")
+	ctx := context.TODO()
+
+	if !c.isDeploymentMarked(ctx) {
+		c.log.Info(fmt.Sprintf("skip the hypershift operator deleting, not created by %s", util.AddonControllerName))
+		return nil
+	}
+
+	args := []string{
+		"install",
+		"render",
+		"--hypershift-image", c.operatorImage,
+		"--namespace", hypershiftOperatorKey.Namespace,
+		"--format", "json",
+	}
+
+	items, err := c.runHypershiftRender(args)
+	if err != nil {
+		return err
+	}
+
+	for _, item := range items {
+		item := item
+		if err := c.spokeUncachedClient.Delete(ctx, &item); err != nil && !apierrors.IsNotFound(err) {
+			c.log.Error(err, fmt.Sprintf("failed to delete %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
+		}
+	}
+
+	return nil
 }
 
 func (c *agentController) runHypershiftInstall() error {
@@ -299,6 +299,7 @@ func (c *agentController) runHypershiftInstall() error {
 			c.log.Error(err, fmt.Sprintf("failed to create %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
 		}
 
+		c.log.Info(fmt.Sprintf("created: %s at %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
 	}
 
 	return nil
