@@ -16,10 +16,6 @@ spec:
         job: {{ .AddonName }}-cleanup
     spec:
       serviceAccountName: {{ .AgentServiceAccountName }}
-      volumes:
-      - name: hub-config
-        secret:
-          secretName: {{ .KubeConfigSecret }}
       restartPolicy: Never
       containers:
       - name: {{ .AddonName }}
@@ -28,9 +24,6 @@ spec:
         args:
           - "./hypershift-addon"
           - "cleanup"
-          - "--hub-kubeconfig=/var/run/hub/kubeconfig"
           - "--addon-namespace={{ .AddonInstallNamespace }}"
           - "--cluster-name={{ .ClusterName }}"
-        volumeMounts:
-          - name: hub-config
-            mountPath: /var/run/hub
+
