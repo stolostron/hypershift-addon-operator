@@ -307,10 +307,16 @@ func (c *agentController) runHypershiftInstall() error {
 
 func (c *agentController) ensurePullSecret(ctx context.Context) error {
 	obj := &corev1.Secret{}
-	mchPullSecretKey := types.NamespacedName{Name: c.pullSecret, Namespace: c.addonNamespace}
+	mcePullSecretKey := types.NamespacedName{Name: c.pullSecret, Namespace: c.addonNamespace}
 
-	if err := c.spokeUncachedClient.Get(ctx, mchPullSecretKey, obj); err != nil {
-		return fmt.Errorf("failed to get mch pull secret, err: %w", err)
+	if err := c.spokeUncachedClient.Get(ctx, mcePullSecretKey, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.log.Info("mce pull secret not found, skip copy it to the hypershift namespace",
+				"namespace", c.addonNamespace, "name", c.pullSecret)
+			return nil
+		}
+
+		return fmt.Errorf("failed to get mce pull secret, err: %w", err)
 	}
 
 	hypershiftNs := &corev1.Namespace{
