@@ -9,41 +9,33 @@ import (
 	"github.com/go-logr/logr"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/spf13/cobra"
-
 	corev1 "k8s.io/api/core/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-
-	"sigs.k8s.io/controller-runtime/pkg/healthz"
-
-	"github.com/stolostron/hypershift-addon-operator/pkg/util"
-
-	"k8s.io/client-go/kubernetes"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/types"
-
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
-
 	"open-cluster-management.io/addon-framework/pkg/lease"
 
-	workv1 "open-cluster-management.io/api/work/v1"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 )
 
 const (
 	hypershiftAddonAnnotationKey = "hypershift.open-cluster-management.io/createBy"
 	hypershiftBucketSecretName   = "hypershift-operator-oidc-provider-s3-credentials"
 	kindAppliedManifestWork      = "AppliedManifestWork"
+	hypershiftDeploymentAnnoKey  = "cluster.open-cluster-management.io/hypershiftdeployment"
 )
 
 var (
@@ -141,7 +133,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("failed to create hubClient, err: %w", err)
 	}
 
-	spokeKubeClient, err := client.New(spokeConfig, ctrlClient.Options{})
+	spokeKubeClient, err := client.New(spokeConfig, client.Options{})
 	if err != nil {
 		return fmt.Errorf("failed to create spoke client, err: %w", err)
 	}
@@ -280,7 +272,6 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	createOrUpdateMirrorSecrets := func() error {
 		var lastErr error
-		hypershiftDeploymentAnnoKey := "cluster.open-cluster-management.io/hypershiftdeployment"
 		hypershiftDeploymentAnnoValue, ok := hc.GetAnnotations()[hypershiftDeploymentAnnoKey]
 		if !ok || len(hypershiftDeploymentAnnoValue) == 0 {
 			lastErr = fmt.Errorf("failed to get hypershift deployment annotation from hosted cluster")
@@ -317,27 +308,13 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return ctrl.Result{}, createOrUpdateMirrorSecrets()
 }
 
-func isOwnerByAppliedManifestWork(ref []metav1.OwnerReference) bool {
-	n := len(ref)
-
-	if n == 0 {
-		return false
-	}
-
-	for _, r := range ref {
-		if r.APIVersion == workv1.GroupVersion.String() && r.Kind == kindAppliedManifestWork {
-			return true
-		}
-	}
-
-	return false
-}
-
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
 	filterByOwner := func(obj client.Object) bool {
-		owners := obj.GetOwnerReferences()
-
-		return isOwnerByAppliedManifestWork(owners)
+		hypershiftDeploymentAnnoValue, ok := obj.GetAnnotations()[hypershiftDeploymentAnnoKey]
+		if !ok || len(hypershiftDeploymentAnnoValue) == 0 {
+			return false
+		}
+		return true
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
