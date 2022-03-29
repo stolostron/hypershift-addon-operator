@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -11,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -27,6 +29,7 @@ import (
 
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
 	"open-cluster-management.io/addon-framework/pkg/lease"
+	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 )
@@ -138,10 +141,16 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("failed to create spoke client, err: %w", err)
 	}
 
+	spokeClusterClient, err := clusterclientset.NewForConfig(spokeConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create spoke clusters client, err: %w", err)
+	}
+
 	aCtrl := &agentController{
 		hubClient:           hubClient,
 		spokeUncachedClient: spokeKubeClient,
 		spokeClient:         mgr.GetClient(),
+		spokeClustersClient: spokeClusterClient,
 	}
 
 	o.Log = o.Log.WithName("agent-reconciler")
@@ -167,6 +176,10 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 
 	go leaseUpdater.Start(ctx)
 
+	if err := aCtrl.createManagementClusterClaim(ctx); err != nil {
+		return fmt.Errorf("unable to create management cluster claim, err: %w", err)
+	}
+
 	log.Info("starting manager")
 
 	//+kubebuilder:scaffold:builder
@@ -187,7 +200,8 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 type agentController struct {
 	hubClient           client.Client
 	spokeUncachedClient client.Client
-	spokeClient         client.Client //local for agent
+	spokeClient         client.Client              //local for agent
+	spokeClustersClient clusterclientset.Interface // client used to create cluster claim for the hypershift management cluster
 	log                 logr.Logger
 	recorder            events.Recorder
 	clusterName         string
@@ -270,6 +284,12 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
+	if hc.Status.KubeConfig == nil ||
+		!meta.IsStatusConditionTrue(hc.Status.Conditions, string(hyperv1alpha1.HostedClusterAvailable)) {
+		// Wait for secrets to exist
+		return ctrl.Result{}, nil
+	}
+
 	createOrUpdateMirrorSecrets := func() error {
 		var lastErr error
 		hypershiftDeploymentAnnoValue, ok := hc.GetAnnotations()[hypershiftDeploymentAnnoKey]
@@ -305,7 +325,27 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return lastErr
 	}
 
-	return ctrl.Result{}, createOrUpdateMirrorSecrets()
+	if err := createOrUpdateMirrorSecrets(); err != nil {
+		return ctrl.Result{}, err
+	}
+
+	if err := c.createHostedClusterClaim(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Status.KubeConfig.Name},
+		generateClusterClientFromSecret); err != nil {
+		if strings.Contains(err.Error(), "the server could not find the requested resource") ||
+			strings.Contains(err.Error(), "no such host") ||
+			strings.Contains(err.Error(), "i/o timeout") {
+			// just log the infomation and wait for the next reconcile to retry.
+			// since the hosted cluster may:
+			//   - not available now
+			//   - have not been imported to the hub, and there is no clusterclaim CRD.
+			c.log.V(4).Info("unable to create hosted cluster claim, wait for the next retry", "error", err.Error())
+			return ctrl.Result{Requeue: true, RequeueAfter: 1 * time.Minute}, nil
+		} else {
+			return ctrl.Result{}, err
+		}
+	}
+
+	return ctrl.Result{}, nil
 }
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
