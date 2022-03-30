@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -331,18 +330,12 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	if err := c.createHostedClusterClaim(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Status.KubeConfig.Name},
 		generateClusterClientFromSecret); err != nil {
-		if strings.Contains(err.Error(), "the server could not find the requested resource") ||
-			strings.Contains(err.Error(), "no such host") ||
-			strings.Contains(err.Error(), "i/o timeout") {
-			// just log the infomation and wait for the next reconcile to retry.
-			// since the hosted cluster may:
-			//   - not available now
-			//   - have not been imported to the hub, and there is no clusterclaim CRD.
-			c.log.V(4).Info("unable to create hosted cluster claim, wait for the next retry", "error", err.Error())
-			return ctrl.Result{Requeue: true, RequeueAfter: 1 * time.Minute}, nil
-		} else {
-			return ctrl.Result{}, err
-		}
+		// just log the infomation and wait for the next reconcile to retry.
+		// since the hosted cluster may:
+		//   - not available now
+		//   - have not been imported to the hub, and there is no clusterclaim CRD.
+		c.log.V(4).Info("unable to create hosted cluster claim, wait for the next retry", "error", err.Error())
+		return ctrl.Result{Requeue: true, RequeueAfter: 1 * time.Minute}, nil
 	}
 
 	return ctrl.Result{}, nil

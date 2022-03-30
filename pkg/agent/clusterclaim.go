@@ -17,10 +17,10 @@ import (
 )
 
 const (
-	// labelExcludeBackup is true for the local-cluster will be not backed up into velero
+	// labelExcludeBackup is true for the local-cluster will not be backed up into velero
 	labelExcludeBackup = "velero.io/exclude-from-backup"
 
-	hypershiftManagementClusterClaimKey = "managementcluster.hypershift.openshift.io"
+	hypershiftManagementClusterClaimKey = "hostingcluster.hypershift.openshift.io"
 	hypershiftHostedClusterClaimKey     = "hostedcluster.hypershift.openshift.io"
 )
 
