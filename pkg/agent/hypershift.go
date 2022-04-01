@@ -369,7 +369,7 @@ func (c *agentController) isDeploymentMarked(ctx context.Context) bool {
 func (c *agentController) deploymentExist(ctx context.Context) (error, bool) {
 	obj := &appsv1.Deployment{}
 
-	if err := c.hubClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
+	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
 		if apierrors.IsNotFound(err) {
 			return nil, false
 		}
