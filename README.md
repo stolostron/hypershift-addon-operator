@@ -47,3 +47,4 @@ oc create secret generic hypershift-operator-oidc-provider-s3-credentials --from
 NAME               AVAILABLE   DEGRADED   PROGRESSING
 hypershift-addon   True
 ```
+
