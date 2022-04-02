@@ -62,26 +62,35 @@ rules:
     verbs:
       - '*'
   - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
+    verbs:
+      - '*'
+  - apiGroups:
       - apps
     resources:
       - deployments
     verbs:
       - '*'
   - apiGroups:
-      - apiextensions.k8s.io/v1
+      - apiextensions.k8s.io
     resources:
       - customresourcedefinitions
     verbs:
       - '*'
   - apiGroups:
-      - monitoring.coreos.com/v1
+      - monitoring.coreos.com
     resources:
       - servicemonitors
       - prometheuserules
     verbs:
       - '*'
   - apiGroups:
-      - scheduling.k8s.io/v1
+      - scheduling.k8s.io
     resources:
       - priorityclasses
     verbs:
