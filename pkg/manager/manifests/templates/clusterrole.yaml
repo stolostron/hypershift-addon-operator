@@ -42,6 +42,12 @@ rules:
       - '*'
   # Allow addon to install hypershift
   - apiGroups:
+      - cluster.open-cluster-management.io
+    resources:
+      - clusterclaims
+    verbs:
+      - '*'
+  - apiGroups:
       - ""
     resources:
       - services
