@@ -22,6 +22,9 @@ const (
 	HypershiftDownstreamOverride = "hypershift-operator-imagestream"
 	HypershiftOverrideKey        = "imagestream"
 	AddonControllerName          = "hypershift-addon"
+
+	HypershiftOperatorNamespace = "hypershift"
+	HypershiftOperatorName      = "operator"
 )
 
 // GenerateClientConfigFromSecret generate a client config from a given secret

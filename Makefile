@@ -7,6 +7,10 @@ IMG ?= $(REPO)hypershift-addon-operator:latest
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.22
 
+KUBECTL?=kubectl
+
+JUNIT_REPORT_FILE?=e2e-junit-report.xml
+
 # Get the currently used golang install path (in GOPATH/bin, unless GOBIN is set)
 ifeq (,$(shell go env GOBIN))
 GOBIN=$(shell go env GOPATH)/bin
@@ -53,7 +57,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test $(shell go list ./... | grep -v /test/e2e) -coverprofile cover.out
 
 ##@ Build
 .PHONY: vendor
@@ -111,3 +115,33 @@ GOBIN=$(PROJECT_DIR)/bin go get $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef
+
+build-e2e:
+	go test -c ./test/e2e
+
+test-e2e: build-e2e deploy-ocm deploy-addon-manager
+	./e2e.test -test.v -ginkgo.v -ginkgo.junit-report $(JUNIT_REPORT_FILE)
+
+.PHONY: deploy-addon-manager
+deploy-addon-manager:
+	$(KUBECTL) create namespace multicluster-engine --dry-run=client -o yaml | kubectl apply -f -
+	$(KUBECTL) apply -f example/addon-manager-deployment.yaml
+	$(KUBECTL) set image -n multicluster-engine deployment/hypershift-addon-manager hypershift-addon-manager=$(IMG)
+	$(KUBECTL) set env -n multicluster-engine deployment/hypershift-addon-manager HYPERSHIFT_ADDON_IMAGE_NAME=$(IMG)
+	$(KUBECTL) rollout status -n multicluster-engine deployment/hypershift-addon-manager --timeout=60s
+
+deploy-ocm: ensure-clusteradm
+	hack/install_ocm.sh
+
+.PHONY: ensure-clusteradm
+ensure-clusteradm:
+ifeq (, $(shell which clusteradm))
+	@{ \
+	set -e ;\
+	curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash ;\
+	}
+	CLUSTERADM=/usr/local/bin/controller-gen
+else
+	CLUSTERADM=$(shell which clusteradm)
+endif
+	$(@info CLUSTERADM="$(CLUSTERADM)")
