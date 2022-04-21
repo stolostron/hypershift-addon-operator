@@ -5,6 +5,8 @@ go 1.17
 require (
 	github.com/go-logr/logr v1.2.1
 	github.com/go-logr/zapr v1.2.0
+	github.com/onsi/ginkgo/v2 v2.1.3
+	github.com/onsi/gomega v1.17.0
 	github.com/openshift/hypershift v0.0.0-20220406072049-c6ce37a46f61
 	github.com/openshift/library-go v0.0.0-20220112153822-ac82336bd076
 	github.com/spf13/cobra v1.2.1
