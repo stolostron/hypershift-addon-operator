@@ -138,9 +138,10 @@ ensure-clusteradm:
 ifeq (, $(shell which clusteradm))
 	@{ \
 	set -e ;\
+	export INSTALL_DIR="${GOPATH}/bin" ;\
 	curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash ;\
 	}
-	CLUSTERADM=/usr/local/bin/controller-gen
+	CLUSTERADM=${GOPATH}/bin/clusteradm
 else
 	CLUSTERADM=$(shell which clusteradm)
 endif
