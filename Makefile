@@ -89,7 +89,7 @@ docker-push: ## Push docker image with the manager.
 
 .PHONY: build-hypershift
 build-hypershift: ## Push docker image with the manager.
-	TargetHypershiftRelease="release-4.10" build/build-hypershift.sh
+	TargetHypershiftRelease="release-4.11" build/build-hypershift.sh
 
 ##@ Deployment
 
