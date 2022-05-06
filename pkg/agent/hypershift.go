@@ -199,8 +199,8 @@ func (c *agentController) runHypershiftInstall() error {
 	defer c.log.Info("exit runHypershiftInstall")
 	ctx := context.TODO()
 
-	if err, ok := c.deploymentExist(ctx); ok {
-		c.log.Error(err, "hypershift operator already exist or failed to get deployment, skip install")
+	if err, ok := c.deploymentExistWithNoImageChange(ctx); ok {
+		c.log.Error(err, "hypershift operator already exists at the required image level, skip update")
 		return nil
 	}
 
@@ -296,11 +296,21 @@ func (c *agentController) runHypershiftInstall() error {
 			item.SetAnnotations(a)
 		}
 
-		if err := c.spokeUncachedClient.Create(ctx, &item); err != nil && !apierrors.IsAlreadyExists(err) {
-			c.log.Error(err, fmt.Sprintf("failed to create %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
+		itemBytes, err := item.MarshalJSON()
+		if err != nil {
+			c.log.Error(err, fmt.Sprintf("failed to marshal json %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
+			continue
 		}
 
-		c.log.Info(fmt.Sprintf("created: %s at %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
+		if err := c.spokeUncachedClient.Patch(ctx,
+			&item,
+			ctrlClient.RawPatch(types.ApplyPatchType, itemBytes),
+			ctrlClient.ForceOwnership,
+			ctrlClient.FieldOwner("hypershift")); err != nil {
+			c.log.Error(err, fmt.Sprintf("failed to apply %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
+			continue
+		}
+		c.log.Info(fmt.Sprintf("applied: %s at %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
 	}
 
 	return nil
@@ -344,7 +354,9 @@ func (c *agentController) ensurePullSecret(ctx context.Context) error {
 		return out
 	}
 
-	if err := c.spokeUncachedClient.Create(ctx, overrideFunc(obj, hypershiftOperatorKey.Namespace)); err != nil && !apierrors.IsAlreadyExists(err) {
+	if err := c.spokeUncachedClient.Create(ctx, overrideFunc(obj, hypershiftOperatorKey.Namespace)); err != nil &&
+		!apierrors.IsAlreadyExists(err) {
+
 		return fmt.Errorf("failed to create hypershift operator's namespace, err: %w", err)
 	}
 
@@ -367,7 +379,7 @@ func (c *agentController) isDeploymentMarked(ctx context.Context) bool {
 	return true
 }
 
-func (c *agentController) deploymentExist(ctx context.Context) (error, bool) {
+func (c *agentController) deploymentExistWithNoImageChange(ctx context.Context) (error, bool) {
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
@@ -377,7 +389,12 @@ func (c *agentController) deploymentExist(ctx context.Context) (error, bool) {
 
 		return err, false
 	}
-
+	// Check if image has changed
+	if len(obj.Spec.Template.Spec.Containers) == 1 &&
+		len(c.operatorImage) > 0 &&
+		obj.Spec.Template.Spec.Containers[0].Image != c.operatorImage {
+		return nil, false
+	}
 	return nil, true
 }
 
