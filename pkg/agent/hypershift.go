@@ -302,7 +302,11 @@ func (c *agentController) runHypershiftInstall() error {
 			continue
 		}
 
-		if err := c.spokeUncachedClient.Patch(ctx, &item, ctrlClient.RawPatch(types.ApplyPatchType, itemBytes), ctrlClient.ForceOwnership, ctrlClient.FieldOwner("hypershift")); err != nil {
+		if err := c.spokeUncachedClient.Patch(ctx,
+			&item,
+			ctrlClient.RawPatch(types.ApplyPatchType, itemBytes),
+			ctrlClient.ForceOwnership,
+			ctrlClient.FieldOwner("hypershift")); err != nil {
 			c.log.Error(err, fmt.Sprintf("failed to apply %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
 			continue
 		}
@@ -350,7 +354,9 @@ func (c *agentController) ensurePullSecret(ctx context.Context) error {
 		return out
 	}
 
-	if err := c.spokeUncachedClient.Create(ctx, overrideFunc(obj, hypershiftOperatorKey.Namespace)); err != nil && !apierrors.IsAlreadyExists(err) {
+	if err := c.spokeUncachedClient.Create(ctx, overrideFunc(obj, hypershiftOperatorKey.Namespace)); err != nil &&
+		!apierrors.IsAlreadyExists(err) {
+
 		return fmt.Errorf("failed to create hypershift operator's namespace, err: %w", err)
 	}
 
