@@ -240,6 +240,7 @@ func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		HypershiftOverrideKey               string
 		HypershiftDownstreamOverrideContent string
 		HyeprshiftImageOverride             bool
+		MulticlusterEnginePullSecret        string
 	}{
 		KubeConfigSecret:                    fmt.Sprintf("%s-hub-kubeconfig", addon.Name),
 		AddonInstallNamespace:               installNamespace,
@@ -253,6 +254,7 @@ func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		HypershiftOverrideKey:               util.HypershiftOverrideKey,
 		HypershiftDownstreamOverride:        util.HypershiftDownstreamOverride,
 		HypershiftDownstreamOverrideContent: content,
+		MulticlusterEnginePullSecret:        util.MulticlusterEnginePullSecret,
 	}
 
 	return addonfactory.StructToValues(manifestConfig), nil

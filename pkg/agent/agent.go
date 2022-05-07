@@ -92,13 +92,15 @@ func NewAgentOptions(addonName string, logger logr.Logger) *AgentOptions {
 func (o *AgentOptions) AddFlags(cmd *cobra.Command) {
 	flags := cmd.Flags()
 	// This command only supports reading from config
-	flags.StringVar(&o.HubKubeconfigFile, "hub-kubeconfig", o.HubKubeconfigFile, "Location of kubeconfig file to connect to hub cluster.")
+	flags.StringVar(&o.HubKubeconfigFile, "hub-kubeconfig", o.HubKubeconfigFile,
+		"Location of kubeconfig file to connect to hub cluster.")
 	flags.StringVar(&o.SpokeClusterName, "cluster-name", o.SpokeClusterName, "Name of spoke cluster.")
-	flags.StringVar(&o.AddonNamespace, "addon-namespace", util.AgentInstallationNamespace, "Installation namespace of addon.")
-	flags.StringVar(&o.PullSecretName, "multicluster-pull-secret", util.MulticlusterHubPullSecret, "Pull secret that will be injected to hypershift serviceaccount")
-
-	flags.StringVar(&o.HypershiftOperatorImage, "hypershfit-operator-image", util.DefaultHypershiftOperatorImage, "The HyperShift operator image to deploy")
-
+	flags.StringVar(&o.AddonNamespace, "addon-namespace", util.AgentInstallationNamespace,
+		"Installation namespace of addon.")
+	flags.StringVar(&o.PullSecretName, "multicluster-pull-secret", util.MulticlusterEnginePullSecret,
+		"Pull secret that will be injected to hypershift serviceaccount")
+	flags.StringVar(&o.HypershiftOperatorImage, "hypershfit-operator-image", util.DefaultHypershiftOperatorImage,
+		"The HyperShift operator image to deploy")
 	flags.BoolVar(&o.WithOverride, "with-image-override", false, "Use image from override configmap")
 
 	flags.StringVar(&o.MetricAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
