@@ -32,7 +32,7 @@ spec:
           - "--addon-namespace={{ .AddonInstallNamespace }}"
           - "--with-image-override={{ .HyeprshiftImageOverride }}"
           - "--hypershfit-operator-image={{ .HypershiftOperatorImage }}"
-          - "--multicluster-pull-secret= {{ .MulticlusterEnginePullSecret }}"
+          - "--multicluster-pull-secret={{ .MulticlusterEnginePullSecret }}"
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub
