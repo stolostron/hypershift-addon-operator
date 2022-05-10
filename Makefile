@@ -62,7 +62,7 @@ test: fmt vet envtest ## Run tests.
 ##@ Build
 .PHONY: vendor
 vendor:
-	go mod tidy -compat=1.17
+	go mod tidy
 	go mod vendor
 
 .PHONY: build-downstream
@@ -98,20 +98,26 @@ ifndef ignore-not-found
 endif
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
+ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
 .PHONY: envtest
 envtest: ## Download envtest-setup locally if necessary.
-	$(call go-get-tool,$(ENVTEST),sigs.k8s.io/controller-runtime/tools/setup-envtest@latest)
+	$(call go-get-tool,$(ENVTEST),$(ENVTEST_PACKAGE))
 
 # go-get-tool will 'go get' any package $2 and install it to $1.
 PROJECT_DIR := $(shell dirname $(abspath $(lastword $(MAKEFILE_LIST))))
 define go-get-tool
+	$(call go-get-tool-internal,$(1),$(2),$(firstword $(subst @, ,$(2))))
+endef
+
+define go-get-tool-internal
 @[ -f $(1) ] || { \
 set -e ;\
 TMP_DIR=$$(mktemp -d) ;\
 cd $$TMP_DIR ;\
 go mod init tmp ;\
 echo "Downloading $(2)" ;\
-GOBIN=$(PROJECT_DIR)/bin go get $(2) ;\
+GOBIN=$(PROJECT_DIR)/bin go get -d $(2) ;\
+GOBIN=$(PROJECT_DIR)/bin go install $(3) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef
