@@ -120,7 +120,23 @@ var _ = ginkgo.Describe("Install", func() {
 					return false
 				}
 
-				return true
+				// check the hypershift addon agent is using the restricted scc.
+				pods, err := kubeClient.CoreV1().Pods(defaultInstallNamespace).List(ctx, metav1.ListOptions{
+					LabelSelector: "app=hypershift-addon-agent",
+				})
+				if err != nil {
+					return false
+				}
+
+				for _, pod := range pods.Items {
+					for k, v := range pod.GetAnnotations() {
+						if k == "openshift.io/scc" {
+							return v == "restricted"
+						}
+					}
+				}
+
+				return false
 			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue())
 
 			ginkgo.By("Check the hypershift operator installation")
