@@ -199,7 +199,10 @@ func (c *agentController) runHypershiftInstall() error {
 	defer c.log.Info("exit runHypershiftInstall")
 	ctx := context.TODO()
 
-	if err, ok := c.deploymentExistWithNoImageChange(ctx); ok {
+	if err, ok := c.deploymentExistWithNoImageChange(ctx); ok || err != nil {
+		if err != nil {
+			return err
+		}
 		c.log.Error(err, "hypershift operator already exists at the required image level, skip update")
 		return nil
 	}
@@ -389,10 +392,13 @@ func (c *agentController) deploymentExistWithNoImageChange(ctx context.Context) 
 
 		return err, false
 	}
+
 	// Check if image has changed
 	if len(obj.Spec.Template.Spec.Containers) == 1 &&
 		len(c.operatorImage) > 0 &&
-		obj.Spec.Template.Spec.Containers[0].Image != c.operatorImage {
+		obj.Spec.Template.Spec.Containers[0].Image != c.operatorImage &&
+		len(obj.Annotations) > 0 &&
+		obj.Annotations[hypershiftAddonAnnotationKey] == util.AddonControllerName {
 		return nil, false
 	}
 	return nil, true
