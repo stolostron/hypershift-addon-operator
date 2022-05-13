@@ -148,17 +148,18 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	aCtrl := &agentController{
-		hubClient:           hubClient,
-		spokeUncachedClient: spokeKubeClient,
-		spokeClient:         mgr.GetClient(),
-		spokeClustersClient: spokeClusterClient,
+		hubClient:                 hubClient,
+		spokeUncachedClient:       spokeKubeClient,
+		spokeClient:               mgr.GetClient(),
+		spokeClustersClient:       spokeClusterClient,
+		hypershiftInstallExecutor: &HypershiftLibExecutor{},
 	}
 
 	o.Log = o.Log.WithName("agent-reconciler")
 	aCtrl.plugInOption(o)
 
 	// retry 3 times, in case something wrong with creating the hypershift install job
-	if err := aCtrl.runHypershiftCmdWithRetires(3, time.Second*10, aCtrl.runHypershiftInstall); err != nil {
+	if err := aCtrl.runHypershiftCmdWithRetires(ctx, 3, time.Second*10, aCtrl.runHypershiftInstall); err != nil {
 		log.Error(err, "failed to install hypershift Operator")
 		return err
 	}
@@ -199,18 +200,19 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 }
 
 type agentController struct {
-	hubClient           client.Client
-	spokeUncachedClient client.Client
-	spokeClient         client.Client              //local for agent
-	spokeClustersClient clusterclientset.Interface // client used to create cluster claim for the hypershift management cluster
-	log                 logr.Logger
-	recorder            events.Recorder
-	clusterName         string
-	addonName           string
-	addonNamespace      string
-	operatorImage       string
-	pullSecret          string
-	withOverride        bool
+	hubClient                 client.Client
+	spokeUncachedClient       client.Client
+	spokeClient               client.Client              //local for agent
+	spokeClustersClient       clusterclientset.Interface // client used to create cluster claim for the hypershift management cluster
+	log                       logr.Logger
+	recorder                  events.Recorder
+	clusterName               string
+	addonName                 string
+	addonNamespace            string
+	operatorImage             string
+	pullSecret                string
+	withOverride              bool
+	hypershiftInstallExecutor HypershiftInstallExecutorInterface
 }
 
 func (c *agentController) plugInOption(o *AgentOptions) {

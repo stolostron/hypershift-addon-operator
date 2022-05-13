@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"math/big"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -75,14 +74,15 @@ func (o *AgentOptions) runCleanup(ctx context.Context) error {
 	}
 
 	aCtrl := &agentController{
-		spokeUncachedClient: c,
+		spokeUncachedClient:       c,
+		hypershiftInstallExecutor: &HypershiftLibExecutor{},
 	}
 
 	o.Log = o.Log.WithName("hypersfhit-operation")
 	aCtrl.plugInOption(o)
 
 	// retry 3 times, in case something wrong with deleting the hypershift install job
-	if err := aCtrl.runHypershiftCmdWithRetires(3, time.Second*10, aCtrl.runHypershiftCleanup); err != nil {
+	if err := aCtrl.runHypershiftCmdWithRetires(ctx, 3, time.Second*10, aCtrl.runHypershiftCleanup); err != nil {
 		log.Error(err, "failed to clean up hypershift Operator")
 		return err
 	}
@@ -90,10 +90,11 @@ func (o *AgentOptions) runCleanup(ctx context.Context) error {
 	return nil
 }
 
-func (c *agentController) runHypershiftCmdWithRetires(attempts int, sleep time.Duration, f func() error) error {
+func (c *agentController) runHypershiftCmdWithRetires(
+	ctx context.Context, attempts int, sleep time.Duration, f func(context.Context) error) error {
 	var err error
 	for i := attempts; i > 0; i-- {
-		err = f()
+		err = f(ctx)
 
 		if err == nil {
 			return nil
@@ -122,20 +123,15 @@ func getRandInt(m int64) int64 {
 	return n.Int64()
 }
 
-func (c *agentController) runHypershiftRender(args []string) ([]unstructured.Unstructured, error) {
+func (c *agentController) runHypershiftRender(ctx context.Context, args []string) ([]unstructured.Unstructured, error) {
 	out := []unstructured.Unstructured{}
-	//hypershiftInstall will get the inClusterConfig and use it to apply resources
-	//
-	//skip the GoSec since we intent to run the hypershift binary
-	cmd := exec.Command("hypershift", args...) //#nosec G204
 
-	renderTemplate, err := cmd.Output()
+	renderTemplate, err := c.hypershiftInstallExecutor.Execute(ctx, args)
 	if err != nil {
-		return out, fmt.Errorf("failed to run the hypershift install render command, err: %w", err)
+		return out, err
 	}
 
 	d := map[string]interface{}{}
-
 	if err := json.Unmarshal(renderTemplate, &d); err != nil {
 		return out, fmt.Errorf("failed to Unmarshal, err: %w", err) // this is likely an unrecoverable
 	}
@@ -161,10 +157,9 @@ func (c *agentController) runHypershiftRender(args []string) ([]unstructured.Uns
 	return out, nil
 }
 
-func (c *agentController) runHypershiftCleanup() error {
+func (c *agentController) runHypershiftCleanup(ctx context.Context) error {
 	c.log.Info("enter runHypershiftCleanup")
 	defer c.log.Info("exit runHypershiftCleanup")
-	ctx := context.TODO()
 
 	if !c.isDeploymentMarked(ctx) {
 		c.log.Info(fmt.Sprintf("skip the hypershift operator deleting, not created by %s", util.AddonControllerName))
@@ -172,14 +167,13 @@ func (c *agentController) runHypershiftCleanup() error {
 	}
 
 	args := []string{
-		"install",
 		"render",
 		"--hypershift-image", c.operatorImage,
 		"--namespace", hypershiftOperatorKey.Namespace,
 		"--format", "json",
 	}
 
-	items, err := c.runHypershiftRender(args)
+	items, err := c.runHypershiftRender(ctx, args)
 	if err != nil {
 		return err
 	}
@@ -194,10 +188,9 @@ func (c *agentController) runHypershiftCleanup() error {
 	return nil
 }
 
-func (c *agentController) runHypershiftInstall() error {
+func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 	c.log.Info("enter runHypershiftInstall")
 	defer c.log.Info("exit runHypershiftInstall")
-	ctx := context.TODO()
 
 	if err, ok := c.deploymentExistWithNoImageChange(ctx); ok || err != nil {
 		if err != nil {
@@ -236,7 +229,6 @@ func (c *agentController) runHypershiftInstall() error {
 	}
 
 	args := []string{
-		"install",
 		"render",
 		"--format", "json",
 		"--namespace", hypershiftOperatorKey.Namespace,
@@ -260,7 +252,7 @@ func (c *agentController) runHypershiftInstall() error {
 
 	c.log.Info(fmt.Sprintf("hypershift install args: %v", args))
 
-	items, err := c.runHypershiftRender(args)
+	items, err := c.runHypershiftRender(ctx, args)
 	if err != nil {
 		return err
 	}
