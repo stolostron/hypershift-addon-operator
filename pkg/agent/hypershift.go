@@ -50,7 +50,7 @@ func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
 		Use:   "cleanup",
 		Short: fmt.Sprintf("clean up the hypershift operator if it's deployed by %s", addonName),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return o.runCleanup(ctx)
+			return o.runCleanup(ctx, nil)
 		},
 	}
 
@@ -61,17 +61,18 @@ func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
 	return cmd
 }
 
-func (o *AgentOptions) runCleanup(ctx context.Context) error {
+func (o *AgentOptions) runCleanup(ctx context.Context, aCtrl *agentController) error {
 	log := o.Log.WithName("controller-manager-setup")
 
 	flag.Parse()
 
-	spokeConfig := ctrl.GetConfigOrDie()
+	if aCtrl == nil {
+		spokeConfig := ctrl.GetConfigOrDie()
 
-	c, err := ctrlClient.New(spokeConfig, ctrlClient.Options{})
-	if err != nil {
-		return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
-	}
+		c, err := ctrlClient.New(spokeConfig, ctrlClient.Options{})
+		if err != nil {
+			return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
+		}
 
 	aCtrl := &agentController{
 		spokeUncachedClient:       c,
@@ -125,7 +126,6 @@ func getRandInt(m int64) int64 {
 
 func (c *agentController) runHypershiftRender(ctx context.Context, args []string) ([]unstructured.Unstructured, error) {
 	out := []unstructured.Unstructured{}
-
 	renderTemplate, err := c.hypershiftInstallExecutor.Execute(ctx, args)
 	if err != nil {
 		return out, err
