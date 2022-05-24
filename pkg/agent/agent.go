@@ -82,6 +82,7 @@ type AgentOptions struct {
 	ProbeAddr               string
 	PullSecretName          string
 	WithOverride            bool
+	HyperShiftCliName       string
 }
 
 // NewWorkloadAgentOptions returns the flags with default value set
@@ -105,6 +106,7 @@ func (o *AgentOptions) AddFlags(cmd *cobra.Command) {
 
 	flags.StringVar(&o.MetricAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flags.StringVar(&o.ProbeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
+	flags.StringVar(&o.HyperShiftCliName, "hypershift-cli-name", "hypershift", "Name of the HyperShift CLI.")
 }
 
 func (o *AgentOptions) runControllerManager(ctx context.Context) error {
@@ -211,6 +213,7 @@ type agentController struct {
 	operatorImage       string
 	pullSecret          string
 	withOverride        bool
+	hyperShiftCliName   string
 }
 
 func (c *agentController) plugInOption(o *AgentOptions) {
@@ -221,6 +224,7 @@ func (c *agentController) plugInOption(o *AgentOptions) {
 	c.operatorImage = o.HypershiftOperatorImage
 	c.pullSecret = o.PullSecretName
 	c.withOverride = o.WithOverride
+	c.hyperShiftCliName = o.HyperShiftCliName
 }
 
 func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedName) []*corev1.Secret {

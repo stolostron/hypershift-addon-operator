@@ -51,7 +51,7 @@ func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
 		Use:   "cleanup",
 		Short: fmt.Sprintf("clean up the hypershift operator if it's deployed by %s", addonName),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return o.runCleanup(ctx)
+			return o.runCleanup(ctx, nil)
 		},
 	}
 
@@ -62,20 +62,22 @@ func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
 	return cmd
 }
 
-func (o *AgentOptions) runCleanup(ctx context.Context) error {
+func (o *AgentOptions) runCleanup(ctx context.Context, aCtrl *agentController) error {
 	log := o.Log.WithName("controller-manager-setup")
 
 	flag.Parse()
 
-	spokeConfig := ctrl.GetConfigOrDie()
+	if aCtrl == nil {
+		spokeConfig := ctrl.GetConfigOrDie()
 
-	c, err := ctrlClient.New(spokeConfig, ctrlClient.Options{})
-	if err != nil {
-		return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
-	}
+		c, err := ctrlClient.New(spokeConfig, ctrlClient.Options{})
+		if err != nil {
+			return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
+		}
 
-	aCtrl := &agentController{
-		spokeUncachedClient: c,
+		aCtrl = &agentController{
+			spokeUncachedClient: c,
+		}
 	}
 
 	o.Log = o.Log.WithName("hypersfhit-operation")
@@ -127,7 +129,7 @@ func (c *agentController) runHypershiftRender(args []string) ([]unstructured.Uns
 	//hypershiftInstall will get the inClusterConfig and use it to apply resources
 	//
 	//skip the GoSec since we intent to run the hypershift binary
-	cmd := exec.Command("hypershift", args...) //#nosec G204
+	cmd := exec.Command(c.hyperShiftCliName, args...) //#nosec G204
 
 	renderTemplate, err := cmd.Output()
 	if err != nil {
