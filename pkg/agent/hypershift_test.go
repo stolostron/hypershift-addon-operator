@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"testing"
 	"time"
@@ -63,6 +64,54 @@ func initDeployAddonImageDiffObj() *appsv1.Deployment {
 		corev1.Container{Image: "testimage"},
 	}
 	return deploy
+}
+
+type HypershiftTestCliExecutor struct {
+}
+
+func (c *HypershiftTestCliExecutor) Execute(ctx context.Context, args []string) ([]byte, error) {
+	cm := &corev1.ConfigMap{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConfigMap",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cm",
+			Namespace: "default",
+		},
+		Data: map[string]string{"test": "test"},
+	}
+
+	var items []interface{}
+	items = append(items, cm)
+
+	sa := &corev1.ServiceAccount{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ServiceAccount",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-sa",
+			Namespace: "default",
+		},
+	}
+	items = append(items, sa)
+
+	dp := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "operator",
+			Namespace: "hypershift",
+		},
+	}
+	items = append(items, dp)
+
+	out := make(map[string]interface{})
+	out["items"] = items
+	return json.Marshal(out)
 }
 
 func TestIsDeploymentMarked(t *testing.T) {
@@ -260,28 +309,14 @@ func TestRunHypershiftInstall(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 	client := initClient()
 	aCtrl := &agentController{
-		spokeUncachedClient: client,
-		hubClient:           client,
-		log:                 zapr.NewLogger(zapLog),
-		addonNamespace:      "addon",
-		operatorImage:       "my-test-image",
-		clusterName:         "cluster1",
-		pullSecret:          "pull-secret",
-		hypershiftInstallExecutor: &HypershiftLibExecutor{
-			func (c *HypershiftCliExecutor) Execute(ctx context.Context, args []string) ([]byte, error) {
-				//hypershiftInstall will get the inClusterConfig and use it to apply resources
-				//
-				//skip the GoSec since we intent to run the hypershift binary
-				cmd := exec.Command("../../bin/testcli", []string{"install"}) //#nosec G204
-			
-				renderTemplate, err := cmd.Output()
-				if err != nil {
-					return nil, fmt.Errorf("failed to run the hypershift install render command, err: %w", err)
-				}
-			
-				return renderTemplate, nil
-			}
-		},
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
 	}
 
 	addonNs := &corev1.Namespace{
@@ -331,7 +366,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, incompleteDp)
 
 	// No Spec in hypershift deployment operator - skip all operations
-	err := aCtrl.runHypershiftInstall()
+	err := aCtrl.runHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 	aCtrl.hubClient.Delete(ctx, incompleteDp)
 
@@ -360,7 +395,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, dp)
 	defer aCtrl.hubClient.Delete(ctx, dp)
 
-	err = aCtrl.runHypershiftInstall()
+	err = aCtrl.runHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 
 	// Check service account is created
@@ -394,16 +429,16 @@ func TestRunHypershiftInstall(t *testing.T) {
 	// Run hypershift install again with pull secret deleted
 	aCtrl.hubClient.Delete(ctx, pullSecret)
 	aCtrl.hubClient.Delete(ctx, hsPullSecret)
-	err = aCtrl.runHypershiftInstall()
+	err = aCtrl.runHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: pullSecret.Name, Namespace: hypershiftOperatorKey.Namespace}, hsPullSecret)
 	assert.True(t, err != nil && errors.IsNotFound(err), "is true if the pull secret is not copied to the HyperShift namespace")
 
 	// Cleanup
 	o := &AgentOptions{
-		Log:               zapr.NewLogger(zapLog),
-		AddonName:         "hypershift-addon",
-		AddonNamespace:    "hypershift",
+		Log:            zapr.NewLogger(zapLog),
+		AddonName:      "hypershift-addon",
+		AddonNamespace: "hypershift",
 	}
 	err = o.runCleanup(ctx, aCtrl)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
@@ -471,7 +506,7 @@ func TestRunCommandWithRetries(t *testing.T) {
 		pullSecret:          "pull-secret",
 	}
 
-	cmd := func() error {
+	cmd := func(context.Context) error {
 		cm1 := &corev1.ConfigMap{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-cm1",
@@ -503,7 +538,7 @@ func TestRunCommandWithRetries(t *testing.T) {
 		return fmt.Errorf("failed 1st call")
 	}
 
-	err := aCtrl.runHypershiftCmdWithRetires(3, 1*time.Second, cmd)
+	err := aCtrl.runHypershiftCmdWithRetires(ctx, 3, 1*time.Second, cmd)
 	assert.Nil(t, err, "is nil if retry is successful")
 }
 

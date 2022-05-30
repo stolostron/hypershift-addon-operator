@@ -56,7 +56,7 @@ vet: ## Run go vet against code.
 	go vet ./...
 
 .PHONY: test
-test: fmt vet envtest build-testcli ## Run tests.
+test: fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test $(shell go list ./... | grep -v /test/e2e) -coverprofile cover.out
 
 ##@ Build
@@ -68,10 +68,6 @@ vendor:
 .PHONY: build-downstream
 build-downstream: vendor fmt vet ## Build manager binary.
 	GOFLAGS="" go build -o bin/hypershift-addon cmd/main.go
-
-.PHONY: build-testcli
-build-testcli: fmt vet ## Build manager binary.
-	GOFLAGS="" go build -o bin/testcli test/cli/main.go
 
 .PHONY: build
 build: build-downstream build-hypershift ## Build manager binary.

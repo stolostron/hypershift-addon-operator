@@ -23,15 +23,15 @@ func TestReconcile(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 
 	aCtrl := &agentController{
-		spokeUncachedClient: client,
-		spokeClient:         client,
-		hubClient:           client,
-		log:                 zapr.NewLogger(zapLog),
-		addonNamespace:      "addon",
-		operatorImage:       "my-test-image",
-		clusterName:         "cluster1",
-		pullSecret:          "pull-secret",
-		hyperShiftCliName:   "/Users/philipwu/ocm/josh/hypershift-addon-operator/bin/testcli",
+		spokeUncachedClient:       client,
+		spokeClient:               client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
 	}
 
 	// Create secrets

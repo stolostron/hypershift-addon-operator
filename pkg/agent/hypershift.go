@@ -74,9 +74,10 @@ func (o *AgentOptions) runCleanup(ctx context.Context, aCtrl *agentController) e
 			return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
 		}
 
-	aCtrl := &agentController{
-		spokeUncachedClient:       c,
-		hypershiftInstallExecutor: &HypershiftLibExecutor{},
+		aCtrl = &agentController{
+			spokeUncachedClient:       c,
+			hypershiftInstallExecutor: &HypershiftLibExecutor{},
+		}
 	}
 
 	o.Log = o.Log.WithName("hypersfhit-operation")
@@ -126,6 +127,10 @@ func getRandInt(m int64) int64 {
 
 func (c *agentController) runHypershiftRender(ctx context.Context, args []string) ([]unstructured.Unstructured, error) {
 	out := []unstructured.Unstructured{}
+	if c.hypershiftInstallExecutor == nil {
+		return out, fmt.Errorf("failed to run hypershift cmd, no install executor specified")
+	}
+
 	renderTemplate, err := c.hypershiftInstallExecutor.Execute(ctx, args)
 	if err != nil {
 		return out, err
