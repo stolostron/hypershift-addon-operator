@@ -212,21 +212,13 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		return err
 	}
 
-	bucketName := string(se.Data["bucket"])
-	bucketRegion := string(se.Data["region"])
-	bucketCreds := se.Data["credentials"]
+	configureAWS := true
 
-	file, err := ioutil.TempFile("", ".aws-creds")
-	if err != nil { // likely a unrecoverable error, don't retry
-		return fmt.Errorf("failed to create temp file for hoding aws credentials, err: %w", err)
-	}
-
-	credsFile := file.Name()
-	defer os.Remove(credsFile)
-
-	c.log.Info(fmt.Sprintf("aws config at: %s", credsFile))
-	if err := ioutil.WriteFile(credsFile, bucketCreds, 0600); err != nil { // likely a unrecoverable error, don't retry
-		return fmt.Errorf("failed to write to temp file for aws credentials, err: %w", err)
+	// Users still required to create hypershift-operator-oidc-provider-s3-credentials secret in the hosting cluster's namespace
+	// but it can have empty data for provisioning non-AWS platform hosted clusters
+	if se.Data == nil {
+		c.log.Info("found hypershift-operator-oidc-provider-s3-credentials secret but it contains no data. skipping AWS OIDC configuration")
+		configureAWS = false
 	}
 
 	if err := c.ensurePullSecret(ctx); err != nil {
@@ -237,9 +229,33 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		"render",
 		"--format", "json",
 		"--namespace", hypershiftOperatorKey.Namespace,
-		"--oidc-storage-provider-s3-bucket-name", bucketName,
-		"--oidc-storage-provider-s3-region", bucketRegion,
-		"--oidc-storage-provider-s3-credentials", credsFile,
+	}
+
+	if configureAWS {
+		bucketName := string(se.Data["bucket"])
+		bucketRegion := string(se.Data["region"])
+		bucketCreds := se.Data["credentials"]
+
+		file, err := ioutil.TempFile("", ".aws-creds")
+		if err != nil { // likely a unrecoverable error, don't retry
+			return fmt.Errorf("failed to create temp file for hoding aws credentials, err: %w", err)
+		}
+
+		credsFile := file.Name()
+		defer os.Remove(credsFile)
+
+		c.log.Info(fmt.Sprintf("aws config at: %s", credsFile))
+		if err := ioutil.WriteFile(credsFile, bucketCreds, 0600); err != nil { // likely a unrecoverable error, don't retry
+			return fmt.Errorf("failed to write to temp file for aws credentials, err: %w", err)
+		}
+
+		awsArgs := []string{
+			"--oidc-storage-provider-s3-bucket-name", bucketName,
+			"--oidc-storage-provider-s3-region", bucketRegion,
+			"--oidc-storage-provider-s3-credentials", credsFile,
+		}
+
+		args = append(args, awsArgs...)
 	}
 
 	if c.withOverride {
