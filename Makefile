@@ -69,7 +69,6 @@ vendor:
 build-downstream: vendor fmt vet ## Build manager binary.
 	GOFLAGS="" go build -o bin/hypershift-addon cmd/main.go
 
-
 .PHONY: build
 build: build-downstream build-hypershift ## Build manager binary.
 
