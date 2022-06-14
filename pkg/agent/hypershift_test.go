@@ -434,6 +434,11 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: pullSecret.Name, Namespace: hypershiftOperatorKey.Namespace}, hsPullSecret)
 	assert.True(t, err != nil && errors.IsNotFound(err), "is true if the pull secret is not copied to the HyperShift namespace")
 
+	// Run hypershift install again with s3 bucket secret deleted
+	aCtrl.hubClient.Delete(ctx, bucketSecret)
+	err = aCtrl.runHypershiftInstall(ctx)
+	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
+
 	// Cleanup
 	o := &AgentOptions{
 		Log:            zapr.NewLogger(zapLog),
