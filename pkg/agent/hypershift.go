@@ -210,7 +210,7 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 	bucketSecretKey := types.NamespacedName{Name: hypershiftBucketSecretName, Namespace: c.clusterName}
 	se := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, bucketSecretKey, se); err != nil {
-		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub, installaing hypershift operator for non-AWS platform.", bucketSecretKey))
+		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey))
 
 		awsPlatform = false
 	}
