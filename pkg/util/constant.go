@@ -25,6 +25,10 @@ const (
 
 	HypershiftOperatorNamespace = "hypershift"
 	HypershiftOperatorName      = "operator"
+
+	// Labels for resources to reference the Hosted Cluster
+	HypershiftClusterNameLabel      = "hypershiftdeployments.cluster.open-cluster-management.io/cluster-name"
+	HypershiftHostingNamespaceLabel = "hypershiftdeployments.cluster.open-cluster-management.io/hosting-namespace"
 )
 
 // GenerateClientConfigFromSecret generate a client config from a given secret
