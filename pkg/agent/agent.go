@@ -229,16 +229,24 @@ func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedNam
 	return []*corev1.Secret{
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("%s-admin-kubeconfig", hcKey.Name),
+				Name:      "admin-kubeconfig",
 				Namespace: hcKey.Namespace,
-				Labels:    map[string]string{"synced-from-spoke": "true"},
+				Labels: map[string]string{
+					"synced-from-spoke": "true",
+					"cluster-name":      hcKey.Name,
+					"hosting-namespace": hcKey.Namespace,
+				},
 			},
 		},
 		{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      fmt.Sprintf("%s-kubeadmin-password", hcKey.Name),
+				Name:      "kubeadmin-password",
 				Namespace: hcKey.Namespace,
-				Labels:    map[string]string{"synced-from-spoke": "true"},
+				Labels: map[string]string{
+					"synced-from-spoke": "true",
+					"cluster-name":      hcKey.Name,
+					"hosting-namespace": hcKey.Namespace,
+				},
 			},
 		},
 	}
@@ -248,24 +256,36 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
-	hubMirrorSecretName := func(name string) string {
-		// The secret stored on hub, and we should reflect the namespace on the name field, otherwise the name
-		// may conflict on hub.
-		// Note: the name generation rules need to be reproducible.
-		// TODO(zhujian7): consider the case len(namespace)+len(name)>253, then create the secret will fail,
-		// we may need to hash the name?
-		return fmt.Sprintf("%s-%s", req.NamespacedName.Namespace, name)
-	}
-	hcSecrets := c.scaffoldHostedclusterSecrets(req.NamespacedName)
+	// Delete HC secrets on the hub using labels for HC and the hosting NS
 	deleteMirrorSecrets := func() error {
-		var lastErr error
+		secretSelector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
+			MatchLabels: map[string]string{
+				"cluster-name":      req.Name,
+				"hosting-namespace": req.Namespace,
+			},
+		})
+		if err != nil {
+			c.log.Error(err, "failed to convert label to get secrets on hub for hostedCluster: %s", req)
+			return err
+		}
 
-		for _, se := range hcSecrets {
-			se.SetNamespace(c.clusterName)
-			se.SetName(hubMirrorSecretName(se.Name))
-			if err := c.hubClient.Delete(ctx, se); err != nil && !apierrors.IsNotFound(err) {
+		listopts := &client.ListOptions{}
+		listopts.LabelSelector = secretSelector
+		listopts.Namespace = c.clusterName
+		hcHubSecretList := &corev1.SecretList{}
+		err = c.hubClient.List(ctx, hcHubSecretList, listopts)
+		if err != nil {
+			c.log.Error(err, "failed to get secrets on hub for hostedCluster: %s", req)
+			return err
+		}
+
+		var lastErr error
+		for i := range hcHubSecretList.Items {
+			se := hcHubSecretList.Items[i]
+			c.log.V(4).Info(fmt.Sprintf("deleting secret(%s) on hub", client.ObjectKeyFromObject(&se)))
+			if err := c.hubClient.Delete(ctx, &se); err != nil && !apierrors.IsNotFound(err) {
 				lastErr = err
-				c.log.Error(err, fmt.Sprintf("failed to delete secret(%s) on hub", client.ObjectKeyFromObject(se)))
+				c.log.Error(err, fmt.Sprintf("failed to delete secret(%s) on hub", client.ObjectKeyFromObject(&se)))
 			}
 		}
 
@@ -299,16 +319,20 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		if !ok || len(hypershiftDeploymentAnnoValue) == 0 {
 			lastErr = fmt.Errorf("failed to get hypershift deployment annotation from hosted cluster")
 		}
+
+		hcSecrets := c.scaffoldHostedclusterSecrets(req.NamespacedName)
 		for _, se := range hcSecrets {
 			hubMirrorSecret := se.DeepCopy()
+			hubMirrorSecret.SetNamespace(c.clusterName)
+			hubMirrorSecret.SetName(fmt.Sprintf("%s-%s", hc.Spec.InfraID, se.Name))
+
+			se.SetName(fmt.Sprintf("%s-%s", hc.Name, se.Name))
 			if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(se), se); err != nil {
 				lastErr = err
 				c.log.Error(err, fmt.Sprintf("failed to get hostedcluster secret %s on local cluster, skip this one", client.ObjectKeyFromObject(se)))
 				continue
 			}
 
-			hubMirrorSecret.SetNamespace(c.clusterName)
-			hubMirrorSecret.SetName(hubMirrorSecretName(se.Name))
 			if len(hypershiftDeploymentAnnoValue) != 0 {
 				hubMirrorSecret.SetAnnotations(map[string]string{hypershiftDeploymentAnnoKey: hypershiftDeploymentAnnoValue})
 			}
