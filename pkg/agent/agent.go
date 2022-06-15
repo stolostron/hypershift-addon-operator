@@ -232,9 +232,9 @@ func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedNam
 				Name:      "admin-kubeconfig",
 				Namespace: hcKey.Namespace,
 				Labels: map[string]string{
-					"synced-from-spoke": "true",
-					"cluster-name":      hcKey.Name,
-					"hosting-namespace": hcKey.Namespace,
+					"synced-from-spoke":                  "true",
+					util.HypershiftClusterNameLabel:      hcKey.Name,
+					util.HypershiftHostingNamespaceLabel: hcKey.Namespace,
 				},
 			},
 		},
@@ -243,9 +243,9 @@ func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedNam
 				Name:      "kubeadmin-password",
 				Namespace: hcKey.Namespace,
 				Labels: map[string]string{
-					"synced-from-spoke": "true",
-					"cluster-name":      hcKey.Name,
-					"hosting-namespace": hcKey.Namespace,
+					"synced-from-spoke":                  "true",
+					util.HypershiftClusterNameLabel:      hcKey.Name,
+					util.HypershiftHostingNamespaceLabel: hcKey.Namespace,
 				},
 			},
 		},
@@ -260,8 +260,8 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	deleteMirrorSecrets := func() error {
 		secretSelector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
 			MatchLabels: map[string]string{
-				"cluster-name":      req.Name,
-				"hosting-namespace": req.Namespace,
+				util.HypershiftClusterNameLabel:      req.Name,
+				util.HypershiftHostingNamespaceLabel: req.Namespace,
 			},
 		})
 		if err != nil {
