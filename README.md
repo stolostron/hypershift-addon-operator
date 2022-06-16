@@ -36,7 +36,7 @@ spec:
 EOF
 ```
 
-3. Create a hypershift-operator-oidc-provider-s3-credentials for the hypershift addon in the <cluster1> namespace
+3. Create a hypershift-operator-oidc-provider-s3-credentials for the hypershift addon in the <cluster1> namespace if you plan to provision hosted clusters on the AWS platform.
 ```
 oc create secret generic hypershift-operator-oidc-provider-s3-credentials --from-file=credentials=${HOME}/.aws/credentials --from-literal=bucket=<bucket-name> --from-literal=region=us-east-1 -n cluster1
 ```

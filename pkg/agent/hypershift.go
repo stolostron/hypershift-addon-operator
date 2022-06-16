@@ -50,7 +50,7 @@ func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
 		Use:   "cleanup",
 		Short: fmt.Sprintf("clean up the hypershift operator if it's deployed by %s", addonName),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return o.runCleanup(ctx)
+			return o.runCleanup(ctx, nil)
 		},
 	}
 
@@ -61,21 +61,23 @@ func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
 	return cmd
 }
 
-func (o *AgentOptions) runCleanup(ctx context.Context) error {
+func (o *AgentOptions) runCleanup(ctx context.Context, aCtrl *agentController) error {
 	log := o.Log.WithName("controller-manager-setup")
 
 	flag.Parse()
 
-	spokeConfig := ctrl.GetConfigOrDie()
+	if aCtrl == nil {
+		spokeConfig := ctrl.GetConfigOrDie()
 
-	c, err := ctrlClient.New(spokeConfig, ctrlClient.Options{})
-	if err != nil {
-		return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
-	}
+		c, err := ctrlClient.New(spokeConfig, ctrlClient.Options{})
+		if err != nil {
+			return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
+		}
 
-	aCtrl := &agentController{
-		spokeUncachedClient:       c,
-		hypershiftInstallExecutor: &HypershiftLibExecutor{},
+		aCtrl = &agentController{
+			spokeUncachedClient:       c,
+			hypershiftInstallExecutor: &HypershiftLibExecutor{},
+		}
 	}
 
 	o.Log = o.Log.WithName("hypersfhit-operation")
@@ -125,6 +127,9 @@ func getRandInt(m int64) int64 {
 
 func (c *agentController) runHypershiftRender(ctx context.Context, args []string) ([]unstructured.Unstructured, error) {
 	out := []unstructured.Unstructured{}
+	if c.hypershiftInstallExecutor == nil {
+		return out, fmt.Errorf("failed to run hypershift cmd, no install executor specified")
+	}
 
 	renderTemplate, err := c.hypershiftInstallExecutor.Execute(ctx, args)
 	if err != nil {
@@ -200,41 +205,51 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		return nil
 	}
 
+	awsPlatform := true
+
 	bucketSecretKey := types.NamespacedName{Name: hypershiftBucketSecretName, Namespace: c.clusterName}
 	se := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, bucketSecretKey, se); err != nil {
-		c.log.Error(err, fmt.Sprintf("failed to get bucket secret(%s) from hub, will retry.", bucketSecretKey))
-		return err
-	}
+		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey))
 
-	bucketName := string(se.Data["bucket"])
-	bucketRegion := string(se.Data["region"])
-	bucketCreds := se.Data["credentials"]
-
-	file, err := ioutil.TempFile("", ".aws-creds")
-	if err != nil { // likely a unrecoverable error, don't retry
-		return fmt.Errorf("failed to create temp file for hoding aws credentials, err: %w", err)
-	}
-
-	credsFile := file.Name()
-	defer os.Remove(credsFile)
-
-	c.log.Info(fmt.Sprintf("aws config at: %s", credsFile))
-	if err := ioutil.WriteFile(credsFile, bucketCreds, 0600); err != nil { // likely a unrecoverable error, don't retry
-		return fmt.Errorf("failed to write to temp file for aws credentials, err: %w", err)
-	}
-
-	if err := c.ensurePullSecret(ctx); err != nil {
-		return fmt.Errorf("failed to deploy pull secret to hypershift namespace, err: %w", err)
+		awsPlatform = false
 	}
 
 	args := []string{
 		"render",
 		"--format", "json",
 		"--namespace", hypershiftOperatorKey.Namespace,
-		"--oidc-storage-provider-s3-bucket-name", bucketName,
-		"--oidc-storage-provider-s3-region", bucketRegion,
-		"--oidc-storage-provider-s3-credentials", credsFile,
+	}
+
+	if awsPlatform { // if the S3 secret is found, install hypershift with s3 options
+		bucketName := string(se.Data["bucket"])
+		bucketRegion := string(se.Data["region"])
+		bucketCreds := se.Data["credentials"]
+
+		file, err := ioutil.TempFile("", ".aws-creds")
+		if err != nil { // likely a unrecoverable error, don't retry
+			return fmt.Errorf("failed to create temp file for hoding aws credentials, err: %w", err)
+		}
+
+		credsFile := file.Name()
+		defer os.Remove(credsFile)
+
+		c.log.Info(fmt.Sprintf("aws config at: %s", credsFile))
+		if err := ioutil.WriteFile(credsFile, bucketCreds, 0600); err != nil { // likely a unrecoverable error, don't retry
+			return fmt.Errorf("failed to write to temp file for aws credentials, err: %w", err)
+		}
+
+		if err := c.ensurePullSecret(ctx); err != nil {
+			return fmt.Errorf("failed to deploy pull secret to hypershift namespace, err: %w", err)
+		}
+
+		awsArgs := []string{
+			"--oidc-storage-provider-s3-bucket-name", bucketName,
+			"--oidc-storage-provider-s3-region", bucketRegion,
+			"--oidc-storage-provider-s3-credentials", credsFile,
+		}
+
+		args = append(args, awsArgs...)
 	}
 
 	if c.withOverride {
