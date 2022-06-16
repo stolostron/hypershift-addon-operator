@@ -21,6 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -398,6 +399,28 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.runHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 
+	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
+	oidcSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hypershiftBucketSecretName,
+			Namespace: "hypershift",
+		},
+	}
+	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(oidcSecret), oidcSecret)
+	assert.Nil(t, err, "is nil when oidc secret is found")
+	assert.Equal(t, []byte(`myCredential`), oidcSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
+
+	// Check hypershift-operator-private-link-credentials secret does NOT exist
+	plSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hypershiftPrivateLinkSecretName,
+			Namespace: "hypershift",
+		},
+	}
+	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(plSecret), plSecret)
+	assert.NotNil(t, err, "is not nil when private link secret is not provided")
+	assert.True(t, errors.IsNotFound(err), "private link secret should not be found")
+
 	// Check service account is created
 	testSa := &corev1.ServiceAccount{}
 	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: "test-sa", Namespace: "default"}, testSa)
@@ -551,4 +574,154 @@ func TestCleanupCommand(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 	cleanupCmd := NewCleanupCommand("operator", zapr.NewLogger(zapLog))
 	assert.Equal(t, "cleanup", cleanupCmd.Use)
+}
+
+func TestRunHypershiftInstallPrivateLink(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	aCtrl := &agentController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+	}
+
+	addonNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: aCtrl.addonNamespace,
+		},
+	}
+	aCtrl.hubClient.Create(ctx, addonNs)
+	defer aCtrl.hubClient.Delete(ctx, addonNs)
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      aCtrl.pullSecret,
+			Namespace: aCtrl.addonNamespace,
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(`docker-pull-secret`),
+		},
+	}
+	aCtrl.hubClient.Create(ctx, pullSecret)
+
+	bucketSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hypershiftBucketSecretName,
+			Namespace: aCtrl.clusterName,
+		},
+		Data: map[string][]byte{
+			"bucket":                []byte(`my-bucket`),
+			"region":                []byte(`us-east-1`),
+			"aws-secret-access-key": []byte(`aws_s3_secret`),
+			"aws-access-key-id":     []byte(`aws_s3_key_id`),
+		},
+	}
+	privateSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hypershiftPrivateLinkSecretName,
+			Namespace: aCtrl.clusterName,
+		},
+		Data: map[string][]byte{
+			"region":                []byte(`us-east-1`),
+			"aws-secret-access-key": []byte(`private_secret`),
+			"aws-access-key-id":     []byte(`private_secret_key_id`),
+		},
+	}
+
+	aCtrl.hubClient.Create(ctx, bucketSecret)
+	defer aCtrl.hubClient.Delete(ctx, bucketSecret)
+	aCtrl.hubClient.Create(ctx, privateSecret)
+	defer aCtrl.hubClient.Delete(ctx, privateSecret)
+
+	dp := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "operator",
+			Namespace:   "hypershift",
+			Annotations: map[string]string{hypershiftAddonAnnotationKey: util.AddonControllerName},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "nginx",
+						Image: "nginx:1.14.2",
+						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+					}},
+				},
+			},
+		},
+	}
+	aCtrl.hubClient.Create(ctx, dp)
+	defer aCtrl.hubClient.Delete(ctx, dp)
+	err := aCtrl.runHypershiftInstall(ctx)
+	assert.Nil(t, err, "is nil if install HyperShift is successful")
+
+	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
+	oidcSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hypershiftBucketSecretName,
+			Namespace: "hypershift",
+		},
+	}
+	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(oidcSecret), oidcSecret)
+	assert.Nil(t, err, "is nil when oidc secret is found")
+	assert.Equal(t, []byte("[default]\naws_access_key_id = aws_s3_key_id\naws_secret_access_key = aws_s3_secret"), oidcSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
+
+	// Check hypershift-operator-private-link-credentials secret does NOT exist
+	plSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hypershiftPrivateLinkSecretName,
+			Namespace: "hypershift",
+		},
+	}
+	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(plSecret), plSecret)
+	assert.Nil(t, err, "is nil when private link secret is found")
+	assert.Equal(t, []byte("[default]\naws_access_key_id = private_secret_key_id\naws_secret_access_key = private_secret"), plSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
+	// Cleanup
+	o := &AgentOptions{
+		Log:            zapr.NewLogger(zapLog),
+		AddonName:      "hypershift-addon",
+		AddonNamespace: "hypershift",
+	}
+	err = o.runCleanup(ctx, aCtrl)
+	assert.Nil(t, err, "is nil if cleanup is succcessful")
+}
+
+func TestCreateSpokeCredential(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	aCtrl := &agentController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+	}
+
+	bucketSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hypershiftBucketSecretName,
+			Namespace: aCtrl.clusterName,
+		},
+	}
+
+	err := aCtrl.createSpokeSecret(ctx, bucketSecret)
+	assert.NotNil(t, err, "is not nil, when secret is not well formed")
+
 }

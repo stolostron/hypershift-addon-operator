@@ -38,6 +38,7 @@ func TestReconcile(t *testing.T) {
 	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
 	secrets := aCtrl.scaffoldHostedclusterSecrets(hcNN)
 	for _, sec := range secrets {
+		sec.SetName(fmt.Sprintf("%s-%s", hcNN.Name, sec.Name))
 		aCtrl.hubClient.Create(ctx, sec)
 		defer aCtrl.hubClient.Delete(ctx, sec)
 	}
@@ -55,11 +56,11 @@ func TestReconcile(t *testing.T) {
 
 	// Secret for kubconfig and kubeadmin-password are created
 	secret := &corev1.Secret{}
-	kcSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-%s-admin-kubeconfig", hcNN.Namespace, hcNN.Name), Namespace: aCtrl.clusterName}
+	kcSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-admin-kubeconfig", hc.Spec.InfraID), Namespace: aCtrl.clusterName}
 	err = aCtrl.hubClient.Get(ctx, kcSecretNN, secret)
 	assert.Nil(t, err, "is nil when the admin kubeconfig secret is found")
 
-	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-%s-kubeadmin-password", hcNN.Namespace, hcNN.Name), Namespace: aCtrl.clusterName}
+	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-kubeadmin-password", hc.Spec.InfraID), Namespace: aCtrl.clusterName}
 	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
 	assert.Nil(t, err, "is nil when the kubeadmin password secret is found")
 
@@ -99,6 +100,7 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 			Etcd: hyperv1alpha1.EtcdSpec{
 				ManagementType: hyperv1alpha1.Managed,
 			},
+			InfraID: "infra-abcdef",
 		},
 		Status: hyperv1alpha1.HostedClusterStatus{
 			KubeConfig:        &corev1.LocalObjectReference{Name: "kubeconfig"},
