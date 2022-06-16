@@ -7,7 +7,7 @@ require (
 	github.com/go-logr/zapr v1.2.0
 	github.com/onsi/ginkgo/v2 v2.1.3
 	github.com/onsi/gomega v1.18.1
-	github.com/openshift/hypershift v0.0.0-20220530194701-151246fd8480
+	github.com/openshift/hypershift v0.0.0-20220614212330-01bbfba6b681
 	github.com/openshift/library-go v0.0.0-20220525173854-9b950a41acdc
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/pflag v1.0.5
