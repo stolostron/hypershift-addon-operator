@@ -16,14 +16,17 @@ import (
 	"github.com/spf13/cobra"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 
@@ -224,32 +227,55 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 	if awsPlatform { // if the S3 secret is found, install hypershift with s3 options
 		bucketName := string(se.Data["bucket"])
 		bucketRegion := string(se.Data["region"])
-		bucketCreds := se.Data["credentials"]
 
-		file, err := ioutil.TempFile("", ".aws-creds")
-		if err != nil { // likely a unrecoverable error, don't retry
-			return fmt.Errorf("failed to create temp file for hoding aws credentials, err: %w", err)
+		if bucketName == "" {
+			return fmt.Errorf("hypershift-operator-oidc-provider-s3-credentials does not contain a bucket key")
 		}
 
-		credsFile := file.Name()
-		defer os.Remove(credsFile)
-
-		c.log.Info(fmt.Sprintf("aws config at: %s", credsFile))
-		if err := ioutil.WriteFile(credsFile, bucketCreds, 0600); err != nil { // likely a unrecoverable error, don't retry
-			return fmt.Errorf("failed to write to temp file for aws credentials, err: %w", err)
+		// Seed the hypershift namespace, the uninstall will remove this namespace.
+		ns := &corev1.Namespace{ObjectMeta: v1.ObjectMeta{Name: hypershiftOperatorKey.Namespace}}
+		if err := c.spokeUncachedClient.Get(ctx, client.ObjectKeyFromObject(ns), ns); err != nil {
+			if errors.IsNotFound(err) {
+				if err := c.spokeUncachedClient.Create(ctx, ns); err != nil {
+					return err
+				}
+			} else {
+				return err
+			}
 		}
+
+		if err := c.createSpokeSecret(ctx, se); err != nil {
+			return err
+		}
+		c.log.Info(fmt.Sprintf("oidc s3 bucket, region & credential arguments included"))
+		awsArgs := []string{
+			"--oidc-storage-provider-s3-bucket-name", bucketName,
+			"--oidc-storage-provider-s3-region", bucketRegion,
+			"--oidc-storage-provider-s3-secret", hypershiftBucketSecretName,
+		}
+		args = append(args, awsArgs...)
 
 		if err := c.ensurePullSecret(ctx); err != nil {
 			return fmt.Errorf("failed to deploy pull secret to hypershift namespace, err: %w", err)
 		}
 
-		awsArgs := []string{
-			"--oidc-storage-provider-s3-bucket-name", bucketName,
-			"--oidc-storage-provider-s3-region", bucketRegion,
-			"--oidc-storage-provider-s3-credentials", credsFile,
+		//Private link creds
+		privateSecretKey := types.NamespacedName{Name: hypershiftPrivateLinkSecretName, Namespace: c.clusterName}
+		spl := &corev1.Secret{}
+		if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
+			if err := c.createSpokeSecret(ctx, spl); err != nil {
+				return err
+			}
+			c.log.Info(fmt.Sprintf("private link region & credential arguments included"))
+			awsArgs := []string{
+				"--aws-private-secret", hypershiftPrivateLinkSecretName,
+				"--aws-private-region", string(spl.Data["region"]),
+				"--private-platform", "AWS",
+			}
+			args = append(args, awsArgs...)
+		} else {
+			c.log.Info(fmt.Sprintf("private-link secret(%s) was not found", privateSecretKey))
 		}
-
-		args = append(args, awsArgs...)
 	}
 
 	if c.withOverride {
@@ -324,6 +350,35 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (c *agentController) createSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
+
+	creds := hubSecret.Data["credentials"]
+	region := hubSecret.Data["region"]
+	awsSecretKey := hubSecret.Data["aws-secret-access-key"]
+	awsKeyId := hubSecret.Data["aws-access-key-id"]
+	if (creds == nil && (awsKeyId == nil || awsSecretKey == nil)) || region == nil {
+		return fmt.Errorf("secret(%s/%s) does not contain a valid credential or region", hubSecret.Namespace, hubSecret.Name)
+	} else {
+		if awsSecretKey != nil {
+			creds = []byte(fmt.Sprintf("[default]\naws_access_key_id = %s\naws_secret_access_key = %s", awsKeyId, awsSecretKey))
+		}
+	}
+
+	spokeSecret := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      hubSecret.Name,
+			Namespace: hypershiftOperatorKey.Namespace,
+		},
+		Data: map[string][]byte{
+			"credentials": creds,
+		},
+	}
+	c.log.Info(fmt.Sprintf("createorupdate the the secret (%s/%s) on cluster %s", hypershiftOperatorKey.Namespace, hubSecret.Name, hubSecret.Namespace))
+	_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeSecret, func() error { return nil })
+
+	return err
 }
 
 func (c *agentController) ensurePullSecret(ctx context.Context) error {

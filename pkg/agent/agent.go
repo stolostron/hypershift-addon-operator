@@ -34,10 +34,11 @@ import (
 )
 
 const (
-	hypershiftAddonAnnotationKey = "hypershift.open-cluster-management.io/createBy"
-	hypershiftBucketSecretName   = "hypershift-operator-oidc-provider-s3-credentials"
-	kindAppliedManifestWork      = "AppliedManifestWork"
-	hypershiftDeploymentAnnoKey  = "cluster.open-cluster-management.io/hypershiftdeployment"
+	hypershiftAddonAnnotationKey    = "hypershift.open-cluster-management.io/createBy"
+	hypershiftBucketSecretName      = "hypershift-operator-oidc-provider-s3-credentials"
+	hypershiftPrivateLinkSecretName = "hypershift-operator-private-link-credentials"
+	kindAppliedManifestWork         = "AppliedManifestWork"
+	hypershiftDeploymentAnnoKey     = "cluster.open-cluster-management.io/hypershiftdeployment"
 )
 
 var (
