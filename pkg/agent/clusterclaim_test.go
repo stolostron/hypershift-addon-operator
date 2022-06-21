@@ -131,3 +131,22 @@ func TestCreateHostedClusterClaim(t *testing.T) {
 		})
 	}
 }
+
+func TestGenerateClusterClientFromSecret(t *testing.T) {
+	ctx := context.Background()
+	client := initClient()
+
+	kcSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kubeconfig",
+			Namespace: "clusters",
+		},
+		Data: map[string][]byte{
+			"kubeconfig": []byte(`fail`),
+		},
+	}
+	client.Create(ctx, kcSecret)
+
+	_, err := generateClusterClientFromSecret(kcSecret)
+	assert.NotNil(t, err, "is not nil if it fails to get a cluster client")
+}
