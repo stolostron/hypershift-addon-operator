@@ -262,56 +262,54 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 
 	kubeconfigData := secretData["kubeconfig"]
 
-	if kubeconfigData != nil {
-		kubeconfig, err := clientcmd.Load(kubeconfigData)
-
-		if err != nil {
-			c.log.Error(err, err.Error())
-			return fmt.Errorf("failed to load kubeconfig from secret: %s", secret.GetName())
-		}
-
-		if len(kubeconfig.Clusters) == 0 {
-			c.log.Error(err, err.Error())
-			return fmt.Errorf("there is no cluster in kubeconfig from secret: %s", secret.GetName())
-		}
-
-		if kubeconfig.Clusters["cluster"] == nil {
-			c.log.Error(err, err.Error())
-			return fmt.Errorf("failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
-		}
-
-		// 2. Replace the config.Clusters["cluster"].Server URL with internal kubeadpi service URL kube-apiserver.<Namespace>.svc.cluster.local
-		clusterServerURL := "https://kube-apiserver." + hc.Namespace + "-" + hc.Name + ".svc.cluster.local:6443"
-
-		kubeconfig.Clusters["cluster"].Server = clusterServerURL
-
-		newKubeconfig, err := clientcmd.Write(*kubeconfig)
-
-		if err != nil {
-			c.log.Error(err, err.Error())
-			return fmt.Errorf("failed to write new kubeconfig to secret: %s", secret.GetName())
-		}
-
-		secretData["kubeconfig"] = newKubeconfig
-
-		secret.Data = secretData
-
-		c.log.Info(fmt.Sprintf("Set the cluster server URL to %s in external-managed-kubeconfig secret", clusterServerURL))
-
-		nilFunc := func() error { return nil }
-
-		// 3. Create the admin kubeconfig secret as external-managed-kubeconfig in klusterlet-<infraID> namespace
-		_, err = controllerutil.CreateOrUpdate(ctx, c.spokeClient, secret, nilFunc)
-		if err != nil {
-			c.log.Error(err, fmt.Sprintf("failed to createOrUpdate external-managed-kubeconfig secret %s", client.ObjectKeyFromObject(secret)))
-			return err
-		} else {
-			c.log.Info(fmt.Sprintf("createOrUpdate external-managed-kubeconfig secret %s", client.ObjectKeyFromObject(secret)))
-		}
-
-	} else {
-		//c.log.Error(fmt.Errorf("failed to get kubeconfig from secret: %s", secret.GetName()), "failed to get kubeconfig from secret: %s", secret.GetName())
+	if kubeconfigData == nil {
 		return fmt.Errorf("failed to get kubeconfig from secret: %s", secret.GetName())
+	}
+
+	kubeconfig, err := clientcmd.Load(kubeconfigData)
+
+	if err != nil {
+		c.log.Error(err, "failed to load kubeconfig from secret: %s", secret.GetName())
+		return fmt.Errorf("failed to load kubeconfig from secret: %s", secret.GetName())
+	}
+
+	if len(kubeconfig.Clusters) == 0 {
+		c.log.Error(err, "there is no cluster in kubeconfig from secret: %s", secret.GetName())
+		return fmt.Errorf("there is no cluster in kubeconfig from secret: %s", secret.GetName())
+	}
+
+	if kubeconfig.Clusters["cluster"] == nil {
+		c.log.Error(err, "failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
+		return fmt.Errorf("failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
+	}
+
+	// 2. Replace the config.Clusters["cluster"].Server URL with internal kubeadpi service URL kube-apiserver.<Namespace>.svc.cluster.local
+	clusterServerURL := "https://kube-apiserver." + hc.Namespace + "-" + hc.Name + ".svc.cluster.local:6443"
+
+	kubeconfig.Clusters["cluster"].Server = clusterServerURL
+
+	newKubeconfig, err := clientcmd.Write(*kubeconfig)
+
+	if err != nil {
+		c.log.Error(err, "failed to write new kubeconfig to secret: %s", secret.GetName())
+		return fmt.Errorf("failed to write new kubeconfig to secret: %s", secret.GetName())
+	}
+
+	secretData["kubeconfig"] = newKubeconfig
+
+	secret.Data = secretData
+
+	c.log.Info("Set the cluster server URL in external-managed-kubeconfig secret", "clusterServerURL", clusterServerURL)
+
+	nilFunc := func() error { return nil }
+
+	// 3. Create the admin kubeconfig secret as external-managed-kubeconfig in klusterlet-<infraID> namespace
+	_, err = controllerutil.CreateOrUpdate(ctx, c.spokeClient, secret, nilFunc)
+	if err != nil {
+		c.log.Error(err, "failed to createOrUpdate external-managed-kubeconfig secret", "secret", client.ObjectKeyFromObject(secret))
+		return err
+	} else {
+		c.log.Info("createOrUpdate external-managed-kubeconfig secret", "secret", client.ObjectKeyFromObject(secret))
 	}
 
 	return nil
