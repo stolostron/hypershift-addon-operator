@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -253,6 +254,67 @@ func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedNam
 	}
 }
 
+func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context, secretData map[string][]byte, hc hyperv1alpha1.HostedCluster) error {
+	// 1. Get hosted cluster's admin kubeconfig secret
+	secret := &corev1.Secret{}
+	secret.SetName("external-managed-kubeconfig")
+	secret.SetNamespace("klusterlet-" + hc.Spec.InfraID)
+
+	kubeconfigData := secretData["kubeconfig"]
+
+	if kubeconfigData == nil {
+		return fmt.Errorf("failed to get kubeconfig from secret: %s", secret.GetName())
+	}
+
+	kubeconfig, err := clientcmd.Load(kubeconfigData)
+
+	if err != nil {
+		c.log.Error(err, "failed to load kubeconfig from secret: %s", secret.GetName())
+		return fmt.Errorf("failed to load kubeconfig from secret: %s", secret.GetName())
+	}
+
+	if len(kubeconfig.Clusters) == 0 {
+		c.log.Error(err, "there is no cluster in kubeconfig from secret: %s", secret.GetName())
+		return fmt.Errorf("there is no cluster in kubeconfig from secret: %s", secret.GetName())
+	}
+
+	if kubeconfig.Clusters["cluster"] == nil {
+		c.log.Error(err, "failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
+		return fmt.Errorf("failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
+	}
+
+	// 2. Replace the config.Clusters["cluster"].Server URL with internal kubeadpi service URL kube-apiserver.<Namespace>.svc.cluster.local
+	clusterServerURL := "https://kube-apiserver." + hc.Namespace + "-" + hc.Name + ".svc.cluster.local:6443"
+
+	kubeconfig.Clusters["cluster"].Server = clusterServerURL
+
+	newKubeconfig, err := clientcmd.Write(*kubeconfig)
+
+	if err != nil {
+		c.log.Error(err, "failed to write new kubeconfig to secret: %s", secret.GetName())
+		return fmt.Errorf("failed to write new kubeconfig to secret: %s", secret.GetName())
+	}
+
+	secretData["kubeconfig"] = newKubeconfig
+
+	secret.Data = secretData
+
+	c.log.Info("Set the cluster server URL in external-managed-kubeconfig secret", "clusterServerURL", clusterServerURL)
+
+	nilFunc := func() error { return nil }
+
+	// 3. Create the admin kubeconfig secret as external-managed-kubeconfig in klusterlet-<infraID> namespace
+	_, err = controllerutil.CreateOrUpdate(ctx, c.spokeClient, secret, nilFunc)
+	if err != nil {
+		c.log.Error(err, "failed to createOrUpdate external-managed-kubeconfig secret", "secret", client.ObjectKeyFromObject(secret))
+		return err
+	}
+
+	c.log.Info("createOrUpdate external-managed-kubeconfig secret", "secret", client.ObjectKeyFromObject(secret))
+
+	return nil
+}
+
 func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
@@ -339,6 +401,21 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			}
 			hubMirrorSecret.Data = se.Data
 
+			// Create or update external-managed-kubeconfig secret for managed cluster registration agent
+			if strings.HasSuffix(hubMirrorSecret.Name, "admin-kubeconfig") {
+				c.log.Info("Generating external-managed-kubeconfig secret")
+
+				extSecret := se.DeepCopy()
+
+				errExt := c.generateExtManagedKubeconfigSecret(ctx, extSecret.Data, *hc)
+
+				if errExt != nil {
+					lastErr = errExt
+				} else {
+					c.log.Info("Successfully generated external-managed-kubeconfig secret")
+				}
+			}
+
 			nilFunc := func() error { return nil }
 
 			_, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, hubMirrorSecret, nilFunc)
@@ -348,6 +425,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			} else {
 				c.log.Info(fmt.Sprintf("createOrUpdate hostedcluster secret %s to hub", client.ObjectKeyFromObject(hubMirrorSecret)))
 			}
+
 		}
 
 		return lastErr
