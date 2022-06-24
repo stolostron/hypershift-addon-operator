@@ -308,9 +308,9 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	if err != nil {
 		c.log.Error(err, "failed to createOrUpdate external-managed-kubeconfig secret", "secret", client.ObjectKeyFromObject(secret))
 		return err
-	} else {
-		c.log.Info("createOrUpdate external-managed-kubeconfig secret", "secret", client.ObjectKeyFromObject(secret))
 	}
+
+	c.log.Info("createOrUpdate external-managed-kubeconfig secret", "secret", client.ObjectKeyFromObject(secret))
 
 	return nil
 }
