@@ -12,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
@@ -37,8 +38,23 @@ func TestReconcile(t *testing.T) {
 	// Create secrets
 	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
 	secrets := aCtrl.scaffoldHostedclusterSecrets(hcNN)
+
 	for _, sec := range secrets {
 		sec.SetName(fmt.Sprintf("%s-%s", hcNN.Name, sec.Name))
+		secData := map[string][]byte{}
+		secData["kubeconfig"] = []byte(`apiVersion: v1
+clusters:
+- name: cluster
+  server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:6443
+contexts:
+- context:
+    cluster: cluster
+    namespace: default
+    user: admin
+  name: admin
+current-context: admin
+kind: Config`)
+		sec.Data = secData
 		aCtrl.hubClient.Create(ctx, sec)
 		defer aCtrl.hubClient.Delete(ctx, sec)
 	}
@@ -63,6 +79,14 @@ func TestReconcile(t *testing.T) {
 	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-kubeadmin-password", hc.Spec.InfraID), Namespace: aCtrl.clusterName}
 	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
 	assert.Nil(t, err, "is nil when the kubeadmin password secret is found")
+
+	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-" + hc.Spec.InfraID}
+	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
+	assert.Nil(t, err, "is nil when external-managed-kubeconfig secret is found")
+
+	kubeconfig, err := clientcmd.Load(secret.Data["kubeconfig"])
+	assert.Nil(t, err, "is nil when kubeconfig data can be loaded")
+	assert.Equal(t, kubeconfig.Clusters["cluster"].Server, "https://kube-apiserver."+hc.Namespace+"-"+hc.Name+".svc.cluster.local:6443")
 
 	// Delete hosted cluster and reconcile
 	aCtrl.hubClient.Delete(ctx, hc)
