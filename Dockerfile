@@ -15,7 +15,6 @@ ENV USER_UID=1001
 
 # Add the binaries
 COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift-addon .
-COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift /usr/bin
 
 
 USER ${USER_UID}
