@@ -10,11 +10,12 @@ RUN make build --warn-undefined-variables
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 
-
-ENV USER_UID=1001
-
 # Add the binaries
 COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift-addon .
+<<<<<<< Updated upstream
 
 
 USER ${USER_UID}
+=======
+COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift /usr/bin
+>>>>>>> Stashed changes
