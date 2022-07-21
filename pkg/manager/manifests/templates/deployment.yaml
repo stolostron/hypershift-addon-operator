@@ -20,10 +20,19 @@ spec:
       - name: hub-config
         secret:
           secretName: {{ .KubeConfigSecret }}
+      securityContext:
+        runAsNonRoot: true
       containers:
       - name: {{ .AddonName }}
         image: {{ .Image }}
         imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: false
         args:
           - "./hypershift-addon"
           - "agent"
