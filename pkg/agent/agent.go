@@ -40,6 +40,7 @@ const (
 	hypershiftPrivateLinkSecretName = "hypershift-operator-private-link-credentials"
 	kindAppliedManifestWork         = "AppliedManifestWork"
 	hypershiftDeploymentAnnoKey     = "cluster.open-cluster-management.io/hypershiftdeployment"
+	managedClusterAnnoKey           = "cluster.open-cluster-management.io/managedcluster-name"
 )
 
 var (
@@ -258,8 +259,11 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	// 1. Get hosted cluster's admin kubeconfig secret
 	secret := &corev1.Secret{}
 	secret.SetName("external-managed-kubeconfig")
-	secret.SetNamespace("klusterlet-" + hc.Spec.InfraID)
-
+	managedClusterAnnoValue, ok := hc.GetAnnotations()[managedClusterAnnoKey]
+	if !ok || len(managedClusterAnnoValue) == 0 {
+		managedClusterAnnoValue = hc.Spec.InfraID
+	}
+	secret.SetNamespace("klusterlet-" + managedClusterAnnoValue)
 	kubeconfigData := secretData["kubeconfig"]
 
 	if kubeconfigData == nil {
@@ -385,9 +389,14 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 		hcSecrets := c.scaffoldHostedclusterSecrets(req.NamespacedName)
 		for _, se := range hcSecrets {
+			secretName := hc.Spec.InfraID
+			managedClusterAnnoValue, ok := hc.GetAnnotations()[managedClusterAnnoKey]
+			if ok && len(managedClusterAnnoValue) > 0 {
+				secretName = managedClusterAnnoValue
+			}
 			hubMirrorSecret := se.DeepCopy()
 			hubMirrorSecret.SetNamespace(c.clusterName)
-			hubMirrorSecret.SetName(fmt.Sprintf("%s-%s", hc.Spec.InfraID, se.Name))
+			hubMirrorSecret.SetName(fmt.Sprintf("%s-%s", secretName, se.Name))
 
 			se.SetName(fmt.Sprintf("%s-%s", hc.Name, se.Name))
 			if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(se), se); err != nil {
