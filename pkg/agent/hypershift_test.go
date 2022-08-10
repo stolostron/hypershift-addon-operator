@@ -576,7 +576,7 @@ func TestCleanupCommand(t *testing.T) {
 	assert.Equal(t, "cleanup", cleanupCmd.Use)
 }
 
-func TestRunHypershiftInstallPrivateLink(t *testing.T) {
+func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	ctx := context.Background()
 
 	zapLog, _ := zap.NewDevelopment()
@@ -634,11 +634,24 @@ func TestRunHypershiftInstallPrivateLink(t *testing.T) {
 			"aws-access-key-id":     []byte(`private_secret_key_id`),
 		},
 	}
+	externalDnsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hypershiftExternalDNSSecretName,
+			Namespace: aCtrl.clusterName,
+		},
+		Data: map[string][]byte{
+			"provider":      []byte(`aws`),
+			"credentials":   []byte(`private_secret`),
+			"domain-filter": []byte(`my.house.com`),
+		},
+	}
 
 	aCtrl.hubClient.Create(ctx, bucketSecret)
 	defer aCtrl.hubClient.Delete(ctx, bucketSecret)
 	aCtrl.hubClient.Create(ctx, privateSecret)
 	defer aCtrl.hubClient.Delete(ctx, privateSecret)
+	aCtrl.hubClient.Create(ctx, externalDnsSecret)
+	defer aCtrl.hubClient.Delete(ctx, externalDnsSecret)
 
 	dp := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
@@ -678,7 +691,7 @@ func TestRunHypershiftInstallPrivateLink(t *testing.T) {
 	assert.Nil(t, err, "is nil when oidc secret is found")
 	assert.Equal(t, []byte("[default]\naws_access_key_id = aws_s3_key_id\naws_secret_access_key = aws_s3_secret"), oidcSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
 
-	// Check hypershift-operator-private-link-credentials secret does NOT exist
+	// Check hypershift-operator-private-link-credentials secret exists
 	plSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hypershiftPrivateLinkSecretName,
@@ -688,6 +701,18 @@ func TestRunHypershiftInstallPrivateLink(t *testing.T) {
 	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(plSecret), plSecret)
 	assert.Nil(t, err, "is nil when private link secret is found")
 	assert.Equal(t, []byte("[default]\naws_access_key_id = private_secret_key_id\naws_secret_access_key = private_secret"), plSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
+
+	// Check hypershift-operator-external-dns-credentials secret exists
+	edSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hypershiftExternalDNSSecretName,
+			Namespace: "hypershift",
+		},
+	}
+	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(edSecret), edSecret)
+	assert.Nil(t, err, "is nil when external dns secret is found")
+	assert.Equal(t, []byte(`private_secret`), edSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
+
 	// Cleanup
 	o := &AgentOptions{
 		Log:            zapr.NewLogger(zapLog),
@@ -721,7 +746,7 @@ func TestCreateSpokeCredential(t *testing.T) {
 		},
 	}
 
-	err := aCtrl.createSpokeSecret(ctx, bucketSecret)
+	err := aCtrl.createAwsSpokeSecret(ctx, bucketSecret)
 	assert.NotNil(t, err, "is not nil, when secret is not well formed")
 
 }

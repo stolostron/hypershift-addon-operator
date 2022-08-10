@@ -38,6 +38,7 @@ const (
 	hypershiftAddonAnnotationKey    = "hypershift.open-cluster-management.io/createBy"
 	hypershiftBucketSecretName      = "hypershift-operator-oidc-provider-s3-credentials"
 	hypershiftPrivateLinkSecretName = "hypershift-operator-private-link-credentials"
+	hypershiftExternalDNSSecretName = "hypershift-operator-external-dns-credentials"
 	kindAppliedManifestWork         = "AppliedManifestWork"
 	hypershiftDeploymentAnnoKey     = "cluster.open-cluster-management.io/hypershiftdeployment"
 	managedClusterAnnoKey           = "cluster.open-cluster-management.io/managedcluster-name"

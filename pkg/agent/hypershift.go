@@ -244,7 +244,7 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 			}
 		}
 
-		if err := c.createSpokeSecret(ctx, se); err != nil {
+		if err := c.createAwsSpokeSecret(ctx, se); err != nil {
 			return err
 		}
 		c.log.Info(fmt.Sprintf("oidc s3 bucket, region & credential arguments included"))
@@ -263,7 +263,7 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		privateSecretKey := types.NamespacedName{Name: hypershiftPrivateLinkSecretName, Namespace: c.clusterName}
 		spl := &corev1.Secret{}
 		if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
-			if err := c.createSpokeSecret(ctx, spl); err != nil {
+			if err := c.createAwsSpokeSecret(ctx, spl); err != nil {
 				return err
 			}
 			c.log.Info(fmt.Sprintf("private link region & credential arguments included"))
@@ -276,6 +276,23 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		} else {
 			c.log.Info(fmt.Sprintf("private-link secret(%s) was not found", privateSecretKey))
 		}
+	}
+	//External DNS
+	extDNSSecretKey := types.NamespacedName{Name: hypershiftExternalDNSSecretName, Namespace: c.clusterName}
+	sExtDNS := &corev1.Secret{}
+	if err := c.hubClient.Get(ctx, extDNSSecretKey, sExtDNS); err == nil {
+		if err := c.createSpokeSecret(ctx, sExtDNS); err != nil {
+			return err
+		}
+		c.log.Info(fmt.Sprintf("external dns provider & domain-filter arguments included"))
+		awsArgs := []string{
+			"--external-dns-secret", hypershiftExternalDNSSecretName,
+			"--external-dns-domain-filter", string(sExtDNS.Data["domain-filter"]),
+			"--external-dns-provider", string(sExtDNS.Data["provider"]),
+		}
+		args = append(args, awsArgs...)
+	} else {
+		c.log.Info(fmt.Sprintf("external dns secret(%s) was not found", extDNSSecretKey))
 	}
 
 	if c.withOverride {
@@ -352,19 +369,23 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 	return nil
 }
 
-func (c *agentController) createSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
+func (c *agentController) createAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
 
-	creds := hubSecret.Data["credentials"]
 	region := hubSecret.Data["region"]
 	awsSecretKey := hubSecret.Data["aws-secret-access-key"]
 	awsKeyId := hubSecret.Data["aws-access-key-id"]
-	if (creds == nil && (awsKeyId == nil || awsSecretKey == nil)) || region == nil {
+	if (hubSecret.Data["credentials"] == nil && (awsKeyId == nil || awsSecretKey == nil)) || region == nil {
 		return fmt.Errorf("secret(%s/%s) does not contain a valid credential or region", hubSecret.Namespace, hubSecret.Name)
 	} else {
 		if awsSecretKey != nil {
-			creds = []byte(fmt.Sprintf("[default]\naws_access_key_id = %s\naws_secret_access_key = %s", awsKeyId, awsSecretKey))
+			hubSecret.Data["credentials"] = []byte(fmt.Sprintf("[default]\naws_access_key_id = %s\naws_secret_access_key = %s", awsKeyId, awsSecretKey))
 		}
 	}
+
+	return c.createSpokeSecret(ctx, hubSecret)
+}
+
+func (c *agentController) createSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
 
 	spokeSecret := &corev1.Secret{
 		ObjectMeta: v1.ObjectMeta{
@@ -372,7 +393,7 @@ func (c *agentController) createSpokeSecret(ctx context.Context, hubSecret *core
 			Namespace: hypershiftOperatorKey.Namespace,
 		},
 		Data: map[string][]byte{
-			"credentials": creds,
+			"credentials": hubSecret.Data["credentials"],
 		},
 	}
 	c.log.Info(fmt.Sprintf("createorupdate the the secret (%s/%s) on cluster %s", hypershiftOperatorKey.Namespace, hubSecret.Name, hubSecret.Namespace))
