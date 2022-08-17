@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -375,8 +375,8 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
-	if hc.Status.KubeConfig == nil ||
-		!meta.IsStatusConditionTrue(hc.Status.Conditions, string(hyperv1alpha1.HostedClusterAvailable)) {
+	if hc.Status.Version == nil || len(hc.Status.Version.History) == 0 ||
+		!isVersionHistoryStateFound(hc.Status.Version.History, configv1.CompletedUpdate) {
 		// Wait for secrets to exist
 		return ctrl.Result{}, nil
 	}
@@ -456,6 +456,15 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	return ctrl.Result{}, nil
+}
+
+func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1.UpdateState) bool {
+	for _, h := range history {
+		if h.State == state {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
