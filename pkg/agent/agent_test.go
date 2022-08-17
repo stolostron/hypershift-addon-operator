@@ -129,7 +129,8 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 		Status: hyperv1alpha1.HostedClusterStatus{
 			KubeConfig:        &corev1.LocalObjectReference{Name: "kubeconfig"},
 			KubeadminPassword: &corev1.LocalObjectReference{Name: "kubeadmin"},
-			Conditions:        []metav1.Condition{{Type: string(hyperv1alpha1.HostedClusterAvailable), Status: metav1.ConditionTrue}},
+			Conditions: []metav1.Condition{{Type: string(hyperv1alpha1.HostedClusterAvailable), Status: metav1.ConditionTrue},
+				{Type: string(hyperv1alpha1.ClusterVersionSucceeding), Status: metav1.ConditionTrue}},
 		},
 	}
 	return hc

@@ -381,7 +381,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
-	createOrUpdateMirrorSecrets := func() error {
+	createOrUpdateMirrorSecrets := func() (bool, error) { // return true for requeue
 		var lastErr error
 		hypershiftDeploymentAnnoValue, ok := hc.GetAnnotations()[hypershiftDeploymentAnnoKey]
 		if !ok || len(hypershiftDeploymentAnnoValue) == 0 {
@@ -412,7 +412,14 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			hubMirrorSecret.Data = se.Data
 
 			// Create or update external-managed-kubeconfig secret for managed cluster registration agent
+			// if the HC condition ClusterVersionSucceeding is true else requeue and wait again
 			if strings.HasSuffix(hubMirrorSecret.Name, "admin-kubeconfig") {
+				if !meta.IsStatusConditionTrue(hc.Status.Conditions, string(hyperv1alpha1.ClusterVersionSucceeding)) {
+					c.log.Info("Requeue due to hostedcluster status ClusterVersionSucceeding is not true yet")
+
+					return true, nil
+				}
+
 				c.log.Info("Generating external-managed-kubeconfig secret")
 
 				extSecret := se.DeepCopy()
@@ -438,11 +445,14 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 		}
 
-		return lastErr
+		return false, lastErr
 	}
 
-	if err := createOrUpdateMirrorSecrets(); err != nil {
+	shouldRequeue, err := createOrUpdateMirrorSecrets()
+	if err != nil {
 		return ctrl.Result{}, err
+	} else if shouldRequeue {
+		return ctrl.Result{Requeue: true, RequeueAfter: 1 * time.Minute}, nil
 	}
 
 	if err := c.createHostedClusterClaim(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Status.KubeConfig.Name},
