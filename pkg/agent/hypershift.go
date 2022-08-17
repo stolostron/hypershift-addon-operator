@@ -295,6 +295,13 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		c.log.Info(fmt.Sprintf("external dns secret(%s) was not found", extDNSSecretKey))
 	}
 
+	//Enable control plane telemetry forwarding
+	telemetryArgs := []string{
+		"--enable-uwm-telemetry-remote-write",
+		"--platform-monitoring", "OperatorOnly",
+	}
+	args = append(args, telemetryArgs...)
+
 	if c.withOverride {
 		imageStreamFile, err := c.readInDownstreamOverride()
 		if err != nil {
