@@ -28,6 +28,7 @@ import (
 	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
@@ -72,9 +73,14 @@ func (o *AgentOptions) runCleanup(ctx context.Context, aCtrl *agentController) e
 	if aCtrl == nil {
 		spokeConfig := ctrl.GetConfigOrDie()
 
-		c, err := ctrlClient.New(spokeConfig, ctrlClient.Options{})
+		c, err := ctrlClient.New(spokeConfig, ctrlClient.Options{Scheme: scheme})
 		if err != nil {
 			return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
+		}
+
+		if err := hyperv1alpha1.AddToScheme(scheme); err != nil {
+			log.Error(err, "unable add HyperShift APIs to scheme")
+			return fmt.Errorf("unable add HyperShift APIs to scheme, err: %w", err)
 		}
 
 		aCtrl = &agentController{
@@ -170,7 +176,17 @@ func (c *agentController) runHypershiftCleanup(ctx context.Context) error {
 	defer c.log.Info("exit runHypershiftCleanup")
 
 	if !c.isDeploymentMarked(ctx) {
-		c.log.Info(fmt.Sprintf("skip the hypershift operator deleting, not created by %s", util.AddonControllerName))
+		c.log.Info(fmt.Sprintf("skip deletion of the hypershift operator, not created by %s", util.AddonControllerName))
+		return nil
+	}
+
+	hasHCs, err := c.hasHostedClusters(ctx)
+	if err != nil {
+		c.log.Error(err, "failed to list the hostedclusters")
+		return err
+	}
+	if hasHCs {
+		c.log.Info(fmt.Sprintf("skip deletion of the hypershift operator, there are existing HostedClusters"))
 		return nil
 	}
 
@@ -470,6 +486,16 @@ func (c *agentController) isDeploymentMarked(ctx context.Context) bool {
 	}
 
 	return true
+}
+
+func (c *agentController) hasHostedClusters(ctx context.Context) (bool, error) {
+	listopts := &client.ListOptions{}
+	hcList := &hyperv1alpha1.HostedClusterList{}
+	if err := c.spokeUncachedClient.List(ctx, hcList, listopts); err != nil {
+		return false, err
+	}
+
+	return len(hcList.Items) != 0, nil
 }
 
 func (c *agentController) deploymentExistWithNoImageChange(ctx context.Context) (error, bool) {
