@@ -462,12 +462,35 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.runHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
+	// Create hosted cluster
+	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
+	hc := getHostedCluster(hcNN)
+	err = aCtrl.hubClient.Create(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is created successfull")
+
 	// Cleanup
+	// Hypershift deployment is not deleted because there is an existing hostedcluster
 	o := &AgentOptions{
 		Log:            zapr.NewLogger(zapLog),
 		AddonName:      "hypershift-addon",
 		AddonNamespace: "hypershift",
 	}
+	err = o.runCleanup(ctx, aCtrl)
+	assert.Nil(t, err, "is nil if cleanup is succcessful")
+
+	// Check service account is not deleted
+	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: "test-sa", Namespace: "default"}, testSa)
+	assert.Nil(t, err, "is nil if the service account exists")
+
+	// Check hypershift deployment is not deleted
+	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)
+	assert.Nil(t, err, "is nil if the hypershift deployment exists")
+
+	// Delete HC
+	err = aCtrl.spokeUncachedClient.Delete(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is deleted successfull")
+
+	// Cleanup after HC is deleted
 	err = o.runCleanup(ctx, aCtrl)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 
@@ -481,9 +504,9 @@ func TestRunHypershiftInstall(t *testing.T) {
 	assert.NotNil(t, err, "is not nil if the hypershift deployment is deleted")
 	assert.True(t, errors.IsNotFound(err))
 
-	// Cleanup with nil aCtrl results in error
-	o.runCleanup(ctx, nil)
-	assert.NotNil(t, err, "is not nil if cleanup failed")
+	// Cleanup again with nil aCtrl is successful
+	err = o.runCleanup(ctx, nil)
+	assert.Nil(t, err, "is nil if cleanup is successful")
 }
 
 func TestReadDownstreamOverride(t *testing.T) {
