@@ -8,14 +8,20 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
+
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 )
 
 func TestReconcile(t *testing.T) {
@@ -24,15 +30,10 @@ func TestReconcile(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 
 	aCtrl := &agentController{
-		spokeUncachedClient:       client,
-		spokeClient:               client,
-		hubClient:                 client,
-		log:                       zapr.NewLogger(zapLog),
-		addonNamespace:            "addon",
-		operatorImage:             "my-test-image",
-		clusterName:               "cluster1",
-		pullSecret:                "pull-secret",
-		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+		spokeUncachedClient: client,
+		spokeClient:         client,
+		hubClient:           client,
+		log:                 zapr.NewLogger(zapLog),
 	}
 
 	// Create secrets
@@ -108,7 +109,7 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        hcNN.Name,
 			Namespace:   hcNN.Namespace,
-			Annotations: map[string]string{hypershiftDeploymentAnnoKey: "test-hd1"},
+			Annotations: map[string]string{util.HypershiftDeploymentAnnoKey: "test-hd1"},
 		},
 		Spec: hyperv1alpha1.HostedClusterSpec{
 			Platform: hyperv1alpha1.PlatformSpec{
@@ -139,4 +140,47 @@ func TestAgentCommand(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 	cleanupCmd := NewAgentCommand("operator", zapr.NewLogger(zapLog))
 	assert.Equal(t, "agent", cleanupCmd.Use)
+}
+
+func TestCleanupCommand(t *testing.T) {
+	ctx := context.Background()
+	zapLog, _ := zap.NewDevelopment()
+	cleanupCmd := NewCleanupCommand("operator", zapr.NewLogger(zapLog))
+	assert.Equal(t, "cleanup", cleanupCmd.Use)
+
+	// Cleanup
+	// Hypershift deployment is not deleted because there is an existing hostedcluster
+	o := &AgentOptions{
+		Log:            zapr.NewLogger(zapLog),
+		AddonName:      "hypershift-addon",
+		AddonNamespace: "hypershift",
+	}
+	err := o.runCleanup(ctx, nil)
+	assert.Nil(t, err, "is nil if cleanup is succcessful")
+}
+
+func TestRunControllerManager(t *testing.T) {
+	ctx := context.Background()
+	zapLog, _ := zap.NewDevelopment()
+	o := &AgentOptions{
+		Log:            zapr.NewLogger(zapLog),
+		AddonName:      "hypershift-addon",
+		AddonNamespace: "hypershift",
+	}
+	err := o.runControllerManager(ctx)
+	assert.NotNil(t, err, "err it not nil if the controller fail to run")
+}
+
+func initClient() client.Client {
+	scheme := runtime.NewScheme()
+	//corev1.AddToScheme(scheme)
+	appsv1.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
+	metav1.AddMetaToScheme(scheme)
+	hyperv1alpha1.AddToScheme(scheme)
+
+	ncb := fake.NewClientBuilder()
+	ncb.WithScheme(scheme)
+	return ncb.Build()
+
 }
