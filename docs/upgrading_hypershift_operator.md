@@ -2,7 +2,7 @@
 
 ## Overriding the hypershift operator image references
 
-Without upgrading MCE or ACM, you can create configmap called `hypershift-upgrade-images` in `open-cluster-management-agent-addon` namespace on a hosting (management) cluster to upgrade the hypershift operator that was installed by the hypershift `ManagedClusterAddon`. The hypershift addon agent watches this specific configmap and determines whether to upgrade the hypershift operator. This action should not have impact on other running hosted contol planes.
+Without upgrading MCE or ACM, you can create configmap called `hypershift-override-images` in `open-cluster-management-agent-addon` namespace on a hosting (management) cluster to upgrade the hypershift operator that was installed by the hypershift `ManagedClusterAddon`. The hypershift addon agent watches this specific configmap and determines whether to upgrade the hypershift operator. This action should not have impact on other running hosted contol planes.
 
 This is a sample configmap YAML.
 
@@ -10,7 +10,7 @@ This is a sample configmap YAML.
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: hypershift-upgrade-images
+  name: hypershift-override-images
   namespace: open-cluster-management-agent-addon
 data:
   apiserver-network-proxy: quay.io:443/acm-d/apiserver-network-proxy-rhel8@sha256:90af8dd96676f1b07d9420924628ffe91682971d377030fe752d1bae226c8ffe
@@ -25,7 +25,7 @@ data:
 
 ## Using manifestwork from the service cluster (MCE/ACM hub cluster) to upgrade the hypershift operator
 
-You can put `hypershift-upgrade-images` configmap as a payload of a `manifestwork` in the hosting managed cluster's namespace on the service cluster (MCE hub cluster). This will create create configmap called `hypershift-upgrade-images` in `open-cluster-management-agent-addon` namespace on a hosting (management) cluster to trigger the hypershift operator upgrade on the hosting cluster.
+You can put `hypershift-upgrade-images` configmap as a payload of a `manifestwork` in the hosting managed cluster's namespace on the service cluster (MCE hub cluster). This will create create configmap called `hypershift-override-images` in `open-cluster-management-agent-addon` namespace on a hosting (management) cluster to trigger the hypershift operator upgrade on the hosting cluster.
 
 This is a sample manifestwork YAML.
 
@@ -41,7 +41,7 @@ spec:
     - apiVersion: v1
       kind: ConfigMap
       metadata:
-        name: hypershift-upgrade-images
+        name: hypershift-override-images
         namespace: open-cluster-management-agent-addon
       data:
         apiserver-network-proxy: quay.io:443/acm-d/apiserver-network-proxy-rhel8@sha256:90af8dd96676f1b07d9420924628ffe91682971d377030fe752d1bae226c8ffe
