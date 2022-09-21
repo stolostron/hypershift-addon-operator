@@ -15,6 +15,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	configv1 "github.com/openshift/api/config/v1"
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
 )
 
@@ -130,6 +131,9 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 			KubeConfig:        &corev1.LocalObjectReference{Name: "kubeconfig"},
 			KubeadminPassword: &corev1.LocalObjectReference{Name: "kubeadmin"},
 			Conditions:        []metav1.Condition{{Type: string(hyperv1alpha1.HostedClusterAvailable), Status: metav1.ConditionTrue}},
+			Version: &hyperv1alpha1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate}},
+			},
 		},
 	}
 	return hc
