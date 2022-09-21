@@ -29,19 +29,11 @@ import (
 
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
 	"open-cluster-management.io/addon-framework/pkg/lease"
+	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
 
+	"github.com/stolostron/hypershift-addon-operator/pkg/install"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
-)
-
-const (
-	hypershiftAddonAnnotationKey    = "hypershift.open-cluster-management.io/createBy"
-	hypershiftBucketSecretName      = "hypershift-operator-oidc-provider-s3-credentials"
-	hypershiftPrivateLinkSecretName = "hypershift-operator-private-link-credentials"
-	hypershiftExternalDNSSecretName = "hypershift-operator-external-dns-credentials"
-	kindAppliedManifestWork         = "AppliedManifestWork"
-	hypershiftDeploymentAnnoKey     = "cluster.open-cluster-management.io/hypershiftdeployment"
-	managedClusterAnnoKey           = "cluster.open-cluster-management.io/managedcluster-name"
 )
 
 var (
@@ -51,6 +43,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(hyperv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(addonv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -152,18 +145,21 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	aCtrl := &agentController{
-		hubClient:                 hubClient,
-		spokeUncachedClient:       spokeKubeClient,
-		spokeClient:               mgr.GetClient(),
-		spokeClustersClient:       spokeClusterClient,
-		hypershiftInstallExecutor: &HypershiftLibExecutor{},
+		hubClient:           hubClient,
+		spokeUncachedClient: spokeKubeClient,
+		spokeClient:         mgr.GetClient(),
+		spokeClustersClient: spokeClusterClient,
 	}
 
 	o.Log = o.Log.WithName("agent-reconciler")
 	aCtrl.plugInOption(o)
 
+	// Image upgrade controller
+	uCtrl := install.NewUpgradeController(hubClient, spokeKubeClient, o.Log, o.AddonName, o.AddonNamespace, o.SpokeClusterName,
+		o.HypershiftOperatorImage, o.PullSecretName, o.WithOverride)
+
 	// retry 3 times, in case something wrong with creating the hypershift install job
-	if err := aCtrl.runHypershiftCmdWithRetires(ctx, 3, time.Second*10, aCtrl.runHypershiftInstall); err != nil {
+	if err := uCtrl.RunHypershiftCmdWithRetries(ctx, 3, time.Second*10, uCtrl.RunHypershiftInstall); err != nil {
 		log.Error(err, "failed to install hypershift Operator")
 		return err
 	}
@@ -193,6 +189,11 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to create agent controller: %s, err: %w", util.AddonControllerName, err)
 	}
 
+	//+kubebuilder:scaffold:builder
+	if err = uCtrl.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create image upgrade controller: %s, err: %w", util.ImageUpgradeControllerName, err)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up health check, err: %w", err)
 	}
@@ -204,29 +205,18 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 }
 
 type agentController struct {
-	hubClient                 client.Client
-	spokeUncachedClient       client.Client
-	spokeClient               client.Client              //local for agent
-	spokeClustersClient       clusterclientset.Interface // client used to create cluster claim for the hypershift management cluster
-	log                       logr.Logger
-	recorder                  events.Recorder
-	clusterName               string
-	addonName                 string
-	addonNamespace            string
-	operatorImage             string
-	pullSecret                string
-	withOverride              bool
-	hypershiftInstallExecutor HypershiftInstallExecutorInterface
+	hubClient           client.Client
+	spokeUncachedClient client.Client
+	spokeClient         client.Client              //local for agent
+	spokeClustersClient clusterclientset.Interface // client used to create cluster claim for the hypershift management cluster
+	log                 logr.Logger
+	recorder            events.Recorder
+	clusterName         string
 }
 
 func (c *agentController) plugInOption(o *AgentOptions) {
 	c.log = o.Log
 	c.clusterName = o.SpokeClusterName
-	c.addonName = o.AddonName
-	c.addonNamespace = o.AddonNamespace
-	c.operatorImage = o.HypershiftOperatorImage
-	c.pullSecret = o.PullSecretName
-	c.withOverride = o.WithOverride
 }
 
 func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedName) []*corev1.Secret {
@@ -260,7 +250,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	// 1. Get hosted cluster's admin kubeconfig secret
 	secret := &corev1.Secret{}
 	secret.SetName("external-managed-kubeconfig")
-	managedClusterAnnoValue, ok := hc.GetAnnotations()[managedClusterAnnoKey]
+	managedClusterAnnoValue, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
 	if !ok || len(managedClusterAnnoValue) == 0 {
 		managedClusterAnnoValue = hc.Spec.InfraID
 	}
@@ -383,7 +373,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	createOrUpdateMirrorSecrets := func() error {
 		var lastErr error
-		hypershiftDeploymentAnnoValue, ok := hc.GetAnnotations()[hypershiftDeploymentAnnoKey]
+		hypershiftDeploymentAnnoValue, ok := hc.GetAnnotations()[util.HypershiftDeploymentAnnoKey]
 		if !ok || len(hypershiftDeploymentAnnoValue) == 0 {
 			lastErr = fmt.Errorf("failed to get hypershift deployment annotation from hosted cluster")
 		}
@@ -391,7 +381,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		hcSecrets := c.scaffoldHostedclusterSecrets(req.NamespacedName)
 		for _, se := range hcSecrets {
 			secretName := hc.Spec.InfraID
-			managedClusterAnnoValue, ok := hc.GetAnnotations()[managedClusterAnnoKey]
+			managedClusterAnnoValue, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
 			if ok && len(managedClusterAnnoValue) > 0 {
 				secretName = managedClusterAnnoValue
 			}
@@ -407,7 +397,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			}
 
 			if len(hypershiftDeploymentAnnoValue) != 0 {
-				hubMirrorSecret.SetAnnotations(map[string]string{hypershiftDeploymentAnnoKey: hypershiftDeploymentAnnoValue})
+				hubMirrorSecret.SetAnnotations(map[string]string{util.HypershiftDeploymentAnnoKey: hypershiftDeploymentAnnoValue})
 			}
 			hubMirrorSecret.Data = se.Data
 
@@ -469,7 +459,7 @@ func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
 	filterByOwner := func(obj client.Object) bool {
-		hypershiftDeploymentAnnoValue, ok := obj.GetAnnotations()[hypershiftDeploymentAnnoKey]
+		hypershiftDeploymentAnnoValue, ok := obj.GetAnnotations()[util.HypershiftDeploymentAnnoKey]
 		if !ok || len(hypershiftDeploymentAnnoValue) == 0 {
 			return false
 		}
@@ -481,4 +471,57 @@ func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
 		WithEventFilter(predicate.NewPredicateFuncs(filterByOwner)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(c)
+}
+
+func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
+	o := NewAgentOptions(addonName, logger)
+
+	ctx := context.TODO()
+
+	cmd := &cobra.Command{
+		Use:   "cleanup",
+		Short: fmt.Sprintf("clean up the hypershift operator if it's deployed by %s", addonName),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return o.runCleanup(ctx, nil)
+		},
+	}
+
+	o.AddFlags(cmd)
+
+	cmd.FParseErrWhitelist.UnknownFlags = true
+
+	return cmd
+}
+
+func (o *AgentOptions) runCleanup(ctx context.Context, uCtrl *install.UpgradeController) error {
+	log := o.Log.WithName("controller-manager-setup")
+
+	flag.Parse()
+
+	if uCtrl == nil {
+		spokeConfig := ctrl.GetConfigOrDie()
+
+		c, err := client.New(spokeConfig, client.Options{Scheme: scheme})
+		if err != nil {
+			return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
+		}
+
+		if err := hyperv1alpha1.AddToScheme(scheme); err != nil {
+			log.Error(err, "unable add HyperShift APIs to scheme")
+			return fmt.Errorf("unable add HyperShift APIs to scheme, err: %w", err)
+		}
+
+		// Image upgrade controller
+		o.Log = o.Log.WithName("hypersfhit-operation")
+		uCtrl = install.NewUpgradeController(nil, c, o.Log, o.AddonName, o.AddonNamespace, o.SpokeClusterName,
+			o.HypershiftOperatorImage, o.PullSecretName, o.WithOverride)
+	}
+
+	// retry 3 times, in case something wrong with deleting the hypershift install job
+	if err := uCtrl.RunHypershiftCmdWithRetries(ctx, 3, time.Second*10, uCtrl.RunHypershiftCleanup); err != nil {
+		log.Error(err, "failed to clean up hypershift Operator")
+		return err
+	}
+
+	return nil
 }

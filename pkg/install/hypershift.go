@@ -1,35 +1,28 @@
-package agent
+package install
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"math/big"
 	"os"
 	"time"
 
-	"github.com/go-logr/logr"
-	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/types"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	imageapi "github.com/openshift/api/image/v1"
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
-	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 )
@@ -41,67 +34,7 @@ var (
 	}
 )
 
-func init() {
-	utilruntime.Must(addonv1alpha1.AddToScheme(scheme))
-}
-
-func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
-	o := NewAgentOptions(addonName, logger)
-
-	ctx := context.TODO()
-
-	cmd := &cobra.Command{
-		Use:   "cleanup",
-		Short: fmt.Sprintf("clean up the hypershift operator if it's deployed by %s", addonName),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return o.runCleanup(ctx, nil)
-		},
-	}
-
-	o.AddFlags(cmd)
-
-	cmd.FParseErrWhitelist.UnknownFlags = true
-
-	return cmd
-}
-
-func (o *AgentOptions) runCleanup(ctx context.Context, aCtrl *agentController) error {
-	log := o.Log.WithName("controller-manager-setup")
-
-	flag.Parse()
-
-	if aCtrl == nil {
-		spokeConfig := ctrl.GetConfigOrDie()
-
-		c, err := ctrlClient.New(spokeConfig, ctrlClient.Options{Scheme: scheme})
-		if err != nil {
-			return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
-		}
-
-		if err := hyperv1alpha1.AddToScheme(scheme); err != nil {
-			log.Error(err, "unable add HyperShift APIs to scheme")
-			return fmt.Errorf("unable add HyperShift APIs to scheme, err: %w", err)
-		}
-
-		aCtrl = &agentController{
-			spokeUncachedClient:       c,
-			hypershiftInstallExecutor: &HypershiftLibExecutor{},
-		}
-	}
-
-	o.Log = o.Log.WithName("hypersfhit-operation")
-	aCtrl.plugInOption(o)
-
-	// retry 3 times, in case something wrong with deleting the hypershift install job
-	if err := aCtrl.runHypershiftCmdWithRetires(ctx, 3, time.Second*10, aCtrl.runHypershiftCleanup); err != nil {
-		log.Error(err, "failed to clean up hypershift Operator")
-		return err
-	}
-
-	return nil
-}
-
-func (c *agentController) runHypershiftCmdWithRetires(
+func (c *UpgradeController) RunHypershiftCmdWithRetries(
 	ctx context.Context, attempts int, sleep time.Duration, f func(context.Context) error) error {
 	var err error
 	for i := attempts; i > 0; i-- {
@@ -134,7 +67,7 @@ func getRandInt(m int64) int64 {
 	return n.Int64()
 }
 
-func (c *agentController) runHypershiftRender(ctx context.Context, args []string) ([]unstructured.Unstructured, error) {
+func (c *UpgradeController) runHypershiftRender(ctx context.Context, args []string) ([]unstructured.Unstructured, error) {
 	out := []unstructured.Unstructured{}
 	if c.hypershiftInstallExecutor == nil {
 		return out, fmt.Errorf("failed to run hypershift cmd, no install executor specified")
@@ -171,9 +104,9 @@ func (c *agentController) runHypershiftRender(ctx context.Context, args []string
 	return out, nil
 }
 
-func (c *agentController) runHypershiftCleanup(ctx context.Context) error {
-	c.log.Info("enter runHypershiftCleanup")
-	defer c.log.Info("exit runHypershiftCleanup")
+func (c *UpgradeController) RunHypershiftCleanup(ctx context.Context) error {
+	c.log.Info("enter RunHypershiftCleanup")
+	defer c.log.Info("exit RunHypershiftCleanup")
 
 	if !c.isDeploymentMarked(ctx) {
 		c.log.Info(fmt.Sprintf("skip deletion of the hypershift operator, not created by %s", util.AddonControllerName))
@@ -212,21 +145,21 @@ func (c *agentController) runHypershiftCleanup(ctx context.Context) error {
 	return nil
 }
 
-func (c *agentController) runHypershiftInstall(ctx context.Context) error {
+func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 	c.log.Info("enter runHypershiftInstall")
 	defer c.log.Info("exit runHypershiftInstall")
 
-	if err, ok := c.deploymentExistWithNoImageChange(ctx); ok || err != nil {
+	if err, ok := c.deploymentUpgradable(ctx); !ok || err != nil {
 		if err != nil {
 			return err
 		}
-		c.log.Error(err, "hypershift operator already exists at the required image level, skip update")
+		c.log.Error(err, "hypershift operator exists but not deployed by addon, skip update")
 		return nil
 	}
 
 	awsPlatform := true
 
-	bucketSecretKey := types.NamespacedName{Name: hypershiftBucketSecretName, Namespace: c.clusterName}
+	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.clusterName}
 	se := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, bucketSecretKey, se); err != nil {
 		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey))
@@ -249,9 +182,9 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		}
 
 		// Seed the hypershift namespace, the uninstall will remove this namespace.
-		ns := &corev1.Namespace{ObjectMeta: v1.ObjectMeta{Name: hypershiftOperatorKey.Namespace}}
+		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hypershiftOperatorKey.Namespace}}
 		if err := c.spokeUncachedClient.Get(ctx, client.ObjectKeyFromObject(ns), ns); err != nil {
-			if errors.IsNotFound(err) {
+			if apierrors.IsNotFound(err) {
 				if err := c.spokeUncachedClient.Create(ctx, ns); err != nil {
 					return err
 				}
@@ -267,7 +200,7 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		awsArgs := []string{
 			"--oidc-storage-provider-s3-bucket-name", bucketName,
 			"--oidc-storage-provider-s3-region", bucketRegion,
-			"--oidc-storage-provider-s3-secret", hypershiftBucketSecretName,
+			"--oidc-storage-provider-s3-secret", util.HypershiftBucketSecretName,
 		}
 		args = append(args, awsArgs...)
 
@@ -276,7 +209,7 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		}
 
 		//Private link creds
-		privateSecretKey := types.NamespacedName{Name: hypershiftPrivateLinkSecretName, Namespace: c.clusterName}
+		privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
 		spl := &corev1.Secret{}
 		if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
 			if err := c.createAwsSpokeSecret(ctx, spl); err != nil {
@@ -284,7 +217,7 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 			}
 			c.log.Info(fmt.Sprintf("private link region & credential arguments included"))
 			awsArgs := []string{
-				"--aws-private-secret", hypershiftPrivateLinkSecretName,
+				"--aws-private-secret", util.HypershiftPrivateLinkSecretName,
 				"--aws-private-region", string(spl.Data["region"]),
 				"--private-platform", "AWS",
 			}
@@ -294,7 +227,7 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		}
 	}
 	//External DNS
-	extDNSSecretKey := types.NamespacedName{Name: hypershiftExternalDNSSecretName, Namespace: c.clusterName}
+	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
 	sExtDNS := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, extDNSSecretKey, sExtDNS); err == nil {
 		if err := c.createSpokeSecret(ctx, sExtDNS); err != nil {
@@ -302,7 +235,7 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 		}
 		c.log.Info(fmt.Sprintf("external dns provider & domain-filter arguments included"))
 		awsArgs := []string{
-			"--external-dns-secret", hypershiftExternalDNSSecretName,
+			"--external-dns-secret", util.HypershiftExternalDNSSecretName,
 			"--external-dns-domain-filter", string(sExtDNS.Data["domain-filter"]),
 			"--external-dns-provider", string(sExtDNS.Data["provider"]),
 		}
@@ -367,7 +300,7 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 				a = map[string]string{}
 			}
 
-			a[hypershiftAddonAnnotationKey] = "hypershift-addon"
+			a[util.HypershiftAddonAnnotationKey] = "hypershift-addon"
 
 			item.SetAnnotations(a)
 		}
@@ -380,9 +313,9 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 
 		if err := c.spokeUncachedClient.Patch(ctx,
 			&item,
-			ctrlClient.RawPatch(types.ApplyPatchType, itemBytes),
-			ctrlClient.ForceOwnership,
-			ctrlClient.FieldOwner("hypershift")); err != nil {
+			client.RawPatch(types.ApplyPatchType, itemBytes),
+			client.ForceOwnership,
+			client.FieldOwner("hypershift")); err != nil {
 			c.log.Error(err, fmt.Sprintf("failed to apply %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
 			continue
 		}
@@ -392,7 +325,7 @@ func (c *agentController) runHypershiftInstall(ctx context.Context) error {
 	return nil
 }
 
-func (c *agentController) createAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
+func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
 
 	region := hubSecret.Data["region"]
 	awsSecretKey := hubSecret.Data["aws-secret-access-key"]
@@ -408,10 +341,10 @@ func (c *agentController) createAwsSpokeSecret(ctx context.Context, hubSecret *c
 	return c.createSpokeSecret(ctx, hubSecret)
 }
 
-func (c *agentController) createSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
+func (c *UpgradeController) createSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
 
 	spokeSecret := &corev1.Secret{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      hubSecret.Name,
 			Namespace: hypershiftOperatorKey.Namespace,
 		},
@@ -425,7 +358,7 @@ func (c *agentController) createSpokeSecret(ctx context.Context, hubSecret *core
 	return err
 }
 
-func (c *agentController) ensurePullSecret(ctx context.Context) error {
+func (c *UpgradeController) ensurePullSecret(ctx context.Context) error {
 	obj := &corev1.Secret{}
 	mcePullSecretKey := types.NamespacedName{Name: c.pullSecret, Namespace: c.addonNamespace}
 
@@ -472,7 +405,7 @@ func (c *agentController) ensurePullSecret(ctx context.Context) error {
 	return nil
 }
 
-func (c *agentController) isDeploymentMarked(ctx context.Context) bool {
+func (c *UpgradeController) isDeploymentMarked(ctx context.Context) bool {
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
@@ -481,14 +414,14 @@ func (c *agentController) isDeploymentMarked(ctx context.Context) bool {
 	}
 
 	a := obj.GetAnnotations()
-	if len(a) == 0 || len(a[hypershiftAddonAnnotationKey]) == 0 {
+	if len(a) == 0 || len(a[util.HypershiftAddonAnnotationKey]) == 0 {
 		return false
 	}
 
 	return true
 }
 
-func (c *agentController) hasHostedClusters(ctx context.Context) (bool, error) {
+func (c *UpgradeController) hasHostedClusters(ctx context.Context) (bool, error) {
 	listopts := &client.ListOptions{}
 	hcList := &hyperv1alpha1.HostedClusterList{}
 	if err := c.spokeUncachedClient.List(ctx, hcList, listopts); err != nil {
@@ -498,29 +431,26 @@ func (c *agentController) hasHostedClusters(ctx context.Context) (bool, error) {
 	return len(hcList.Items) != 0, nil
 }
 
-func (c *agentController) deploymentExistWithNoImageChange(ctx context.Context) (error, bool) {
+func (c *UpgradeController) deploymentUpgradable(ctx context.Context) (error, bool) {
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, false
+			return nil, true
 		}
 
 		return err, false
 	}
 
-	// Check if image has changed
-	if len(obj.Spec.Template.Spec.Containers) == 1 &&
-		len(c.operatorImage) > 0 &&
-		obj.Spec.Template.Spec.Containers[0].Image != c.operatorImage &&
-		len(obj.Annotations) > 0 &&
-		obj.Annotations[hypershiftAddonAnnotationKey] == util.AddonControllerName {
-		return nil, false
+	// Check if deployment is created by the addon
+	if obj.Annotations[util.HypershiftAddonAnnotationKey] == util.AddonControllerName {
+		return nil, true
 	}
-	return nil, true
+
+	return nil, false
 }
 
-func (c *agentController) readInDownstreamOverride() (*os.File, error) {
+func (c *UpgradeController) readInDownstreamOverride() (*os.File, error) {
 	cm := &corev1.ConfigMap{}
 	cmKey := types.NamespacedName{Name: util.HypershiftDownstreamOverride, Namespace: c.addonNamespace}
 
@@ -533,6 +463,19 @@ func (c *agentController) readInDownstreamOverride() (*os.File, error) {
 	im, err := base64.StdEncoding.DecodeString(d)
 	if err != nil {
 		return nil, err
+	}
+
+	// If upgrade images CM exists, replace values in the imagestream
+	imUpgradeMap, err := c.getImageOverrideMap()
+	if err == nil {
+		c.log.Info(fmt.Sprintf("found %s configmap, overriding hypershift images in the imagestream", util.HypershiftOverrideImagesCM))
+
+		im, err = c.getUpdatedImageStream(im, imUpgradeMap)
+		if err != nil {
+			return nil, err
+		}
+	} else if !apierrors.IsNotFound(err) {
+		return nil, fmt.Errorf("failed to get the image override configmap, err: %w", err)
 	}
 
 	file, err := ioutil.TempFile("", "hypershift-imagestream")
@@ -548,4 +491,32 @@ func (c *agentController) readInDownstreamOverride() (*os.File, error) {
 	}
 
 	return file, nil
+}
+
+func (c *UpgradeController) getUpdatedImageStream(im []byte, upgradeImagesMap map[string]string) ([]byte, error) {
+	imObj := &imageapi.ImageStream{}
+	if err := yaml.Unmarshal(im, imObj); err != nil {
+		return nil, err
+	}
+
+	for k, v := range upgradeImagesMap {
+		c.log.Info(fmt.Sprintf("upgrade image %s:%s", k, v))
+		overrideImageInImageStream(imObj, k, v)
+	}
+
+	im, err := yaml.Marshal(imObj)
+	if err != nil {
+		return nil, err
+	}
+
+	return im, nil
+}
+
+func overrideImageInImageStream(imObj *imageapi.ImageStream, overrideImageName, overrideImageValue string) {
+	for _, tag := range imObj.Spec.Tags {
+		if tag.Name == overrideImageName {
+			tag.From.Name = overrideImageValue
+			break
+		}
+	}
 }

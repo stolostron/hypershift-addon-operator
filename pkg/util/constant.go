@@ -23,12 +23,41 @@ const (
 	HypershiftOverrideKey        = "imagestream"
 	AddonControllerName          = "hypershift-addon"
 
+	HypershiftOverrideImagesCM = "hypershift-override-images"
+	ImageUpgradeControllerName = "hypershift-image-upgrade"
+
 	HypershiftOperatorNamespace = "hypershift"
 	HypershiftOperatorName      = "operator"
 
 	// Labels for resources to reference the Hosted Cluster
 	HypershiftClusterNameLabel      = "hypershiftdeployments.cluster.open-cluster-management.io/cluster-name"
 	HypershiftHostingNamespaceLabel = "hypershiftdeployments.cluster.open-cluster-management.io/hosting-namespace"
+	HypershiftAddonAnnotationKey    = "hypershift.open-cluster-management.io/createBy"
+
+	// Hypershift Operator Deployment env vars for images
+	HypershiftEnvVarImageAwsCapiProvider      = "IMAGE_AWS_CAPI_PROVIDER"
+	HypershiftEnvVarImageAzureCapiProvider    = "IMAGE_AZURE_CAPI_PROVIDER"
+	HypershiftEnvVarImageKubevertCapiProvider = "IMAGE_KUBEVIRT_CAPI_PROVIDER"
+	HypershiftEnvVarImageKonnectivity         = "IMAGE_KONNECTIVITY"
+	HypershiftEnvVarImageAwsEncyptionProvider = "IMAGE_AWS_ENCRYPTION_PROVIDER"
+	HypershiftEnvVarImageClusterApi           = "IMAGE_CLUSTER_API"
+	HypershiftEnvVarImageAgentCapiProvider    = "IMAGE_AGENT_CAPI_PROVIDER"
+
+	// ImageStream image names
+	ImageStreamAwsCapiProvider      = "cluster-api-provider-aws"
+	ImageStreamAzureCapiProvider    = "cluster-api-provider-azure"
+	ImageStreamKubevertCapiProvider = "cluster-api-provider-kubevirt"
+	ImageStreamKonnectivity         = "apiserver-network-proxy"
+	ImageStreamAwsEncyptionProvider = "aws-encryption-provider"
+	ImageStreamClusterApi           = "cluster-api"
+	ImageStreamAgentCapiProvider    = "cluster-api-provider-agent"
+	ImageStreamHypershiftOperator   = "hypershift-operator"
+
+	HypershiftBucketSecretName      = "hypershift-operator-oidc-provider-s3-credentials"
+	HypershiftPrivateLinkSecretName = "hypershift-operator-private-link-credentials"
+	HypershiftExternalDNSSecretName = "hypershift-operator-external-dns-credentials"
+	HypershiftDeploymentAnnoKey     = "cluster.open-cluster-management.io/hypershiftdeployment"
+	ManagedClusterAnnoKey           = "cluster.open-cluster-management.io/managedcluster-name"
 )
 
 // GenerateClientConfigFromSecret generate a client config from a given secret
