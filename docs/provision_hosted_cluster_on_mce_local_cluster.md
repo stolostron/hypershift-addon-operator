@@ -62,14 +62,13 @@ $ oc label secret hypershift-operator-oidc-provider-s3-credentials -n <managed-c
 
 ##### Enable on a HostedCluster
 
-Set the following parameter in HypershiftDeployment, when creating a cluster:
+Set the following parameter in HostedCluster, when creating a cluster:
 ```
 spec:
-  hostedClusterSpec:
-    platform:
-      type: AWS
-      aws:
-        endpointAccess: Private
+  platform:
+    type: AWS
+    aws:
+      endpointAccess: Private
 ```
 
 #### Enabling External DNS
@@ -97,7 +96,7 @@ $ oc label secret hypershift-operator-external-dns-credentials -n <managed-clust
 
 ##### Enable on a HostedCluster
 
-1. Install the HyperShift add-on. The cluster that hosts the HyperShift operator is the management cluster. This step uses the hypershift-addon to install the HyperShift operator on a managed cluster. `ManagedClusterAddon` hypershift-addon. Replace `managed-cluster-used-as-hosting-service-cluster` with the name of the managed cluster on which you want to install the HyperShift operator. If you are installing on the MCE hub cluster, then use `local-cluster` for this value.
+1. Install the HyperShift add-on. The cluster that hosts the HyperShift operator is the management cluster. This step uses the hypershift-addon to install the HyperShift operator on a managed cluster. `ManagedClusterAddon` hypershift-addon. The namespace will be the managed cluster on which you want to install the HyperShift operator on. In this case, we will use the MCE hub cluster, so we'll set `local-cluster` for this value:
   
 ```bash
 $ oc apply -f - <<EOF
@@ -111,10 +110,10 @@ spec:
 EOF
 ```
 
-3. Confirm that the `hypershift-addon` is installed by running the following command:
+2. Confirm that the `hypershift-addon` is installed by running the following command:
   
 ```bash
-$ oc get managedclusteraddons -n <managed-cluster-used-as-hosting-service-cluster> hypershift-addon
+$ oc get managedclusteraddons -n local-cluster hypershift-addon
 NAME               AVAILABLE   DEGRADED   PROGRESSING
 hypershift-addon   True
 ```
@@ -143,7 +142,7 @@ Note: in order for the cluster to show correctly in the MCE console UI, it is re
 
 2. Ensure you are logged into your hub cluster.
 
-3. Create the infrastructure first:
+3. If you do not want to create the infrastructure and IAM pieces separately, skip to step 6. Otherwise run the following command to create the infrastructure first:
 
 ```bash
 hypershift create infra aws --name $CLUSTER_NAME \
@@ -195,7 +194,7 @@ hypershift create iam aws --infra-id $CLUSTER_NAME \
     --output-file $IAM_OUTPUT_FILE
 ```
 
-6. We're now ready to construct the necessary hosted cluster resources using the information created from the last 2 commands:
+6. We can use the `hypershift create cluster aws` command to create our hosted cluster. If you created the infrastructure and IAM pieces separately, we can specify them as arguments via `--infra-json` and `--iam-json`:
 
 ```bash
 hypershift create cluster aws \
