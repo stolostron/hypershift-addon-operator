@@ -7,7 +7,7 @@ Hosted control planes is a Technology Preview feature, so the related components
 Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine-sample` with your MCE's instance name:
 
 ```bash
-oc patch mce multiclusterengine-sample --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+$ oc patch mce multiclusterengine-sample --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
 ```
 
 ## Configuring the hosting service cluster
@@ -51,24 +51,13 @@ The secret must contain 3 fields:
 See [Getting started](https://hypershift-docs.netlify.app/getting-started). in the HyperShift documentation for more information about the secret. The following example shows a sample AWS secret creation CLI template:
 
 ```bash
-$ oc create secret generic hypershift-operator-oidc-provider-s3-credentials --from-file=credentials=$HOME/.aws/credentials --from-literal=bucket=<s3-bucket-for-hypershift> --from-literal=region=<region> -n <managed-cluster-used-as-hosting-service-cluster>
+$ oc create secret generic hypershift-operator-oidc-provider-s3-credentials --from-file=credentials=$HOME/.aws/credentials --from-literal=bucket=<s3-bucket-for-hypershift> --from-literal=region=<region> -n local-cluster
 ```
 
 **Note:** Disaster recovery backup for the secret is not automatically enabled. Run the following command to add the label that enables the `hypershift-operator-oidc-provider-s3-credentials` secret to be backed up for disaster recovery:
 
 ```bash
-$ oc label secret hypershift-operator-oidc-provider-s3-credentials -n <managed-cluster-used-as-hosting-service-cluster> cluster.open-cluster-management.io/backup=true
-```
-
-##### Enable on a HostedCluster
-
-Set the following parameter in HostedCluster, when creating a cluster:
-```
-spec:
-  platform:
-    type: AWS
-    aws:
-      endpointAccess: Private
+$ oc label secret hypershift-operator-oidc-provider-s3-credentials -n local-cluster cluster.open-cluster-management.io/backup=true
 ```
 
 #### Enabling External DNS
@@ -85,13 +74,13 @@ The secret must contain 3 fields:
 For details, please check: [HyperShift Project Documentation](https://hypershift-docs.netlify.app/how-to/external-dns/). For convenience, you can create this secret using the CLI by:
 
 ```bash
-$ oc create secret generic hypershift-operator-external-dns-credentials --from-literal=provider=aws --from-literal=domain-filter=service.my.domain.com --from-file=credentials=<credentials-file> -n <managed-cluster-used-as-hosting-service-cluster>
+$ oc create secret generic hypershift-operator-external-dns-credentials --from-literal=provider=aws --from-literal=domain-filter=service.my.domain.com --from-file=credentials=<credentials-file> -n local-cluster
 ```
 
 Add the special label to the `hypershift-operator-external-dns-credentials` secret so that the secret is backed up for disaster recovery.
 
 ```bash
-$ oc label secret hypershift-operator-external-dns-credentials -n <managed-cluster-used-as-hosting-service-cluster> cluster.open-cluster-management.io/backup=true
+$ oc label secret hypershift-operator-external-dns-credentials -n local-cluster cluster.open-cluster-management.io/backup=true
 ```
 
 ##### Enable on a HostedCluster
@@ -127,7 +116,7 @@ After installing the HyperShift operator and enabling an existing cluster as a h
 1. Set the following environment variables
 
 ```bash
-export REGION=us-east-1
+$ export REGION=us-east-1
 export CLUSTER_NAME=clc-dhu-hs1
 export INFRA_ID=clc-dhu-hs1-01
 export BASE_DOMAIN=dev09.red-chesterfield.com
@@ -145,7 +134,7 @@ Note: in order for the cluster to show correctly in the MCE console UI, it is re
 3. If you do not want to create the infrastructure and IAM pieces separately, skip to step 6. Otherwise run the following command to create the infrastructure first:
 
 ```bash
-hypershift create infra aws --name $CLUSTER_NAME \
+$ hypershift create infra aws --name $CLUSTER_NAME \
     --aws-creds $AWS_CREDS \
     --base-domain $BASE_DOMAIN \
     --infra-id $CLUSTER_NAME \
@@ -156,7 +145,7 @@ hypershift create infra aws --name $CLUSTER_NAME \
 4. In order to create the related IAM pieces, we'll need some info from the infra output.
 
 ```bash
-cat $INFRA_OUTPUT_FILE                                                                                          
+$ cat $INFRA_OUTPUT_FILE                                                                                          
 {
   "region": "us-east-1",
   "zone": "",
@@ -183,7 +172,7 @@ Specically, we'll need the `publicZoneID`, `privateZoneID`, and `localZoneID`
 5. Create the IAM:
 
 ```bash
-hypershift create iam aws --infra-id $CLUSTER_NAME \
+$ hypershift create iam aws --infra-id $CLUSTER_NAME \
     --aws-creds $AWS_CREDS \
     --oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
     --oidc-storage-provider-s3-region $BUCKET_REGION \
@@ -197,7 +186,7 @@ hypershift create iam aws --infra-id $CLUSTER_NAME \
 6. We can use the `hypershift create cluster aws` command to create our hosted cluster. If you created the infrastructure and IAM pieces separately, we can specify them as arguments via `--infra-json` and `--iam-json`:
 
 ```bash
-hypershift create cluster aws \
+$ hypershift create cluster aws \
     --name $CLUSTER_NAME \
     --infra-id $INFRA_ID \
     --infra-json $INFRA_OUTPUT_FILE \
@@ -227,8 +216,9 @@ $ oc apply -f hosted-cluster-cr-render.yaml
 ```
 
 9. In order to complete the import process, we also need to create the managed cluster resource:
+
 ```bash
-cat <<EOF | oc apply -f -
+$ cat <<EOF | oc apply -f -
 apiVersion: cluster.open-cluster-management.io/v1
 kind: ManagedCluster
 metadata:  
@@ -250,17 +240,18 @@ EOF
 Note: the name listed here will be the infra-id of your hosted cluster.
 
 10. Check the status of your hosted cluster via:
+
 ```bash
 $ oc get hostedclusters -n local-cluster
 ```
 
-11. After the hosted cluster is created, it will be imported to the hub automatically, you can check it with:
+11.  After the hosted cluster is created, it will be imported to the hub automatically, you can check it with:
   
 ```bash
 $ oc get managedcluster $INFRA_ID
 ```
 
-12. Your hosted cluster is now created and imported to MCE/ACM, which should also be visible from the MCE console.
+Your hosted cluster is now created and imported to MCE/ACM, which should also be visible from the MCE console.
 
 ## Access the hosted cluster
 
