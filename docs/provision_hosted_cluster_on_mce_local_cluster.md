@@ -264,18 +264,18 @@ $ oc get managedcluster $INFRA_ID
 
 ## Access the hosted cluster
 
-The access secrets are stored in the {hypershift-management-cluster} namespace.
+The access secrets are stored in the hypershift-management-cluster namespace.
 The formats of the secrets name are:
 
-- kubeconfig secret: `<hypershiftDeployment.Spec.hostingNamespace>-<hypershiftDeployment.Name>-admin-kubeconfig` (e.g clusters-hypershift-demo-admin-kubeconfig)
-- kubeadmin password secret: `<hypershiftDeployment.Spec.hostingNamespace>-<hypershiftDeployment.Name>-kubeadmin-password` (e.g clusters-hypershift-demo-kubeadmin-password)
+- kubeconfig secret: `<hostingNamespace>-<name>-admin-kubeconfig` (e.g clusters-hypershift-demo-admin-kubeconfig)
+- kubeadmin password secret: `<hostingNamespace>-<name>-kubeadmin-password` (e.g clusters-hypershift-demo-kubeadmin-password)
 
 ## Destroying your hypershift Hosted cluster
 
 Delete the hypershift cluster:
 
 ```bash
-$ hypershift destroy cluster aws --name $CLUSTER_NAME --aws-creds $AWS_CREDS --base-domain $BASE_DOMAIN --infra-id $INFRA_ID
+$ hypershift destroy cluster aws --name $CLUSTER_NAME --infra-id $INFRA_ID --aws-creds $AWS_CREDS --base-domain $BASE_DOMAIN
 ```
 
 ## Destroying your hypershift managed cluster
@@ -291,5 +291,5 @@ $ oc delete managedcluster $INFRA_ID
 Delete the hypershift-addon
 
 ```bash
-$ oc delete managedclusteraddon -n <hypershift-management-cluster> hypershift-addon
+$ oc delete managedclusteraddon -n local-cluster hypershift-addon
 ```
