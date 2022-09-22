@@ -4,7 +4,7 @@ Configuring hosted control planes requires a hosting service cluster and a hoste
 
 Hosted control planes is a Technology Preview feature, so the related components are disabled by default. Enable the feature by editing the `multiclusterengine` custom resource to set the `spec.overrides.components[?(@.name=='hypershift-preview')].enabled` to `true`. 
 
-Enter the following command to ensure that the hosted control planes feature is enabled:
+Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine-sample` with your MCE's instance name:
 
 ```bash
 oc patch mce multiclusterengine-sample --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
