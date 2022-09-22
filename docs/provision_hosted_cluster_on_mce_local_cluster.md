@@ -156,7 +156,7 @@ hypershift create infra aws --name $CLUSTER_NAME \
 4. In order to create the related IAM pieces, we'll need some info from the infra output.
 
 ```bash
-cat test-infra.json                                                                                             
+cat $INFRA_OUTPUT_FILE                                                                                          
 {
   "region": "us-east-1",
   "zone": "",
@@ -199,7 +199,7 @@ hypershift create iam aws --infra-id $CLUSTER_NAME \
 ```bash
 hypershift create cluster aws \
     --name $CLUSTER_NAME \
-    --infra-id $CLUSTER_NAME \
+    --infra-id $INFRA_ID \
     --infra-json $INFRA_OUTPUT_FILE \
     --iam-json $IAM_OUTPUT_FILE \
     --aws-creds $AWS_CREDS \
@@ -233,15 +233,15 @@ apiVersion: cluster.open-cluster-management.io/v1
 kind: ManagedCluster
 metadata:  
   annotations:    
-  import.open-cluster-management.io/hosting-cluster-name: my-hosting-cluster    
-  import.open-cluster-management.io/klusterlet-deploy-mode: Hosted    
-  open-cluster-management/created-via: other  
+    import.open-cluster-management.io/hosting-cluster-name: local-cluster    
+    import.open-cluster-management.io/klusterlet-deploy-mode: Hosted    
+    open-cluster-management/created-via: other  
 labels:    
   cloud: auto-detect    
   cluster.open-cluster-management.io/clusterset: default    
-  name: clc-dhu-hs3-01    
+  name: $INFRA_ID    
   vendor: OpenShift  
-name: clc-dhu-hs3-01
+name: $INFRA_ID
 spec:  
   hubAcceptsClient: true  
   leaseDurationSeconds: 60
