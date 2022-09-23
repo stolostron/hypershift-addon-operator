@@ -29,6 +29,8 @@ kind: ManagedCluster
 metadata:
   labels:
     local-cluster: "true"
+    cloud: auto-detect
+    vendor: auto-detect
   name: local-cluster
 spec:
   hubAcceptsClient: true
@@ -118,7 +120,7 @@ After installing the HyperShift operator and enabling an existing cluster as a h
 ```bash
 $ export REGION=us-east-1
 export CLUSTER_NAME=clc-dhu-hs1
-export INFRA_ID=clc-dhu-hs1-01
+export INFRA_ID=clc-dhu-hs1
 export BASE_DOMAIN=dev09.red-chesterfield.com
 export AWS_CREDS=$HOME/dhu-aws
 export PULL_SECRET=/Users/dhuynh/dhu-pull-secret.txt
