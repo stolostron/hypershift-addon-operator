@@ -118,7 +118,7 @@ After installing the HyperShift operator and enabling an existing cluster as a h
 1. Set the following environment variables
 
 ```bash
-$ export REGION=us-east-1
+export REGION=us-east-1
 export CLUSTER_NAME=clc-dhu-hs1
 export INFRA_ID=clc-dhu-hs1
 export BASE_DOMAIN=dev09.red-chesterfield.com
