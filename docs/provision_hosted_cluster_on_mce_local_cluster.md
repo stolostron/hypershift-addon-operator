@@ -4,10 +4,10 @@ Configuring hosted control planes requires a hosting service cluster and a hoste
 
 Hosted control planes is a Technology Preview feature, so the related components are disabled by default. Enable the feature by editing the `multiclusterengine` custom resource to set the `spec.overrides.components[?(@.name=='hypershift-preview')].enabled` to `true`. 
 
-Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine-sample` with your MCE's instance name:
+Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine` with your MCE's instance name:
 
 ```bash
-$ oc patch mce multiclusterengine-sample --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+$ oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
 ```
 
 ## Configuring the hosting service cluster
@@ -62,7 +62,7 @@ $ oc create secret generic hypershift-operator-oidc-provider-s3-credentials --fr
 $ oc label secret hypershift-operator-oidc-provider-s3-credentials -n local-cluster cluster.open-cluster-management.io/backup=true
 ```
 
-#### Enabling External DNS
+### Enabling External DNS
 If you plan to use service-level DNS for Control Plane Service, create an external DNS credential secret for the HyperShift operator, and name it `hypershift-operator-external-dns-credentials`. It should reside in the managed cluster namespace (i.e., the namespace of the managed cluster that will be used as the hosting service cluster). If you used `local-cluster`, then create the secret in the `local-cluster` namespace
 
 The secret must contain 3 fields:
@@ -85,9 +85,9 @@ Add the special label to the `hypershift-operator-external-dns-credentials` secr
 $ oc label secret hypershift-operator-external-dns-credentials -n local-cluster cluster.open-cluster-management.io/backup=true
 ```
 
-##### Enable on a HostedCluster
+### Enable on a HostedCluster
 
-1. Install the HyperShift add-on. The cluster that hosts the HyperShift operator is the management cluster. This step uses the hypershift-addon to install the HyperShift operator on a managed cluster. `ManagedClusterAddon` hypershift-addon. The namespace will be the managed cluster on which you want to install the HyperShift operator on. In this case, we will use the MCE hub cluster, so we'll set `local-cluster` for this value:
+1. Install the HyperShift add-on. The cluster that hosts the HyperShift operator is the management cluster. This step uses the `ManagedClusterAddon` hypershift-addon to install the HyperShift operator on a managed cluster. The namespace will be the managed cluster on which you want to install the HyperShift operator on. In this case, we will use the MCE hub cluster, so we'll set `local-cluster` for this value:
   
 ```bash
 $ oc apply -f - <<EOF
