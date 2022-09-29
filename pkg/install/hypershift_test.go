@@ -22,24 +22,26 @@ import (
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/apimachinery/pkg/util/wait"
 	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	imageapi "github.com/openshift/api/image/v1"
+	kbatch "k8s.io/api/batch/v1"
 )
 
 const (
 	hsOperatorImage = "hypershift-operator"
 )
 
-func initClient() client.Client {
+func initClient() ctrlClient.Client {
 	scheme := runtime.NewScheme()
 	//corev1.AddToScheme(scheme)
 	appsv1.AddToScheme(scheme)
 	corev1.AddToScheme(scheme)
 	metav1.AddMetaToScheme(scheme)
 	hyperv1alpha1.AddToScheme(scheme)
+	kbatch.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
 	ncb.WithScheme(scheme)
@@ -412,7 +414,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, incompleteDp)
 
 	// No Spec in hypershift deployment operator - skip all operations
-	err := aCtrl.RunHypershiftInstall(ctx)
+	err := installHyperShiftOperator(t, ctx, aCtrl)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 	aCtrl.hubClient.Delete(ctx, incompleteDp)
 
@@ -441,7 +443,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, dp)
 	defer aCtrl.hubClient.Delete(ctx, dp)
 
-	err = aCtrl.RunHypershiftInstall(ctx)
+	err = installHyperShiftOperator(t, ctx, aCtrl)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 
 	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
@@ -465,12 +467,6 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(plSecret), plSecret)
 	assert.NotNil(t, err, "is not nil when private link secret is not provided")
 	assert.True(t, errors.IsNotFound(err), "private link secret should not be found")
-
-	// Check service account is created
-	testSa := &corev1.ServiceAccount{}
-	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: "test-sa", Namespace: "default"}, testSa)
-	assert.Nil(t, err, "is nil if the service account is found")
-	assert.Equal(t, aCtrl.pullSecret, testSa.ImagePullSecrets[0].Name, "is equal if the image pull secret in the service account matches the provided pull secret")
 
 	// Check hypershift deployment still exists
 	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)
@@ -498,7 +494,8 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.withOverride = true
 	aCtrl.hubClient.Create(ctx, overrideCM)
 	defer aCtrl.hubClient.Delete(ctx, overrideCM)
-	err = aCtrl.RunHypershiftInstall(ctx)
+
+	err = installHyperShiftOperator(t, ctx, aCtrl)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
 	// Run hypershift install again with image override using image upgrade configmap
@@ -513,26 +510,32 @@ func TestRunHypershiftInstall(t *testing.T) {
 	}
 	err = aCtrl.hubClient.Create(ctx, imageUpgradeCM)
 	assert.Nil(t, err, "err nil when config map is created successfull")
-	err = aCtrl.RunHypershiftInstall(ctx)
+
+	err = installHyperShiftOperator(t, ctx, aCtrl)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
-	// Check HS operator deployment has the correct image
-	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)
-	assert.Nil(t, err, "is nil if the hypershift deployment exists")
-	// Patch type types.ApplyPatchType not supported by fake client
-	// assert.Equal(t, "quay.io/stolostron/hypershift-operator@sha256:eedb58e7b9c4d9e49c6c53d1b5b97dfddcdffe839bbffd4fb950760715d24244", dp.Spec.Template.Spec.Containers[0].Image)
+	// Install hypershift job failed
+	go updateHsInstallJobToFailed(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
+	err = aCtrl.RunHypershiftInstall(ctx)
+	assert.NotNil(t, err, "is nil if install HyperShift is sucessful")
+	assert.Equal(t, "install HyperShift job failed", err.Error())
+	if err := deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace); err != nil {
+		t.Errorf("error cleaning up HyperShift install jobs: %s", err.Error())
+	}
 
 	// Run hypershift install again with pull secret deleted
 	aCtrl.hubClient.Delete(ctx, pullSecret)
 	aCtrl.hubClient.Delete(ctx, hsPullSecret)
-	err = aCtrl.RunHypershiftInstall(ctx)
+
+	err = installHyperShiftOperator(t, ctx, aCtrl)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
+
 	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: pullSecret.Name, Namespace: hypershiftOperatorKey.Namespace}, hsPullSecret)
 	assert.True(t, err != nil && errors.IsNotFound(err), "is true if the pull secret is not copied to the HyperShift namespace")
 
 	// Run hypershift install again with s3 bucket secret deleted
 	aCtrl.hubClient.Delete(ctx, bucketSecret)
-	err = aCtrl.RunHypershiftInstall(ctx)
+	err = installHyperShiftOperator(t, ctx, aCtrl)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
 	// Create hosted cluster
@@ -546,10 +549,6 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.RunHypershiftCmdWithRetries(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 
-	// Check service account is not deleted
-	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: "test-sa", Namespace: "default"}, testSa)
-	assert.Nil(t, err, "is nil if the service account exists")
-
 	// Check hypershift deployment is not deleted
 	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)
 	assert.Nil(t, err, "is nil if the hypershift deployment exists")
@@ -561,11 +560,6 @@ func TestRunHypershiftInstall(t *testing.T) {
 	// Cleanup after HC is deleted
 	err = aCtrl.RunHypershiftCmdWithRetries(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
-
-	// Check service account is deleted
-	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: "test-sa", Namespace: "default"}, testSa)
-	assert.NotNil(t, err, "is not nil if the service account is deleted")
-	assert.True(t, errors.IsNotFound(err))
 
 	// Check hypershift deployment is deleted
 	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)
@@ -762,7 +756,8 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	}
 	aCtrl.hubClient.Create(ctx, dp)
 	defer aCtrl.hubClient.Delete(ctx, dp)
-	err := aCtrl.RunHypershiftInstall(ctx)
+
+	err := installHyperShiftOperator(t, ctx, aCtrl)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 
 	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
@@ -865,4 +860,79 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 		},
 	}
 	return hc
+}
+
+func installHyperShiftOperator(t *testing.T, ctx context.Context, aCtrl *UpgradeController) error {
+	go updateHsInstallJobToSucceeded(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
+	err := aCtrl.RunHypershiftInstall(ctx)
+	if err := deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace); err != nil {
+		t.Errorf("error cleaning up HyperShift install jobs: %s", err.Error())
+	}
+
+	return err
+}
+
+func markInstallJobFinished(ctx context.Context, client ctrlClient.Client, addonNamespace string, f func(*kbatch.Job)) wait.ConditionFunc {
+	return func() (bool, error) {
+		listopts := &ctrlClient.ListOptions{}
+		listopts.Namespace = addonNamespace
+		jobList := &kbatch.JobList{}
+		if err := client.List(ctx, jobList, listopts); err != nil {
+			return false, err
+		}
+
+		if len(jobList.Items) > 0 {
+			for _, job := range jobList.Items {
+				f(&job)
+				if err := client.Update(ctx, &job); err != nil {
+					return false, err
+				}
+			}
+			return true, nil
+		}
+
+		return false, nil
+	}
+}
+
+func markInstallJobSucceeded(ctx context.Context, client ctrlClient.Client, addonNamespace string) wait.ConditionFunc {
+	sFunc := func(job *kbatch.Job) {
+		job.Status.Succeeded = 1
+	}
+
+	return markInstallJobFinished(ctx, client, addonNamespace, sFunc)
+}
+
+func markInstallJobFailed(ctx context.Context, client ctrlClient.Client, addonNamespace string) wait.ConditionFunc {
+	sFunc := func(job *kbatch.Job) {
+		job.Status.Failed = 1
+	}
+
+	return markInstallJobFinished(ctx, client, addonNamespace, sFunc)
+}
+
+func updateHsInstallJobToSucceeded(ctx context.Context, client ctrlClient.Client, addonNamespace string) error {
+	return wait.PollImmediate(3*time.Second, 15*time.Second, markInstallJobSucceeded(ctx, client, addonNamespace))
+}
+
+func updateHsInstallJobToFailed(ctx context.Context, client ctrlClient.Client, addonNamespace string) error {
+	return wait.PollImmediate(3*time.Second, 15*time.Second, markInstallJobFailed(ctx, client, addonNamespace))
+}
+
+func deleteAllInstallJobs(ctx context.Context, client ctrlClient.Client, addonNamespace string) error {
+	listopts := &ctrlClient.ListOptions{}
+	listopts.Namespace = addonNamespace
+	jobList := &kbatch.JobList{}
+	if err := client.List(ctx, jobList, listopts); err != nil {
+		return err
+	}
+
+	if len(jobList.Items) > 0 {
+		for _, job := range jobList.Items {
+			if err := client.Delete(ctx, &job); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
