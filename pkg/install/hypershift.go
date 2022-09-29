@@ -6,9 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/big"
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -168,8 +168,6 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 	}
 
 	args := []string{
-		"render",
-		"--format", "json",
 		"--namespace", hypershiftOperatorKey.Namespace,
 	}
 
@@ -251,76 +249,38 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 	}
 	args = append(args, telemetryArgs...)
 
+	hypershiftImage := c.operatorImage
+	imageStreamCMData := make(map[string]string, 0)
 	if c.withOverride {
-		imageStreamFile, err := c.readInDownstreamOverride()
+		im, err := c.readInDownstreamOverride()
 		if err != nil {
 			return fmt.Errorf("failed to read the downstream image override configmap, err: %w", err)
 		}
 
-		defer os.Remove(imageStreamFile.Name())
+		imageStreamCMData[util.HypershiftDownstreamOverride] = string(im)
 
-		args = append(args, "--image-refs", imageStreamFile.Name())
+		hypershiftImage = getHyperShiftOperatorImage(im)
+		args = append(args, "--image-refs", filepath.Join(os.TempDir(), util.HypershiftDownstreamOverride))
 	} else {
-		args = append(args, "--hypershift-image", c.operatorImage)
+		args = append(args, "--hypershift-image", hypershiftImage)
 	}
 
-	c.log.Info(fmt.Sprintf("hypershift install args: %v", args))
-
-	items, err := c.runHypershiftRender(ctx, args)
+	job, err := c.runHyperShiftInstallJob(ctx, hypershiftImage, os.TempDir(), imageStreamCMData, args)
 	if err != nil {
 		return err
 	}
 
-	//TODO: @ianzhang366 fix the dependecy issue and use better way to inject the pull secret
-	for _, item := range items {
-		item := item
-		if item.GetKind() == "ServiceAccount" {
-			sa := &corev1.ServiceAccount{
-				ImagePullSecrets: []corev1.LocalObjectReference{
-					corev1.LocalObjectReference{Name: c.pullSecret},
-				},
-			}
-
-			sa.SetName(item.GetName())
-			sa.SetNamespace(item.GetNamespace())
-			sa.SetLabels(item.GetLabels())
-			sa.SetAnnotations(item.GetAnnotations())
-			sa.SetFinalizers(item.GetFinalizers())
-
-			if err := c.spokeUncachedClient.Create(ctx, sa); err != nil && !apierrors.IsAlreadyExists(err) {
-				c.log.Error(err, fmt.Sprintf("failed to create %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
-			}
-
-			continue
-		}
-
-		if item.GetKind() == "Deployment" {
-			a := item.GetAnnotations()
-			if len(a) == 0 {
-				a = map[string]string{}
-			}
-
-			a[util.HypershiftAddonAnnotationKey] = "hypershift-addon"
-
-			item.SetAnnotations(a)
-		}
-
-		itemBytes, err := item.MarshalJSON()
+	if jobSucceeded, err := c.isInstallJobSuccessful(ctx, job.Name); !jobSucceeded || err != nil {
 		if err != nil {
-			c.log.Error(err, fmt.Sprintf("failed to marshal json %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
-			continue
+			return err
 		}
 
-		if err := c.spokeUncachedClient.Patch(ctx,
-			&item,
-			client.RawPatch(types.ApplyPatchType, itemBytes),
-			client.ForceOwnership,
-			client.FieldOwner("hypershift")); err != nil {
-			c.log.Error(err, fmt.Sprintf("failed to apply %s, %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
-			continue
-		}
-		c.log.Info(fmt.Sprintf("applied: %s at %s", item.GetKind(), client.ObjectKeyFromObject(&item)))
+		return fmt.Errorf("install HyperShift job failed")
 	}
+	c.log.Info(fmt.Sprintf("HyperShift install job: %s completed successfully", job.Name))
+
+	// Add label to Hypershift deployment
+	err = c.addAddonLabelToDeployment(ctx)
 
 	return nil
 }
@@ -450,7 +410,23 @@ func (c *UpgradeController) deploymentUpgradable(ctx context.Context) (error, bo
 	return nil, false
 }
 
-func (c *UpgradeController) readInDownstreamOverride() (*os.File, error) {
+func (c *UpgradeController) addAddonLabelToDeployment(ctx context.Context) error {
+	obj := &appsv1.Deployment{}
+
+	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
+		return err
+	}
+
+	// Check if deployment is created by the addon
+	obj.Annotations[util.HypershiftAddonAnnotationKey] = util.AddonControllerName
+	if err := c.spokeUncachedClient.Update(ctx, obj); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *UpgradeController) readInDownstreamOverride() ([]byte, error) {
 	cm := &corev1.ConfigMap{}
 	cmKey := types.NamespacedName{Name: util.HypershiftDownstreamOverride, Namespace: c.addonNamespace}
 
@@ -478,19 +454,7 @@ func (c *UpgradeController) readInDownstreamOverride() (*os.File, error) {
 		return nil, fmt.Errorf("failed to get the image override configmap, err: %w", err)
 	}
 
-	file, err := ioutil.TempFile("", "hypershift-imagestream")
-	if err != nil { // likely a unrecoverable error, don't retry
-		return nil, fmt.Errorf("failed to create temp file for hoding aws credentials, err: %w", err)
-	}
-
-	f := file.Name()
-
-	c.log.Info(fmt.Sprintf("imagestream at: %s", f))
-	if err := ioutil.WriteFile(f, im, 0600); err != nil {
-		return nil, fmt.Errorf("failed to write to temp file for imagestream, err: %w", err)
-	}
-
-	return file, nil
+	return im, nil
 }
 
 func (c *UpgradeController) getUpdatedImageStream(im []byte, upgradeImagesMap map[string]string) ([]byte, error) {
@@ -519,4 +483,18 @@ func overrideImageInImageStream(imObj *imageapi.ImageStream, overrideImageName, 
 			break
 		}
 	}
+}
+
+func getHyperShiftOperatorImage(im []byte) string {
+	imObj := &imageapi.ImageStream{}
+	if err := yaml.Unmarshal(im, imObj); err != nil {
+		return ""
+	}
+
+	for _, tag := range imObj.Spec.Tags {
+		if tag.Name == util.ImageStreamHypershiftOperator {
+			return tag.From.Name
+		}
+	}
+	return ""
 }
