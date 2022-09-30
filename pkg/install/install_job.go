@@ -62,8 +62,8 @@ func (c *UpgradeController) runHyperShiftInstallJob(ctx context.Context, image, 
 		jobPodSpec.Containers[0].VolumeMounts = []corev1.VolumeMount{{Name: util.HypershiftInstallJobVolume, MountPath: mountPath}}
 	}
 
-	backoffLimit := int32(1)
-	activeDeadlineSeconds := int64(300)
+	backoffLimit := int32(3)
+	activeDeadlineSeconds := int64(600)
 	ttlSecondsAfterFinished := int32(300)
 	job := &kbatch.Job{
 		ObjectMeta: metav1.ObjectMeta{

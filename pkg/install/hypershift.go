@@ -153,7 +153,7 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		c.log.Error(err, "hypershift operator exists but not deployed by addon, skip update")
+		c.log.Info("hypershift operator exists but not deployed by addon, skip update")
 		return nil
 	}
 
