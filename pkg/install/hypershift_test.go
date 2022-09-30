@@ -1,13 +1,15 @@
-package agent
+package install
 
 import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"testing"
 	"time"
 
+	"github.com/ghodss/yaml"
 	"github.com/go-logr/zapr"
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
@@ -23,6 +25,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	imageapi "github.com/openshift/api/image/v1"
+)
+
+const (
+	hsOperatorImage = "hypershift-operator"
 )
 
 func initClient() client.Client {
@@ -51,7 +59,7 @@ func initDeployObj() *appsv1.Deployment {
 func initDeployAddonObj() *appsv1.Deployment {
 	deploy := initDeployObj()
 	deploy.Annotations = map[string]string{
-		hypershiftAddonAnnotationKey: util.AddonControllerName,
+		util.HypershiftAddonAnnotationKey: util.AddonControllerName,
 	}
 	return deploy
 }
@@ -59,7 +67,7 @@ func initDeployAddonObj() *appsv1.Deployment {
 func initDeployAddonImageDiffObj() *appsv1.Deployment {
 	deploy := initDeployObj()
 	deploy.Annotations = map[string]string{
-		hypershiftAddonAnnotationKey: util.AddonControllerName,
+		util.HypershiftAddonAnnotationKey: util.AddonControllerName,
 	}
 	deploy.Spec.Template.Spec.Containers = []corev1.Container{
 		corev1.Container{Image: "testimage"},
@@ -98,6 +106,11 @@ func (c *HypershiftTestCliExecutor) Execute(ctx context.Context, args []string) 
 	}
 	items = append(items, sa)
 
+	container := corev1.Container{
+		Name:  "operator",
+		Image: "",
+	}
+
 	dp := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -107,7 +120,39 @@ func (c *HypershiftTestCliExecutor) Execute(ctx context.Context, args []string) 
 			Name:      "operator",
 			Namespace: "hypershift",
 		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{container},
+				},
+			},
+		},
 	}
+
+	// Override HS operator image
+	for i, arg := range args {
+		if arg == "--image-refs" {
+			im, err := ioutil.ReadFile(args[i+1])
+			if err != nil {
+				return nil, err
+			}
+
+			ims := &imageapi.ImageStream{}
+			if err = yaml.Unmarshal(im, ims); err != nil {
+				return nil, err
+			}
+
+			for _, tag := range ims.Spec.Tags {
+				if tag.Name == hsOperatorImage {
+					dp.Spec.Template.Spec.Containers[0].Image = tag.From.Name
+				}
+				break
+			}
+
+			break
+		}
+	}
+
 	items = append(items, dp)
 
 	out := make(map[string]interface{})
@@ -144,7 +189,7 @@ func TestIsDeploymentMarked(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			ctx := context.Background()
 			zapLog, _ := zap.NewDevelopment()
-			aCtrl := &agentController{
+			aCtrl := &UpgradeController{
 				spokeUncachedClient: initClient(),
 				log:                 zapr.NewLogger(zapLog),
 			}
@@ -168,14 +213,14 @@ func TestDeploymentExistsWithNoImage(t *testing.T) {
 		expectedOk    bool
 	}{
 		{
-			name:       "no deployment, function returns false",
+			name:       "no deployment, function returns true",
 			deploy:     nil,
-			expectedOk: false,
+			expectedOk: true,
 		},
 		{
 			name:       "hypershift-operator Deployment, not owned by acm addon",
 			deploy:     initDeployObj(),
-			expectedOk: true,
+			expectedOk: false,
 		},
 		{
 			name:       "hypershift-operator Deployment, owned by acm addon with identical images",
@@ -186,14 +231,14 @@ func TestDeploymentExistsWithNoImage(t *testing.T) {
 			name:          "hypershift-operator Deployment, owned by acm addon with identical images",
 			deploy:        initDeployAddonImageDiffObj(),
 			operatorImage: "my-new-image02",
-			expectedOk:    false,
+			expectedOk:    true,
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			ctx := context.Background()
-			aCtrl := &agentController{
+			aCtrl := &UpgradeController{
 				spokeUncachedClient: initClient(),
 				operatorImage:       c.operatorImage,
 			}
@@ -201,7 +246,7 @@ func TestDeploymentExistsWithNoImage(t *testing.T) {
 				assert.Nil(t, aCtrl.spokeUncachedClient.Create(ctx, c.deploy), "")
 			}
 
-			err, ok := aCtrl.deploymentExistWithNoImageChange(ctx)
+			err, ok := aCtrl.deploymentUpgradable(ctx)
 			if len(c.expectedErr) == 0 {
 				assert.Nil(t, err, "nil when function is successful")
 				assert.Equal(t, c.expectedOk, ok, "ok as expected")
@@ -221,7 +266,7 @@ func TestRunHypershiftRender(t *testing.T) {
 		"--format", "json",
 	}
 
-	ctl := agentController{
+	ctl := UpgradeController{
 		hypershiftInstallExecutor: &HypershiftLibExecutor{},
 	}
 	outputs, err := ctl.runHypershiftRender(ctx, args)
@@ -309,7 +354,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 
 	zapLog, _ := zap.NewDevelopment()
 	client := initClient()
-	aCtrl := &agentController{
+	aCtrl := &UpgradeController{
 		spokeUncachedClient:       client,
 		hubClient:                 client,
 		log:                       zapr.NewLogger(zapLog),
@@ -341,7 +386,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 
 	bucketSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hypershiftBucketSecretName,
+			Name:      util.HypershiftBucketSecretName,
 			Namespace: aCtrl.clusterName,
 		},
 		Data: map[string][]byte{
@@ -361,13 +406,13 @@ func TestRunHypershiftInstall(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "operator",
 			Namespace:   "hypershift",
-			Annotations: map[string]string{hypershiftAddonAnnotationKey: util.AddonControllerName},
+			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
 		},
 	}
 	aCtrl.hubClient.Create(ctx, incompleteDp)
 
 	// No Spec in hypershift deployment operator - skip all operations
-	err := aCtrl.runHypershiftInstall(ctx)
+	err := aCtrl.RunHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 	aCtrl.hubClient.Delete(ctx, incompleteDp)
 
@@ -379,7 +424,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "operator",
 			Namespace:   "hypershift",
-			Annotations: map[string]string{hypershiftAddonAnnotationKey: util.AddonControllerName},
+			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
 		},
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
@@ -396,13 +441,13 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, dp)
 	defer aCtrl.hubClient.Delete(ctx, dp)
 
-	err = aCtrl.runHypershiftInstall(ctx)
+	err = aCtrl.RunHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 
 	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
 	oidcSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hypershiftBucketSecretName,
+			Name:      util.HypershiftBucketSecretName,
 			Namespace: "hypershift",
 		},
 	}
@@ -413,7 +458,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	// Check hypershift-operator-private-link-credentials secret does NOT exist
 	plSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hypershiftPrivateLinkSecretName,
+			Name:      util.HypershiftPrivateLinkSecretName,
 			Namespace: "hypershift",
 		},
 	}
@@ -436,30 +481,58 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: pullSecret.Name, Namespace: hypershiftOperatorKey.Namespace}, hsPullSecret)
 	assert.Nil(t, err, "is nil if the pull secret in the HyperShift namespace is found")
 
+	tr := []imageapi.TagReference{}
+	tr = append(tr, imageapi.TagReference{Name: hsOperatorImage, From: &corev1.ObjectReference{Name: "quay.io/stolostron/hypershift-operator@sha256:122a59aaf2fa72d1e3c0befb0de61df2aeea848676b0f41055b07ca0e6291391"}})
+	ims := &imageapi.ImageStream{}
+	ims.Spec.Tags = tr
+	imb, err := yaml.Marshal(ims)
+
 	// Run hypershift install again with image override
 	overrideCM := &corev1.ConfigMap{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      util.HypershiftDownstreamOverride,
 			Namespace: aCtrl.addonNamespace,
 		},
-		Data: map[string]string{util.HypershiftOverrideKey: base64.StdEncoding.EncodeToString([]byte("test"))},
+		Data: map[string]string{util.HypershiftOverrideKey: base64.StdEncoding.EncodeToString(imb)},
 	}
 	aCtrl.withOverride = true
 	aCtrl.hubClient.Create(ctx, overrideCM)
 	defer aCtrl.hubClient.Delete(ctx, overrideCM)
+	err = aCtrl.RunHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
+
+	// Run hypershift install again with image override using image upgrade configmap
+	imageUpgradeCM := &corev1.ConfigMap{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      util.HypershiftOverrideImagesCM,
+			Namespace: aCtrl.addonNamespace,
+		},
+		Data: map[string]string{
+			"hypershift-operator": "quay.io/stolostron/hypershift-operator@sha256:eedb58e7b9c4d9e49c6c53d1b5b97dfddcdffe839bbffd4fb950760715d24244",
+		},
+	}
+	err = aCtrl.hubClient.Create(ctx, imageUpgradeCM)
+	assert.Nil(t, err, "err nil when config map is created successfull")
+	err = aCtrl.RunHypershiftInstall(ctx)
+	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
+
+	// Check HS operator deployment has the correct image
+	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)
+	assert.Nil(t, err, "is nil if the hypershift deployment exists")
+	// Patch type types.ApplyPatchType not supported by fake client
+	// assert.Equal(t, "quay.io/stolostron/hypershift-operator@sha256:eedb58e7b9c4d9e49c6c53d1b5b97dfddcdffe839bbffd4fb950760715d24244", dp.Spec.Template.Spec.Containers[0].Image)
 
 	// Run hypershift install again with pull secret deleted
 	aCtrl.hubClient.Delete(ctx, pullSecret)
 	aCtrl.hubClient.Delete(ctx, hsPullSecret)
-	err = aCtrl.runHypershiftInstall(ctx)
+	err = aCtrl.RunHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: pullSecret.Name, Namespace: hypershiftOperatorKey.Namespace}, hsPullSecret)
 	assert.True(t, err != nil && errors.IsNotFound(err), "is true if the pull secret is not copied to the HyperShift namespace")
 
 	// Run hypershift install again with s3 bucket secret deleted
 	aCtrl.hubClient.Delete(ctx, bucketSecret)
-	err = aCtrl.runHypershiftInstall(ctx)
+	err = aCtrl.RunHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
 	// Create hosted cluster
@@ -470,12 +543,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 
 	// Cleanup
 	// Hypershift deployment is not deleted because there is an existing hostedcluster
-	o := &AgentOptions{
-		Log:            zapr.NewLogger(zapLog),
-		AddonName:      "hypershift-addon",
-		AddonNamespace: "hypershift",
-	}
-	err = o.runCleanup(ctx, aCtrl)
+	err = aCtrl.RunHypershiftCmdWithRetries(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 
 	// Check service account is not deleted
@@ -491,7 +559,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	assert.Nil(t, err, "err nil when hosted cluster is deleted successfull")
 
 	// Cleanup after HC is deleted
-	err = o.runCleanup(ctx, aCtrl)
+	err = aCtrl.RunHypershiftCmdWithRetries(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 
 	// Check service account is deleted
@@ -505,7 +573,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	assert.True(t, errors.IsNotFound(err))
 
 	// Cleanup again with nil aCtrl is successful
-	err = o.runCleanup(ctx, nil)
+	err = aCtrl.RunHypershiftCmdWithRetries(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)
 	assert.Nil(t, err, "is nil if cleanup is successful")
 }
 
@@ -514,7 +582,7 @@ func TestReadDownstreamOverride(t *testing.T) {
 
 	zapLog, _ := zap.NewDevelopment()
 	client := initClient()
-	aCtrl := &agentController{
+	aCtrl := &UpgradeController{
 		spokeUncachedClient: client,
 		hubClient:           client,
 		log:                 zapr.NewLogger(zapLog),
@@ -547,7 +615,7 @@ func TestRunCommandWithRetries(t *testing.T) {
 
 	zapLog, _ := zap.NewDevelopment()
 	client := initClient()
-	aCtrl := &agentController{
+	aCtrl := &UpgradeController{
 		spokeUncachedClient: client,
 		hubClient:           client,
 		log:                 zapr.NewLogger(zapLog),
@@ -589,14 +657,8 @@ func TestRunCommandWithRetries(t *testing.T) {
 		return fmt.Errorf("failed 1st call")
 	}
 
-	err := aCtrl.runHypershiftCmdWithRetires(ctx, 3, 1*time.Second, cmd)
+	err := aCtrl.RunHypershiftCmdWithRetries(ctx, 3, 1*time.Second, cmd)
 	assert.Nil(t, err, "is nil if retry is successful")
-}
-
-func TestCleanupCommand(t *testing.T) {
-	zapLog, _ := zap.NewDevelopment()
-	cleanupCmd := NewCleanupCommand("operator", zapr.NewLogger(zapLog))
-	assert.Equal(t, "cleanup", cleanupCmd.Use)
 }
 
 func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
@@ -604,7 +666,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 
 	zapLog, _ := zap.NewDevelopment()
 	client := initClient()
-	aCtrl := &agentController{
+	aCtrl := &UpgradeController{
 		spokeUncachedClient:       client,
 		hubClient:                 client,
 		log:                       zapr.NewLogger(zapLog),
@@ -636,7 +698,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 
 	bucketSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hypershiftBucketSecretName,
+			Name:      util.HypershiftBucketSecretName,
 			Namespace: aCtrl.clusterName,
 		},
 		Data: map[string][]byte{
@@ -648,7 +710,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	}
 	privateSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hypershiftPrivateLinkSecretName,
+			Name:      util.HypershiftPrivateLinkSecretName,
 			Namespace: aCtrl.clusterName,
 		},
 		Data: map[string][]byte{
@@ -659,7 +721,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	}
 	externalDnsSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hypershiftExternalDNSSecretName,
+			Name:      util.HypershiftExternalDNSSecretName,
 			Namespace: aCtrl.clusterName,
 		},
 		Data: map[string][]byte{
@@ -684,7 +746,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "operator",
 			Namespace:   "hypershift",
-			Annotations: map[string]string{hypershiftAddonAnnotationKey: util.AddonControllerName},
+			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
 		},
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
@@ -700,13 +762,13 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	}
 	aCtrl.hubClient.Create(ctx, dp)
 	defer aCtrl.hubClient.Delete(ctx, dp)
-	err := aCtrl.runHypershiftInstall(ctx)
+	err := aCtrl.RunHypershiftInstall(ctx)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 
 	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
 	oidcSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hypershiftBucketSecretName,
+			Name:      util.HypershiftBucketSecretName,
 			Namespace: "hypershift",
 		},
 	}
@@ -717,7 +779,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	// Check hypershift-operator-private-link-credentials secret exists
 	plSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hypershiftPrivateLinkSecretName,
+			Name:      util.HypershiftPrivateLinkSecretName,
 			Namespace: "hypershift",
 		},
 	}
@@ -728,7 +790,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	// Check hypershift-operator-external-dns-credentials secret exists
 	edSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hypershiftExternalDNSSecretName,
+			Name:      util.HypershiftExternalDNSSecretName,
 			Namespace: "hypershift",
 		},
 	}
@@ -737,12 +799,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	assert.Equal(t, []byte(`private_secret`), edSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
 
 	// Cleanup
-	o := &AgentOptions{
-		Log:            zapr.NewLogger(zapLog),
-		AddonName:      "hypershift-addon",
-		AddonNamespace: "hypershift",
-	}
-	err = o.runCleanup(ctx, aCtrl)
+	err = aCtrl.RunHypershiftCmdWithRetries(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 }
 
@@ -751,7 +808,7 @@ func TestCreateSpokeCredential(t *testing.T) {
 
 	zapLog, _ := zap.NewDevelopment()
 	client := initClient()
-	aCtrl := &agentController{
+	aCtrl := &UpgradeController{
 		spokeUncachedClient:       client,
 		hubClient:                 client,
 		log:                       zapr.NewLogger(zapLog),
@@ -764,7 +821,7 @@ func TestCreateSpokeCredential(t *testing.T) {
 
 	bucketSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hypershiftBucketSecretName,
+			Name:      util.HypershiftBucketSecretName,
 			Namespace: aCtrl.clusterName,
 		},
 	}
@@ -772,4 +829,40 @@ func TestCreateSpokeCredential(t *testing.T) {
 	err := aCtrl.createAwsSpokeSecret(ctx, bucketSecret)
 	assert.NotNil(t, err, "is not nil, when secret is not well formed")
 
+}
+
+func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
+	hc := &hyperv1alpha1.HostedCluster{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "HostedCluster",
+			APIVersion: "hypershift.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        hcNN.Name,
+			Namespace:   hcNN.Namespace,
+			Annotations: map[string]string{util.HypershiftDeploymentAnnoKey: "test-hd1"},
+		},
+		Spec: hyperv1alpha1.HostedClusterSpec{
+			Platform: hyperv1alpha1.PlatformSpec{
+				Type: hyperv1alpha1.AWSPlatform,
+			},
+			Networking: hyperv1alpha1.ClusterNetworking{
+				NetworkType: hyperv1alpha1.OpenShiftSDN,
+			},
+			Services: []hyperv1alpha1.ServicePublishingStrategyMapping{},
+			Release: hyperv1alpha1.Release{
+				Image: "test-image",
+			},
+			Etcd: hyperv1alpha1.EtcdSpec{
+				ManagementType: hyperv1alpha1.Managed,
+			},
+			InfraID: "infra-abcdef",
+		},
+		Status: hyperv1alpha1.HostedClusterStatus{
+			KubeConfig:        &corev1.LocalObjectReference{Name: "kubeconfig"},
+			KubeadminPassword: &corev1.LocalObjectReference{Name: "kubeadmin"},
+			Conditions:        []metav1.Condition{{Type: string(hyperv1alpha1.HostedClusterAvailable), Status: metav1.ConditionTrue}},
+		},
+	}
+	return hc
 }
