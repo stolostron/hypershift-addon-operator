@@ -101,3 +101,9 @@ rules:
       - hostedclusters
     verbs:
       - '*'
+  - verbs:
+      - '*'
+    apiGroups:
+      - batch
+    resources:
+      - jobs

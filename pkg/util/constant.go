@@ -58,6 +58,12 @@ const (
 	HypershiftExternalDNSSecretName = "hypershift-operator-external-dns-credentials"
 	HypershiftDeploymentAnnoKey     = "cluster.open-cluster-management.io/hypershiftdeployment"
 	ManagedClusterAnnoKey           = "cluster.open-cluster-management.io/managedcluster-name"
+
+	// HyperShift install job
+	HypershiftInstallJobName           = "hypershift-install-job-"
+	HypershiftInstallJobServiceAccount = "hypershift-addon-agent-sa"
+	HypershiftInstallJobVolume         = "hypershift-imagestream-volume"
+	HypershiftInstallJobImageStream    = "hypershift-install-job-imagestream"
 )
 
 // GenerateClientConfigFromSecret generate a client config from a given secret
