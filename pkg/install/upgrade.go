@@ -3,7 +3,6 @@ package install
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -59,7 +58,7 @@ func (c *UpgradeController) Reconcile(ctx context.Context, req ctrl.Request) (ct
 
 	if upgradeRequired {
 		c.log.Info("image changes detected, upgrade the HyperShift operator")
-		if err := c.RunHypershiftCmdWithRetries(ctx, 3, time.Second*10, c.RunHypershiftInstall); err != nil {
+		if err := c.RunHypershiftInstall(ctx); err != nil {
 			c.log.Error(err, "failed to install hypershift Operator")
 			return ctrl.Result{}, err
 		}

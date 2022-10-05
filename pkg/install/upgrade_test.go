@@ -2,16 +2,22 @@ package install
 
 import (
 	"context"
+	"encoding/base64"
+	"strings"
 	"testing"
 
 	"github.com/go-logr/zapr"
+	imageapi "github.com/openshift/api/image/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
+	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestUpgradeImageCheck(t *testing.T) {
@@ -175,4 +181,72 @@ func TestUpgradeImageCheck(t *testing.T) {
 	upgradeRequired, err = uCtrl.upgradeImageCheck()
 	assert.Nil(t, err, "error is nil if deployment does not have addon annotation")
 	assert.False(t, upgradeRequired, "HyperShift operator deployment not deployed by the HyperShift addon - upgrade not required")
+}
+
+func TestReconcile(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	aCtrl := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+	}
+
+	// Create override configmap
+	tr := []imageapi.TagReference{}
+	tr = append(tr, imageapi.TagReference{Name: hsOperatorImage, From: &corev1.ObjectReference{Name: "quay.io/stolostron/hypershift-operator@sha256:122a59aaf2fa72d1e3c0befb0de61df2aeea848676b0f41055b07ca0e6291391"}})
+	ims := &imageapi.ImageStream{}
+	ims.Spec.Tags = tr
+	imb, _ := yaml.Marshal(ims)
+	overrideCM := &corev1.ConfigMap{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      util.HypershiftDownstreamOverride,
+			Namespace: aCtrl.addonNamespace,
+		},
+		Data: map[string]string{util.HypershiftOverrideKey: base64.StdEncoding.EncodeToString(imb)},
+	}
+	aCtrl.withOverride = true
+	aCtrl.spokeUncachedClient.Create(ctx, overrideCM)
+
+	// Upgrade checked has error
+	_, err := aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: ctrlClient.ObjectKeyFromObject(overrideCM)})
+	assert.NotNil(t, err, "err is not nil if reconcile failed because hypershift operator does not exist")
+	assert.True(t, strings.Contains(err.Error(), "failed to get the hypershift operator deployment"))
+
+	dp := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "operator",
+			Namespace:   "hypershift",
+			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "nginx",
+						Image: "nginx:1.14.2",
+						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+						Env:   []corev1.EnvVar{{Name: util.HypershiftEnvVarImageAgentCapiProvider, Value: "123"}},
+					}},
+				},
+			},
+		},
+	}
+	aCtrl.spokeUncachedClient.Create(ctx, dp)
+
+	// Upgrade checked has error
+	go updateHsInstallJobToSucceeded(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
+	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: ctrlClient.ObjectKeyFromObject(overrideCM)})
+	assert.Nil(t, err, "err is nil if reconcile is successful")
 }
