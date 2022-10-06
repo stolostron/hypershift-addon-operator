@@ -226,7 +226,7 @@ kind: ManagedCluster
 metadata:  
   annotations:    
     import.open-cluster-management.io/hosting-cluster-name: local-cluster    
-    import.open-cluster-management.io/klusterlet-deploy-mode: Hosted    
+    import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
     open-cluster-management/created-via: other  
 labels:    
   cloud: auto-detect    
@@ -239,7 +239,7 @@ spec:
   leaseDurationSeconds: 60
 EOF
 ```
-Note: the name listed here will be the infra-id of your hosted cluster.
+Note: the name listed here will be the infra-id of your hosted cluster.  If you want to use a `ManagedCluster` name other than `$INFRA_ID`, use the name you want, and include the following annotation on the HostedCluster `cluster.open-cluster-management.io/managedcluster-name: $MANAGED_CLUSTER_NAME`
 
 10. Check the status of your hosted cluster via:
 
