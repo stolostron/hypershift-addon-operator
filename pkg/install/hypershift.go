@@ -238,6 +238,9 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 			"--external-dns-provider", string(sExtDNS.Data["provider"]),
 		}
 		args = append(args, awsArgs...)
+		if txtOwnerId, exists := sExtDNS.Data["txt-owner-id"]; exists {
+			args = append(args, "--external-dns-txt-owner-id", string(txtOwnerId))
+		}
 	} else {
 		c.log.Info(fmt.Sprintf("external dns secret(%s) was not found", extDNSSecretKey))
 	}
