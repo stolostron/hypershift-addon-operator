@@ -19,7 +19,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -51,7 +50,7 @@ func initClient() ctrlClient.Client {
 
 func initDeployObj() *appsv1.Deployment {
 	return &appsv1.Deployment{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      util.HypershiftOperatorName,
 			Namespace: util.HypershiftOperatorNamespace,
 		},
@@ -72,7 +71,7 @@ func initDeployAddonImageDiffObj() *appsv1.Deployment {
 		util.HypershiftAddonAnnotationKey: util.AddonControllerName,
 	}
 	deploy.Spec.Template.Spec.Containers = []corev1.Container{
-		corev1.Container{Image: "testimage"},
+		{Image: "testimage"},
 	}
 	return deploy
 }
@@ -147,8 +146,8 @@ func (c *HypershiftTestCliExecutor) Execute(ctx context.Context, args []string) 
 			for _, tag := range ims.Spec.Tags {
 				if tag.Name == hsOperatorImage {
 					dp.Spec.Template.Spec.Containers[0].Image = tag.From.Name
+					break
 				}
-				break
 			}
 
 			break
@@ -482,10 +481,11 @@ func TestRunHypershiftInstall(t *testing.T) {
 	ims := &imageapi.ImageStream{}
 	ims.Spec.Tags = tr
 	imb, err := yaml.Marshal(ims)
+	assert.Nil(t, err, "expected Marshal to succeed: %s", err)
 
 	// Run hypershift install again with image override
 	overrideCM := &corev1.ConfigMap{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      util.HypershiftDownstreamOverride,
 			Namespace: aCtrl.addonNamespace,
 		},
@@ -500,7 +500,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 
 	// Run hypershift install again with image override using image upgrade configmap
 	imageUpgradeCM := &corev1.ConfigMap{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      util.HypershiftOverrideImagesCM,
 			Namespace: aCtrl.addonNamespace,
 		},
@@ -590,7 +590,7 @@ func TestReadDownstreamOverride(t *testing.T) {
 	assert.NotNil(t, err, "is not nil when read downstream image override fails")
 
 	overrideCM := &corev1.ConfigMap{
-		ObjectMeta: v1.ObjectMeta{
+		ObjectMeta: metav1.ObjectMeta{
 			Name:      util.HypershiftDownstreamOverride,
 			Namespace: aCtrl.addonNamespace,
 		},
