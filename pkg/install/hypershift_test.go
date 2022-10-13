@@ -722,6 +722,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 			"provider":      []byte(`aws`),
 			"credentials":   []byte(`private_secret`),
 			"domain-filter": []byte(`my.house.com`),
+			"txt-owner-id":  []byte(`the-owner`),
 		},
 	}
 
@@ -810,6 +811,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 				"--external-dns-secret", "hypershift-operator-external-dns-credentials",
 				"--external-dns-domain-filter", "my.house.com",
 				"--external-dns-provider", "aws",
+				"--external-dns-txt-owner-id", "the-owner",
 				"--enable-uwm-telemetry-remote-write",
 				"--platform-monitoring", "OperatorOnly",
 				"--hypershift-image", "my-test-image",
