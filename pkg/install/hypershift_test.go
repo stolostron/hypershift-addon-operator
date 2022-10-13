@@ -414,7 +414,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, incompleteDp)
 
 	// No Spec in hypershift deployment operator - skip all operations
-	err := installHyperShiftOperator(t, ctx, aCtrl)
+	err := installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 	aCtrl.hubClient.Delete(ctx, incompleteDp)
 
@@ -443,7 +443,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, dp)
 	defer aCtrl.hubClient.Delete(ctx, dp)
 
-	err = installHyperShiftOperator(t, ctx, aCtrl)
+	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 
 	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
@@ -495,7 +495,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, overrideCM)
 	defer aCtrl.hubClient.Delete(ctx, overrideCM)
 
-	err = installHyperShiftOperator(t, ctx, aCtrl)
+	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
 	// Run hypershift install again with image override using image upgrade configmap
@@ -511,7 +511,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.hubClient.Create(ctx, imageUpgradeCM)
 	assert.Nil(t, err, "err nil when config map is created successfull")
 
-	err = installHyperShiftOperator(t, ctx, aCtrl)
+	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
 	// Install hypershift job failed
@@ -527,7 +527,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Delete(ctx, pullSecret)
 	aCtrl.hubClient.Delete(ctx, hsPullSecret)
 
-	err = installHyperShiftOperator(t, ctx, aCtrl)
+	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
 	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: pullSecret.Name, Namespace: hypershiftOperatorKey.Namespace}, hsPullSecret)
@@ -535,7 +535,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 
 	// Run hypershift install again with s3 bucket secret deleted
 	aCtrl.hubClient.Delete(ctx, bucketSecret)
-	err = installHyperShiftOperator(t, ctx, aCtrl)
+	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
 	// Create hosted cluster
@@ -757,7 +757,8 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, dp)
 	defer aCtrl.hubClient.Delete(ctx, dp)
 
-	err := installHyperShiftOperator(t, ctx, aCtrl)
+	err := installHyperShiftOperator(t, ctx, aCtrl, false)
+	defer deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 
 	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
@@ -792,6 +793,30 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(edSecret), edSecret)
 	assert.Nil(t, err, "is nil when external dns secret is found")
 	assert.Equal(t, []byte(`private_secret`), edSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
+
+	installJobList := &kbatch.JobList{}
+	err = aCtrl.spokeUncachedClient.List(ctx, installJobList)
+	if assert.Nil(t, err, "listing jobs should succeed: %s", err) {
+		if assert.Equal(t, 1, len(installJobList.Items), "there should be exactly one install job") {
+			installJob := installJobList.Items[0]
+			expectArgs := []string{
+				"--namespace", "hypershift",
+				"--oidc-storage-provider-s3-bucket-name", "my-bucket",
+				"--oidc-storage-provider-s3-region", "us-east-1",
+				"--oidc-storage-provider-s3-secret", "hypershift-operator-oidc-provider-s3-credentials",
+				"--aws-private-secret", "hypershift-operator-private-link-credentials",
+				"--aws-private-region", "us-east-1",
+				"--private-platform", "AWS",
+				"--external-dns-secret", "hypershift-operator-external-dns-credentials",
+				"--external-dns-domain-filter", "my.house.com",
+				"--external-dns-provider", "aws",
+				"--enable-uwm-telemetry-remote-write",
+				"--platform-monitoring", "OperatorOnly",
+				"--hypershift-image", "my-test-image",
+			}
+			assert.Equal(t, expectArgs, installJob.Spec.Template.Spec.Containers[0].Args, "mismatched container arguments")
+		}
+	}
 
 	// Cleanup
 	err = aCtrl.RunHypershiftCmdWithRetires(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)
@@ -862,11 +887,14 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 	return hc
 }
 
-func installHyperShiftOperator(t *testing.T, ctx context.Context, aCtrl *UpgradeController) error {
+func installHyperShiftOperator(t *testing.T, ctx context.Context, aCtrl *UpgradeController, deleteJobs bool) error {
 	go updateHsInstallJobToSucceeded(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
 	err := aCtrl.RunHypershiftInstall(ctx)
-	if err := deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace); err != nil {
-		t.Errorf("error cleaning up HyperShift install jobs: %s", err.Error())
+
+	if deleteJobs {
+		if err := deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace); err != nil {
+			t.Errorf("error cleaning up HyperShift install jobs: %s", err.Error())
+		}
 	}
 
 	return err
