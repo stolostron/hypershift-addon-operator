@@ -228,12 +228,11 @@ metadata:
     import.open-cluster-management.io/hosting-cluster-name: local-cluster    
     import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
     open-cluster-management/created-via: other  
-labels:    
-  cloud: auto-detect    
-  cluster.open-cluster-management.io/clusterset: default    
-  name: $INFRA_ID    
-  vendor: OpenShift  
-name: $INFRA_ID
+  labels:
+    cloud: auto-detect
+    name: $INFRA_ID
+    vendor: OpenShift
+  name: $INFRA_ID
 spec:  
   hubAcceptsClient: true  
   leaseDurationSeconds: 60
