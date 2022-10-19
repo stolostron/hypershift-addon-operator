@@ -2,193 +2,26 @@ package install
 
 import (
 	"context"
-	"encoding/base64"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-logr/zapr"
-	imageapi "github.com/openshift/api/image/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v2"
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	ctrl "sigs.k8s.io/controller-runtime"
-	ctrlClient "sigs.k8s.io/controller-runtime/pkg/client"
+	"k8s.io/apimachinery/pkg/types"
 )
 
 func TestUpgradeImageCheck(t *testing.T) {
 	ctx := context.Background()
-	zapLog, _ := zap.NewDevelopment()
-	uCtrl := NewUpgradeController(nil, initClient(), zapr.NewLogger(zapLog), "hypershift-addon",
-		"open-cluster-management-agent-addon", "local-cluster", "hs-op-image", "pull-secret", true)
-
-	dp := &appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Deployment",
-			APIVersion: "apps/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        "operator",
-			Namespace:   "hypershift",
-			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
-		},
-		Spec: appsv1.DeploymentSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{
-						Name:  "nginx",
-						Image: "nginx:1.14.2",
-						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
-						Env:   []corev1.EnvVar{{Name: util.HypershiftEnvVarImageAgentCapiProvider, Value: "123"}},
-					}},
-				},
-			},
-		},
-	}
-	uCtrl.spokeUncachedClient.Create(ctx, dp)
-
-	overrideCM := &corev1.ConfigMap{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      util.HypershiftOverrideImagesCM,
-			Namespace: uCtrl.addonNamespace,
-		},
-	}
-	uCtrl.spokeUncachedClient.Create(ctx, overrideCM)
-
-	cases := []struct {
-		name       string
-		imageName  string
-		imageHash  string
-		expectedOk bool
-	}{
-		{
-			name:       "check image update: " + util.ImageStreamAwsCapiProvider,
-			imageName:  util.ImageStreamAwsCapiProvider,
-			imageHash:  "abc",
-			expectedOk: true,
-		},
-		{
-			name:       "check image update: " + util.ImageStreamAgentCapiProvider,
-			imageName:  util.ImageStreamAgentCapiProvider,
-			imageHash:  "abc",
-			expectedOk: true,
-		},
-		{
-			name:       "check image update: " + util.ImageStreamAwsEncyptionProvider,
-			imageName:  util.ImageStreamAwsEncyptionProvider,
-			imageHash:  "abc",
-			expectedOk: true,
-		},
-		{
-			name:       "check image update: " + util.ImageStreamAzureCapiProvider,
-			imageName:  util.ImageStreamAzureCapiProvider,
-			imageHash:  "abc",
-			expectedOk: true,
-		},
-		{
-			name:       "check image update: " + util.ImageStreamClusterApi,
-			imageName:  util.ImageStreamClusterApi,
-			imageHash:  "abc",
-			expectedOk: true,
-		},
-		{
-			name:       "check image update: " + util.ImageStreamKonnectivity,
-			imageName:  util.ImageStreamKonnectivity,
-			imageHash:  "abc",
-			expectedOk: true,
-		},
-		{
-			name:       "check image update: " + util.ImageStreamKubevertCapiProvider,
-			imageName:  util.ImageStreamKubevertCapiProvider,
-			imageHash:  "abc",
-			expectedOk: true,
-		},
-		{
-			name:       "check image update: " + util.ImageStreamHypershiftOperator,
-			imageName:  util.ImageStreamHypershiftOperator,
-			imageHash:  "abc",
-			expectedOk: true,
-		},
-	}
-
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			overrideCM.Data = map[string]string{c.imageName: c.imageHash}
-			uCtrl.spokeUncachedClient.Update(ctx, overrideCM)
-			upgradeRequired, _ := uCtrl.upgradeImageCheck()
-			assert.Equal(t, c.expectedOk, upgradeRequired, "ok as expected")
-		})
-	}
-
-	// Image override CM does not exist
-	uCtrl.spokeUncachedClient.Delete(ctx, overrideCM)
-	upgradeRequired, err := uCtrl.upgradeImageCheck()
-	assert.Nil(t, err, "error is nil if image override CM does not exist")
-	assert.True(t, upgradeRequired, "image upgrade is required if image override CM does not exist")
-
-	// No deployment
-	uCtrl.spokeUncachedClient.Delete(ctx, dp)
-	_, err = uCtrl.upgradeImageCheck()
-	assert.NotNil(t, err, "error is not nil if deployment does not exist")
-	assert.Contains(t, err.Error(), "failed to get the hypershift operator deployment")
-
-	// Deployment has no containers
-	dp = &appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Deployment",
-			APIVersion: "apps/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        "operator",
-			Namespace:   "hypershift",
-			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
-		},
-	}
-	uCtrl.spokeUncachedClient.Create(ctx, dp)
-	upgradeRequired, err = uCtrl.upgradeImageCheck()
-	assert.Nil(t, err, "error is nil if deployment does not have a container")
-	assert.False(t, upgradeRequired, "no containers found for HyperShift operator deployment - upgrade not required")
-	uCtrl.spokeUncachedClient.Delete(ctx, dp)
-
-	// Deployment does not have addon annotation
-	dp = &appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Deployment",
-			APIVersion: "apps/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "operator",
-			Namespace: "hypershift",
-		},
-		Spec: appsv1.DeploymentSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{
-						Name:  "nginx",
-						Image: "nginx:1.14.2",
-						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
-						Env:   []corev1.EnvVar{{Name: util.HypershiftEnvVarImageAgentCapiProvider, Value: "123"}},
-					}},
-				},
-			},
-		},
-	}
-	uCtrl.spokeUncachedClient.Create(ctx, dp)
-	upgradeRequired, err = uCtrl.upgradeImageCheck()
-	assert.Nil(t, err, "error is nil if deployment does not have addon annotation")
-	assert.False(t, upgradeRequired, "HyperShift operator deployment not deployed by the HyperShift addon - upgrade not required")
-}
-
-func TestReconcile(t *testing.T) {
-	ctx := context.Background()
 
 	zapLog, _ := zap.NewDevelopment()
 	client := initClient()
-	aCtrl := &UpgradeController{
+	controller := &UpgradeController{
 		spokeUncachedClient:       client,
 		hubClient:                 client,
 		log:                       zapr.NewLogger(zapLog),
@@ -197,56 +30,416 @@ func TestReconcile(t *testing.T) {
 		clusterName:               "cluster1",
 		pullSecret:                "pull-secret",
 		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+		imageOverrideConfigmap:    corev1.ConfigMap{},
 	}
 
-	// Create override configmap
-	tr := []imageapi.TagReference{}
-	tr = append(tr, imageapi.TagReference{Name: hsOperatorImage, From: &corev1.ObjectReference{Name: "quay.io/stolostron/hypershift-operator@sha256:122a59aaf2fa72d1e3c0befb0de61df2aeea848676b0f41055b07ca0e6291391"}})
-	ims := &imageapi.ImageStream{}
-	ims.Spec.Tags = tr
-	imb, _ := yaml.Marshal(ims)
 	overrideCM := &corev1.ConfigMap{
 		ObjectMeta: v1.ObjectMeta{
-			Name:      util.HypershiftDownstreamOverride,
-			Namespace: aCtrl.addonNamespace,
+			Name:      util.HypershiftOverrideImagesCM,
+			Namespace: controller.clusterName,
 		},
-		Data: map[string]string{util.HypershiftOverrideKey: base64.StdEncoding.EncodeToString(imb)},
+		Data: map[string]string{
+			util.ImageStreamAwsCapiProvider:      `ImageStreamAwsCapiProvider-1`,
+			util.ImageStreamAgentCapiProvider:    `ImageStreamAgentCapiProvider-1`,
+			util.ImageStreamAwsEncyptionProvider: `ImageStreamAwsEncyptionProvider-1`,
+			util.ImageStreamAzureCapiProvider:    `ImageStreamAzureCapiProvider-1`,
+			util.ImageStreamClusterApi:           `ImageStreamClusterApi-1`,
+			util.ImageStreamKonnectivity:         `ImageStreamKonnectivity-1`,
+			util.ImageStreamKubevertCapiProvider: `ImageStreamKubevertCapiProvider-1`,
+			util.ImageStreamHypershiftOperator:   `ImageStreamHypershiftOperator-1`,
+		},
 	}
-	aCtrl.withOverride = true
-	aCtrl.spokeUncachedClient.Create(ctx, overrideCM)
+	controller.hubClient.Create(ctx, overrideCM)
 
-	// Upgrade checked has error
-	_, err := aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: ctrlClient.ObjectKeyFromObject(overrideCM)})
-	assert.NotNil(t, err, "err is not nil if reconcile failed because hypershift operator does not exist")
-	assert.True(t, strings.Contains(err.Error(), "failed to get the hypershift operator deployment"))
+	assert.Eventually(t, func() bool {
+		theConfigMap := &corev1.ConfigMap{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftOverrideImagesCM}, theConfigMap)
+		return err == nil
+	}, 10*time.Second, 1*time.Second, "The test image override configmap was created successfully")
 
-	dp := &appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Deployment",
-			APIVersion: "apps/v1",
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The image override configmap has changed. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
+	controller.Stop()
+
+	changedOverrideCM := &corev1.ConfigMap{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      util.HypershiftOverrideImagesCM,
+			Namespace: controller.clusterName,
 		},
+		Data: map[string]string{
+			util.ImageStreamAwsCapiProvider:      `ImageStreamAwsCapiProvider-2`,
+			util.ImageStreamAgentCapiProvider:    `ImageStreamAgentCapiProvider-2`,
+			util.ImageStreamAwsEncyptionProvider: `ImageStreamAwsEncyptionProvider-2`,
+			util.ImageStreamAzureCapiProvider:    `ImageStreamAzureCapiProvider-2`,
+			util.ImageStreamClusterApi:           `ImageStreamClusterApi-2`,
+			util.ImageStreamKonnectivity:         `ImageStreamKonnectivity-1`,
+			util.ImageStreamKubevertCapiProvider: `ImageStreamKubevertCapiProvider-1`,
+			util.ImageStreamHypershiftOperator:   `ImageStreamHypershiftOperator-1`,
+		},
+	}
+
+	controller.hubClient.Update(ctx, changedOverrideCM)
+
+	assert.Eventually(t, func() bool {
+		theConfigMap := &corev1.ConfigMap{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftOverrideImagesCM}, theConfigMap)
+		if err == nil {
+			return theConfigMap.Data[util.ImageStreamAwsCapiProvider] == "ImageStreamAwsCapiProvider-2"
+		}
+		return false
+	}, 10*time.Second, 1*time.Second, "The image override configmap was updated successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The image override configmap was updated. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.hubClient.Delete(ctx, overrideCM)
+
+	assert.Eventually(t, func() bool {
+		theConfigMap := &corev1.ConfigMap{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftOverrideImagesCM}, theConfigMap)
+		return errors.IsNotFound(err)
+	}, 10*time.Second, 1*time.Second, "The image override configmap was deleted successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The image override configmap was removed. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
+	controller.Stop()
+
+	controller.hubClient = initErrorClient()
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The agent fails to get the image override configmap from the hub. The hypershift operator should not be re-installed")
+	controller.Stop()
+}
+
+func TestBucketSecretChanges(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	controller := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+		bucketSecret:              corev1.Secret{},
+	}
+
+	newBucketSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "operator",
-			Namespace:   "hypershift",
-			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
+			Name:      util.HypershiftBucketSecretName,
+			Namespace: controller.clusterName,
 		},
-		Spec: appsv1.DeploymentSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{{
-						Name:  "nginx",
-						Image: "nginx:1.14.2",
-						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
-						Env:   []corev1.EnvVar{{Name: util.HypershiftEnvVarImageAgentCapiProvider, Value: "123"}},
-					}},
-				},
-			},
+		Data: map[string][]byte{
+			"bucket":      []byte(`my-bucket`),
+			"region":      []byte(`us-east-1`),
+			"credentials": []byte(`myCredential`),
 		},
 	}
-	aCtrl.spokeUncachedClient.Create(ctx, dp)
+	controller.hubClient.Create(ctx, newBucketSecret)
 
-	// Upgrade checked has error
-	go updateHsInstallJobToSucceeded(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
-	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: ctrlClient.ObjectKeyFromObject(overrideCM)})
-	assert.Nil(t, err, "err is nil if reconcile is successful")
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftBucketSecretName}, theSecret)
+		return err == nil
+	}, 10*time.Second, 1*time.Second, "The test bucket secret was created successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The bucket secret has changed. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
+	controller.Stop()
+
+	changedBucketSecret := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      util.HypershiftBucketSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"bucket":      []byte(`my-bucket`),
+			"region":      []byte(`us-east-1`),
+			"credentials": []byte(`myNewCredential`),
+		},
+	}
+
+	controller.hubClient.Update(ctx, changedBucketSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftBucketSecretName}, theSecret)
+		if err == nil {
+			return string(theSecret.Data["credentials"]) == "myNewCredential"
+		}
+		return false
+	}, 10*time.Second, 1*time.Second, "The bucket secret was updated successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The bucket secret was updated. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.hubClient.Delete(ctx, newBucketSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftBucketSecretName}, theSecret)
+		return errors.IsNotFound(err)
+	}, 10*time.Second, 1*time.Second, "The test bucket secret was deleted successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The bucket secret was removed. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
+	controller.Stop()
+
+	controller.hubClient = initErrorClient()
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The agent fails to get the bucket secret from the hub. The hypershift operator should not be re-installed")
+	controller.Stop()
+}
+
+func TestExtDnsSecretChanges(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	controller := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+		extDnsSecret:              corev1.Secret{},
+	}
+
+	newExtDnsSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftExternalDNSSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"domain-filter": []byte(`my.domain.filter`),
+			"provider":      []byte(`aws`),
+			"txt-owner-id":  []byte(`my-txt-owner-id`),
+			"credentials":   []byte(`myCredential`),
+		},
+	}
+	controller.hubClient.Create(ctx, newExtDnsSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftExternalDNSSecretName}, theSecret)
+		return err == nil
+	}, 10*time.Second, 1*time.Second, "The test external DNS secret was created successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The external DNS secret has changed. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
+	controller.Stop()
+
+	changedExtDnsSecret := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      util.HypershiftExternalDNSSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"domain-filter": []byte(`my.domain.filter`),
+			"provider":      []byte(`aws`),
+			"txt-owner-id":  []byte(`my-txt-owner-id`),
+			"credentials":   []byte(`myNewCredential`),
+		},
+	}
+
+	controller.hubClient.Update(ctx, changedExtDnsSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftExternalDNSSecretName}, theSecret)
+		if err == nil {
+			return string(theSecret.Data["credentials"]) == "myNewCredential"
+		}
+		return false
+	}, 10*time.Second, 1*time.Second, "The external DNS secret was updated successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The external DNS secret was updated. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.hubClient.Delete(ctx, newExtDnsSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftExternalDNSSecretName}, theSecret)
+		return errors.IsNotFound(err)
+	}, 10*time.Second, 1*time.Second, "The test external DNS secret was deleted successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The external DNS secret was removed. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
+	controller.Stop()
+
+	controller.hubClient = initErrorClient()
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The agent fails to get the external DNS secret from the hub. The hypershift operator should not be re-installed")
+	controller.Stop()
+}
+
+func TestPrivateLinkSecretChanges(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	controller := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+		privateLinkSecret:         corev1.Secret{},
+	}
+
+	newPrivateLinkSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftPrivateLinkSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"region": []byte(`us-east-1`),
+		},
+	}
+	controller.hubClient.Create(ctx, newPrivateLinkSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftPrivateLinkSecretName}, theSecret)
+		return err == nil
+	}, 10*time.Second, 1*time.Second, "The test private link secret was created successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The private link secret has changed. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
+	controller.Stop()
+
+	changedPrivateLinkSecret := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      util.HypershiftPrivateLinkSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"region": []byte(`us-west-1`),
+		},
+	}
+
+	controller.hubClient.Update(ctx, changedPrivateLinkSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftPrivateLinkSecretName}, theSecret)
+		if err == nil {
+			return string(theSecret.Data["region"]) == "us-west-1"
+		}
+		return false
+	}, 10*time.Second, 1*time.Second, "The private link secret was updated successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The private link secret was updated. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.hubClient.Delete(ctx, newPrivateLinkSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftPrivateLinkSecretName}, theSecret)
+		return errors.IsNotFound(err)
+	}, 10*time.Second, 1*time.Second, "The test private link secret was deleted successfully")
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The private link secret was removed. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
+	controller.Stop()
+
+	controller.hubClient = initErrorClient()
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The agent fails to get the private link secret from the hub. The hypershift operator should not be re-installed")
+	controller.Stop()
 }

@@ -34,15 +34,6 @@ const (
 	HypershiftHostingNamespaceLabel = "hypershiftdeployments.cluster.open-cluster-management.io/hosting-namespace"
 	HypershiftAddonAnnotationKey    = "hypershift.open-cluster-management.io/createBy"
 
-	// Hypershift Operator Deployment env vars for images
-	HypershiftEnvVarImageAwsCapiProvider      = "IMAGE_AWS_CAPI_PROVIDER"
-	HypershiftEnvVarImageAzureCapiProvider    = "IMAGE_AZURE_CAPI_PROVIDER"
-	HypershiftEnvVarImageKubevertCapiProvider = "IMAGE_KUBEVIRT_CAPI_PROVIDER"
-	HypershiftEnvVarImageKonnectivity         = "IMAGE_KONNECTIVITY"
-	HypershiftEnvVarImageAwsEncyptionProvider = "IMAGE_AWS_ENCRYPTION_PROVIDER"
-	HypershiftEnvVarImageClusterApi           = "IMAGE_CLUSTER_API"
-	HypershiftEnvVarImageAgentCapiProvider    = "IMAGE_AGENT_CAPI_PROVIDER"
-
 	// ImageStream image names
 	ImageStreamAwsCapiProvider      = "cluster-api-provider-aws"
 	ImageStreamAzureCapiProvider    = "cluster-api-provider-azure"

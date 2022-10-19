@@ -48,6 +48,15 @@ func initClient() ctrlClient.Client {
 
 }
 
+func initErrorClient() ctrlClient.Client {
+	scheme := runtime.NewScheme()
+
+	ncb := fake.NewClientBuilder()
+	ncb.WithScheme(scheme)
+	return ncb.Build()
+
+}
+
 func initDeployObj() *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -495,6 +504,12 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, overrideCM)
 	defer aCtrl.hubClient.Delete(ctx, overrideCM)
 
+	assert.Eventually(t, func() bool {
+		theConfigMap := &corev1.ConfigMap{}
+		err := aCtrl.hubClient.Get(ctx, types.NamespacedName{Namespace: aCtrl.addonNamespace, Name: util.HypershiftDownstreamOverride}, theConfigMap)
+		return err == nil
+	}, 10*time.Second, 1*time.Second, "hypershift-operator-imagestream configmap was created successfully")
+
 	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
@@ -502,7 +517,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	imageUpgradeCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      util.HypershiftOverrideImagesCM,
-			Namespace: aCtrl.addonNamespace,
+			Namespace: aCtrl.clusterName,
 		},
 		Data: map[string]string{
 			"hypershift-operator": "quay.io/stolostron/hypershift-operator@sha256:eedb58e7b9c4d9e49c6c53d1b5b97dfddcdffe839bbffd4fb950760715d24244",
