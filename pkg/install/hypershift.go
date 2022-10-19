@@ -119,7 +119,7 @@ func (c *UpgradeController) RunHypershiftCleanup(ctx context.Context) error {
 		return err
 	}
 	if hasHCs {
-		c.log.Info(fmt.Sprintf("skip deletion of the hypershift operator, there are existing HostedClusters"))
+		c.log.Info("skip deletion of the hypershift operator, there are existing HostedClusters")
 		return nil
 	}
 
@@ -145,6 +145,9 @@ func (c *UpgradeController) RunHypershiftCleanup(ctx context.Context) error {
 	return nil
 }
 
+// This is run when:
+//   1) the controller starts up
+//   2) when the hypershift installation options (secrets and configmap) change
 func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 	c.log.Info("enter runHypershiftInstall")
 	defer c.log.Info("exit runHypershiftInstall")
@@ -166,6 +169,9 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 
 		awsPlatform = false
 	}
+
+	// cache the bucket secret for comparison againt the hub's to detect any change
+	c.bucketSecret = *se
 
 	args := []string{
 		"--namespace", hypershiftOperatorKey.Namespace,
@@ -194,7 +200,7 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 		if err := c.createAwsSpokeSecret(ctx, se); err != nil {
 			return err
 		}
-		c.log.Info(fmt.Sprintf("oidc s3 bucket, region & credential arguments included"))
+		c.log.Info("oidc s3 bucket, region & credential arguments included")
 		awsArgs := []string{
 			"--oidc-storage-provider-s3-bucket-name", bucketName,
 			"--oidc-storage-provider-s3-region", bucketRegion,
@@ -213,7 +219,7 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 			if err := c.createAwsSpokeSecret(ctx, spl); err != nil {
 				return err
 			}
-			c.log.Info(fmt.Sprintf("private link region & credential arguments included"))
+			c.log.Info("private link region & credential arguments included")
 			awsArgs := []string{
 				"--aws-private-secret", util.HypershiftPrivateLinkSecretName,
 				"--aws-private-region", string(spl.Data["region"]),
@@ -223,6 +229,10 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 		} else {
 			c.log.Info(fmt.Sprintf("private-link secret(%s) was not found", privateSecretKey))
 		}
+
+		// cache the private link secret for comparison againt the hub's to detect any change
+		c.privateLinkSecret = *spl
+
 	}
 	//External DNS
 	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
@@ -231,7 +241,7 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 		if err := c.createSpokeSecret(ctx, sExtDNS); err != nil {
 			return err
 		}
-		c.log.Info(fmt.Sprintf("external dns provider & domain-filter arguments included"))
+		c.log.Info("external dns provider & domain-filter arguments included")
 		awsArgs := []string{
 			"--external-dns-secret", util.HypershiftExternalDNSSecretName,
 			"--external-dns-domain-filter", string(sExtDNS.Data["domain-filter"]),
@@ -244,6 +254,9 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 	} else {
 		c.log.Info(fmt.Sprintf("external dns secret(%s) was not found", extDNSSecretKey))
 	}
+
+	// cache the external DNS secret for comparison againt the hub's to detect any change
+	c.extDnsSecret = *sExtDNS
 
 	//Enable control plane telemetry forwarding
 	telemetryArgs := []string{
@@ -283,7 +296,7 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 	c.log.Info(fmt.Sprintf("HyperShift install job: %s completed successfully", job.Name))
 
 	// Add label to Hypershift deployment
-	err = c.addAddonLabelToDeployment(ctx)
+	c.addAddonLabelToDeployment(ctx)
 
 	return nil
 }
@@ -430,6 +443,7 @@ func (c *UpgradeController) addAddonLabelToDeployment(ctx context.Context) error
 }
 
 func (c *UpgradeController) readInDownstreamOverride() ([]byte, error) {
+	// This is the original image stream configmap from the MCE installer
 	cm := &corev1.ConfigMap{}
 	cmKey := types.NamespacedName{Name: util.HypershiftDownstreamOverride, Namespace: c.addonNamespace}
 
@@ -444,18 +458,20 @@ func (c *UpgradeController) readInDownstreamOverride() ([]byte, error) {
 		return nil, err
 	}
 
-	// If upgrade images CM exists, replace values in the imagestream
-	imUpgradeMap, err := c.getImageOverrideMap()
-	if err == nil {
+	// This is the user provided upgrade images configmap
+	// Override the image values in the installer provided imagestream with this
+	imUpgradeConfigMap := c.getImageOverrideMapFromHub()
+	if imUpgradeConfigMap.Data != nil {
 		c.log.Info(fmt.Sprintf("found %s configmap, overriding hypershift images in the imagestream", util.HypershiftOverrideImagesCM))
 
-		im, err = c.getUpdatedImageStream(im, imUpgradeMap)
+		im, err = c.getUpdatedImageStream(im, imUpgradeConfigMap.Data)
 		if err != nil {
 			return nil, err
 		}
-	} else if !apierrors.IsNotFound(err) {
-		return nil, fmt.Errorf("failed to get the image override configmap, err: %w", err)
 	}
+
+	// cache the configmap for comparison againt the hub's to detect any change
+	c.imageOverrideConfigmap = imUpgradeConfigMap
 
 	return im, nil
 }

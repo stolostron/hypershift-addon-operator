@@ -164,6 +164,10 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return err
 	}
 
+	// After the initial hypershift operator installation, start the process to continuously check
+	// if the hypershift operator re-installation is needed
+	uCtrl.Start()
+
 	leaseClient, err := kubernetes.NewForConfig(spokeConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create lease client, err: %w", err)
@@ -187,11 +191,6 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	//+kubebuilder:scaffold:builder
 	if err = aCtrl.SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create agent controller: %s, err: %w", util.AddonControllerName, err)
-	}
-
-	//+kubebuilder:scaffold:builder
-	if err = uCtrl.SetupWithManager(mgr); err != nil {
-		return fmt.Errorf("unable to create image upgrade controller: %s, err: %w", util.ImageUpgradeControllerName, err)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
