@@ -156,17 +156,13 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 
 	// Image upgrade controller
 	uCtrl := install.NewUpgradeController(hubClient, spokeKubeClient, o.Log, o.AddonName, o.AddonNamespace, o.SpokeClusterName,
-		o.HypershiftOperatorImage, o.PullSecretName, o.WithOverride)
+		o.HypershiftOperatorImage, o.PullSecretName, o.WithOverride, ctx)
 
 	// retry 3 times, in case something wrong with creating the hypershift install job
 	if err := uCtrl.RunHypershiftInstall(ctx); err != nil {
 		log.Error(err, "failed to install hypershift Operator")
 		return err
 	}
-
-	// After the initial hypershift operator installation, start the process to continuously check
-	// if the hypershift operator re-installation is needed
-	uCtrl.Start()
 
 	leaseClient, err := kubernetes.NewForConfig(spokeConfig)
 	if err != nil {
@@ -199,6 +195,10 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up ready check, err: %w", err)
 	}
+
+	// After the initial hypershift operator installation, start the process to continuously check
+	// if the hypershift operator re-installation is needed
+	uCtrl.Start()
 
 	return mgr.Start(ctrl.SetupSignalHandler())
 }
@@ -513,7 +513,7 @@ func (o *AgentOptions) runCleanup(ctx context.Context, uCtrl *install.UpgradeCon
 		// Image upgrade controller
 		o.Log = o.Log.WithName("hypersfhit-operation")
 		uCtrl = install.NewUpgradeController(nil, c, o.Log, o.AddonName, o.AddonNamespace, o.SpokeClusterName,
-			o.HypershiftOperatorImage, o.PullSecretName, o.WithOverride)
+			o.HypershiftOperatorImage, o.PullSecretName, o.WithOverride, ctx)
 	}
 
 	// retry 3 times, in case something wrong with deleting the hypershift install job

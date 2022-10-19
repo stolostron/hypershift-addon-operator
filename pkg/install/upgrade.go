@@ -38,7 +38,7 @@ type UpgradeController struct {
 }
 
 func NewUpgradeController(hubClient, spokeClient client.Client, logger logr.Logger, addonName, addonNamespace, clusterName, operatorImage,
-	pullSecretName string, withOverride bool) *UpgradeController {
+	pullSecretName string, withOverride bool, context context.Context) *UpgradeController {
 	return &UpgradeController{
 		hubClient:                 hubClient,
 		spokeUncachedClient:       spokeClient,
@@ -50,6 +50,7 @@ func NewUpgradeController(hubClient, spokeClient client.Client, logger logr.Logg
 		pullSecret:                pullSecretName,
 		withOverride:              withOverride,
 		hypershiftInstallExecutor: &HypershiftLibExecutor{},
+		ctx:                       context,
 	}
 }
 
@@ -69,9 +70,6 @@ func (c *UpgradeController) Start() {
 			if err := c.RunHypershiftInstall(c.ctx); err != nil {
 				c.log.Error(err, "failed to install hypershift operator")
 			}
-
-		} else {
-			c.log.Info("hypershift operator installation options have not changed")
 		}
 	}, 2*time.Minute, c.stopch) // Connect to the hub every 2 minutes to check for any changes
 }
@@ -110,7 +108,7 @@ func (c *UpgradeController) installOptionsChanged() bool {
 func (c *UpgradeController) getSecretFromHub(secretName string) corev1.Secret {
 	secretKey := types.NamespacedName{Name: secretName, Namespace: c.clusterName}
 	newSecret := &corev1.Secret{}
-	if err := c.hubClient.Get(c.ctx, secretKey, newSecret); err != nil && !errors.IsNotFound(err) {
+	if err := c.hubClient.Get(context.TODO(), secretKey, newSecret); err != nil && !errors.IsNotFound(err) {
 		c.log.Error(err, "failed to get secret from the hub: ")
 	}
 	return *newSecret

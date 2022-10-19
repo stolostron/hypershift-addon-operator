@@ -296,7 +296,11 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 	c.log.Info(fmt.Sprintf("HyperShift install job: %s completed successfully", job.Name))
 
 	// Add label to Hypershift deployment
-	c.addAddonLabelToDeployment(ctx)
+	err = c.addAddonLabelToDeployment(ctx)
+
+	if err != nil {
+		c.log.Error(err, "failed to add addon label to the hypershift operator deployment")
+	}
 
 	return nil
 }
