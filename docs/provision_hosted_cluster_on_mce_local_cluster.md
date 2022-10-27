@@ -207,8 +207,8 @@ Note: This command will also perform what `hypershift create infra` and `hypersh
 7. Edit the `hosted-cluster-cr-render.yaml` above by adding this annotation to the HostedCluster CR:
 
 ```yaml
-        annotations:
-                cluster.open-cluster-management.io/hypershiftdeployment: default/local-cluster
+  annotations:
+    cluster.open-cluster-management.io/managedcluster-name: CLUSTER_NAME
 ```
 
 8. Now we can apply the CR to the hub:
@@ -231,15 +231,15 @@ metadata:
 labels:    
   cloud: auto-detect    
   cluster.open-cluster-management.io/clusterset: default    
-  name: $INFRA_ID    
+  name: $CLUSTER_NAME   
   vendor: OpenShift  
-name: $INFRA_ID
+name: $CLUSTER_NAME
 spec:  
   hubAcceptsClient: true  
   leaseDurationSeconds: 60
 EOF
 ```
-Note: the name listed here will be the infra-id of your hosted cluster.  If you want to use a `ManagedCluster` name other than `$INFRA_ID`, use the name you want, and include the following annotation on the HostedCluster `cluster.open-cluster-management.io/managedcluster-name: $MANAGED_CLUSTER_NAME`
+Note: the name listed here will be the CLUSTER_NAME of your hosted cluster.  The name provided in the `HostedCluster` annotation `cluster.open-cluster-management.io/managedcluster-name` must match the name given to the `ManagedCluster` resource.
 
 10. Check the status of your hosted cluster via:
 

@@ -372,15 +372,14 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	createOrUpdateMirrorSecrets := func() error {
 		var lastErr error
-		hypershiftDeploymentAnnoValue, ok := hc.GetAnnotations()[util.HypershiftDeploymentAnnoKey]
-		if !ok || len(hypershiftDeploymentAnnoValue) == 0 {
-			lastErr = fmt.Errorf("failed to get hypershift deployment annotation from hosted cluster")
+		managedClusterAnnoValue, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
+		if !ok || len(managedClusterAnnoValue) == 0 {
+			lastErr = fmt.Errorf("failed to get managed cluster's name annotation from hosted cluster")
 		}
 
 		hcSecrets := c.scaffoldHostedclusterSecrets(req.NamespacedName)
 		for _, se := range hcSecrets {
 			secretName := hc.Spec.InfraID
-			managedClusterAnnoValue, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
 			if ok && len(managedClusterAnnoValue) > 0 {
 				secretName = managedClusterAnnoValue
 			}
@@ -391,12 +390,12 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			se.SetName(fmt.Sprintf("%s-%s", hc.Name, se.Name))
 			if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(se), se); err != nil {
 				lastErr = err
-				c.log.Error(err, fmt.Sprintf("failed to get hostedcluster secret %s on local cluster, skip this one", client.ObjectKeyFromObject(se)))
+				c.log.Error(err, fmt.Sprintf("failed to get hosted cluster secret %s on local cluster, skip this one", client.ObjectKeyFromObject(se)))
 				continue
 			}
 
-			if len(hypershiftDeploymentAnnoValue) != 0 {
-				hubMirrorSecret.SetAnnotations(map[string]string{util.HypershiftDeploymentAnnoKey: hypershiftDeploymentAnnoValue})
+			if ok && len(managedClusterAnnoValue) != 0 {
+				hubMirrorSecret.SetAnnotations(map[string]string{util.ManagedClusterAnnoKey: managedClusterAnnoValue})
 			}
 			hubMirrorSecret.Data = se.Data
 
@@ -458,11 +457,15 @@ func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
 	filterByOwner := func(obj client.Object) bool {
-		hypershiftDeploymentAnnoValue, ok := obj.GetAnnotations()[util.HypershiftDeploymentAnnoKey]
-		if !ok || len(hypershiftDeploymentAnnoValue) == 0 {
-			return false
+		annotations := obj.GetAnnotations()
+		// TODO:Remove the loop, and util.HypershiftDeploymentAnnoKey once verified not in use
+		for _, key := range []string{util.ManagedClusterAnnoKey, util.HypershiftDeploymentAnnoKey} {
+			annoValue, ok := annotations[key]
+			if ok && len(annoValue) >= 0 {
+				return true
+			}
 		}
-		return true
+		return false
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
