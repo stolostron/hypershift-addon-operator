@@ -210,6 +210,7 @@ Note: This command will also perform what `hypershift create infra` and `hypersh
   annotations:
     cluster.open-cluster-management.io/managedcluster-name: CLUSTER_NAME
 ```
+If not included, the name used when importing the cluster is the `InfraID` value.
 
 8. Now we can apply the CR to the hub:
 
@@ -239,7 +240,7 @@ spec:
   leaseDurationSeconds: 60
 EOF
 ```
-Note: the name listed here will be the CLUSTER_NAME of your hosted cluster.  The name provided in the `HostedCluster` annotation `cluster.open-cluster-management.io/managedcluster-name` must match the name given to the `ManagedCluster` resource.
+Note: the name listed here will be the registred name of your hosted cluster in ACM/MCE.  The name provided in the `HostedCluster` annotation `cluster.open-cluster-management.io/managedcluster-name` must match the name given to the `ManagedCluster` resource. If the annotation is not present, the `ManagedCluster.Name` must be the `InfraID` of the `HostedCluster`. If the annotation and `ManagedCluster.Name` do not match, the console will display the cluster as `Pending import`, and can not be utilized by ACM/MCE.
 
 10. Check the status of your hosted cluster via:
 

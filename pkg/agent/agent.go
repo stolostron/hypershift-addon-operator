@@ -25,7 +25,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
 	"open-cluster-management.io/addon-framework/pkg/lease"
@@ -374,7 +373,9 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		var lastErr error
 		managedClusterAnnoValue, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
 		if !ok || len(managedClusterAnnoValue) == 0 {
-			lastErr = fmt.Errorf("failed to get managed cluster's name annotation from hosted cluster")
+			c.log.Info("did not find managed cluster's name annotation from hosted cluster, using infra-id")
+			managedClusterAnnoValue = hc.Spec.InfraID
+			ok = true
 		}
 
 		hcSecrets := c.scaffoldHostedclusterSecrets(req.NamespacedName)
@@ -394,9 +395,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				continue
 			}
 
-			if ok && len(managedClusterAnnoValue) != 0 {
-				hubMirrorSecret.SetAnnotations(map[string]string{util.ManagedClusterAnnoKey: managedClusterAnnoValue})
-			}
+			hubMirrorSecret.SetAnnotations(map[string]string{util.ManagedClusterAnnoKey: managedClusterAnnoValue})
 			hubMirrorSecret.Data = se.Data
 
 			// Create or update external-managed-kubeconfig secret for managed cluster registration agent
@@ -456,21 +455,8 @@ func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1
 }
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
-	filterByOwner := func(obj client.Object) bool {
-		annotations := obj.GetAnnotations()
-		// TODO:Remove the loop, and util.HypershiftDeploymentAnnoKey once verified not in use
-		for _, key := range []string{util.ManagedClusterAnnoKey, util.HypershiftDeploymentAnnoKey} {
-			annoValue, ok := annotations[key]
-			if ok && len(annoValue) >= 0 {
-				return true
-			}
-		}
-		return false
-	}
-
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1alpha1.HostedCluster{}).
-		WithEventFilter(predicate.NewPredicateFuncs(filterByOwner)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(c)
 }
