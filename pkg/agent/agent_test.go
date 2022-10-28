@@ -110,7 +110,7 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        hcNN.Name,
 			Namespace:   hcNN.Namespace,
-			Annotations: map[string]string{util.HypershiftDeploymentAnnoKey: "test-hd1"},
+			Annotations: map[string]string{util.ManagedClusterAnnoKey: "infra-abcdef"},
 		},
 		Spec: hyperv1alpha1.HostedClusterSpec{
 			Platform: hyperv1alpha1.PlatformSpec{
