@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -146,19 +147,27 @@ func (c *UpgradeController) RunHypershiftCleanup(ctx context.Context) error {
 }
 
 // This is run when:
-//   1) the controller starts up
-//   2) when the hypershift installation options (secrets and configmap) change
-func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
-	c.log.Info("enter runHypershiftInstall")
+//   1) the controller starts up, controllerStartup = true
+//   2) when the hypershift installation options (secrets and configmap) change, controllerStartup = false
+func (c *UpgradeController) RunHypershiftInstall(ctx context.Context, controllerStartup bool) error {
+	c.log.Info("enter runHypershiftInstall, controllerStartup = " + strconv.FormatBool(controllerStartup))
 	defer c.log.Info("exit runHypershiftInstall")
 
-	if err, ok := c.deploymentUpgradable(ctx); !ok || err != nil {
+	err, ok, operatorDeployment := c.operatorUpgradable(ctx)
+
+	if !ok || err != nil {
 		if err != nil {
 			return err
 		}
 		c.log.Info("hypershift operator exists but not deployed by addon, skip update")
 		return nil
 	}
+
+	// If the hypershift operator installation already exists and it is a controller initial start up,
+	// we need to check if the operator re-installation is necessary by comparing the operator images.
+	// For now, assume that secrets did not change (MCE upgrade or pod re-cycle scenarios)
+	// If controllerStartup = false, we are here because the image override configmap or some operator secrets have changed. No check required.
+	reinstallCheckRequired := (operatorDeployment != nil) && controllerStartup
 
 	awsPlatform := true
 
@@ -192,6 +201,8 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 				if err := c.spokeUncachedClient.Create(ctx, ns); err != nil {
 					return err
 				}
+				// If the hypershift operator namespace does not exist, this is the initial installation.
+				reinstallCheckRequired = false
 			} else {
 				return err
 			}
@@ -232,7 +243,6 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 
 		// cache the private link secret for comparison againt the hub's to detect any change
 		c.privateLinkSecret = *spl
-
 	}
 	//External DNS
 	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
@@ -277,6 +287,22 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context) error {
 
 		hypershiftImage = getHyperShiftOperatorImage(im)
 		args = append(args, "--image-refs", filepath.Join(os.TempDir(), util.HypershiftDownstreamOverride))
+
+		// compare installed operator images to the newly built image stream
+		// If they are the same, skip re-install.
+		if reinstallCheckRequired {
+			reinstall, err := c.operatorImagesUpdated(im, *operatorDeployment)
+
+			if err != nil {
+				c.log.Info("failed to compare hypershift operator images, skipping hypershift operator installation")
+				return nil
+			}
+
+			if !reinstall {
+				c.log.Info("no change in hypershift operator images, skipping hypershift operator installation")
+				return nil
+			}
+		}
 	} else {
 		args = append(args, "--hypershift-image", hypershiftImage)
 	}
@@ -411,23 +437,23 @@ func (c *UpgradeController) hasHostedClusters(ctx context.Context) (bool, error)
 	return len(hcList.Items) != 0, nil
 }
 
-func (c *UpgradeController) deploymentUpgradable(ctx context.Context) (error, bool) {
+func (c *UpgradeController) operatorUpgradable(ctx context.Context) (error, bool, *appsv1.Deployment) {
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
 		if apierrors.IsNotFound(err) {
-			return nil, true
+			return nil, true, nil
 		}
 
-		return err, false
+		return err, false, nil
 	}
 
 	// Check if deployment is created by the addon
 	if obj.Annotations[util.HypershiftAddonAnnotationKey] == util.AddonControllerName {
-		return nil, true
+		return nil, true, obj
 	}
 
-	return nil, false
+	return nil, false, nil
 }
 
 func (c *UpgradeController) addAddonLabelToDeployment(ctx context.Context) error {
@@ -517,6 +543,66 @@ func getHyperShiftOperatorImage(im []byte) string {
 	for _, tag := range imObj.Spec.Tags {
 		if tag.Name == util.ImageStreamHypershiftOperator {
 			return tag.From.Name
+		}
+	}
+	return ""
+}
+
+func (c *UpgradeController) operatorImagesUpdated(im []byte, operatorDeployment appsv1.Deployment) (bool, error) {
+	different := false
+
+	hsOperatorContainer := operatorDeployment.Spec.Template.Spec.Containers[0]
+
+	imObj := &imageapi.ImageStream{}
+	if err := yaml.Unmarshal(im, imObj); err != nil {
+		c.log.Error(err, "failed to get image stream content: ", err.Error())
+		return false, err
+	}
+
+	for _, tag := range imObj.Spec.Tags {
+		switch tag.Name {
+		case util.ImageStreamAgentCapiProvider:
+			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAgentCapiProvider) {
+				different = true
+			}
+		case util.ImageStreamAwsCapiProvider:
+			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAwsCapiProvider) {
+				different = true
+			}
+		case util.ImageStreamAwsEncyptionProvider:
+			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAwsEncyptionProvider) {
+				different = true
+			}
+		case util.ImageStreamAzureCapiProvider:
+			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAzureCapiProvider) {
+				different = true
+			}
+		case util.ImageStreamClusterApi:
+			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageClusterApi) {
+				different = true
+			}
+		case util.ImageStreamKonnectivity:
+			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageKonnectivity) {
+				different = true
+			}
+		case util.ImageStreamKubevertCapiProvider:
+			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageKubevertCapiProvider) {
+				different = true
+			}
+		case util.ImageStreamHypershiftOperator:
+			if tag.From.Name != hsOperatorContainer.Image {
+				different = true
+			}
+		}
+	}
+
+	return different, nil
+}
+
+func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
+	for _, ev := range envVars {
+		if ev.Name == imageName {
+			return ev.Value
 		}
 	}
 	return ""

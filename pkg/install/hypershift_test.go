@@ -256,7 +256,7 @@ func TestDeploymentExistsWithNoImage(t *testing.T) {
 				assert.Nil(t, aCtrl.spokeUncachedClient.Create(ctx, c.deploy), "")
 			}
 
-			err, ok := aCtrl.deploymentUpgradable(ctx)
+			err, ok, _ := aCtrl.operatorUpgradable(ctx)
 			if len(c.expectedErr) == 0 {
 				assert.Nil(t, err, "nil when function is successful")
 				assert.Equal(t, c.expectedOk, ok, "ok as expected")
@@ -531,7 +531,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 
 	// Install hypershift job failed
 	go updateHsInstallJobToFailed(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
-	err = aCtrl.RunHypershiftInstall(ctx)
+	err = aCtrl.RunHypershiftInstall(ctx, false)
 	assert.NotNil(t, err, "is nil if install HyperShift is sucessful")
 	assert.Equal(t, "install HyperShift job failed", err.Error())
 	if err := deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace); err != nil {
@@ -906,7 +906,7 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 
 func installHyperShiftOperator(t *testing.T, ctx context.Context, aCtrl *UpgradeController, deleteJobs bool) error {
 	go updateHsInstallJobToSucceeded(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
-	err := aCtrl.RunHypershiftInstall(ctx)
+	err := aCtrl.RunHypershiftInstall(ctx, false)
 
 	if deleteJobs {
 		if err := deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace); err != nil {
@@ -980,4 +980,117 @@ func deleteAllInstallJobs(ctx context.Context, client ctrlClient.Client, addonNa
 		}
 	}
 	return nil
+}
+
+func TestOperatorImagesUpdatedCheck(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	aCtrl := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+	}
+
+	addonNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: aCtrl.addonNamespace,
+		},
+	}
+	aCtrl.hubClient.Create(ctx, addonNs)
+	defer aCtrl.hubClient.Delete(ctx, addonNs)
+
+	dp := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "operator",
+			Namespace:   "hypershift",
+			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "hypershift-operator",
+						Image: "hypershift-operator@sha256:aaa",
+						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+						Env: []corev1.EnvVar{
+							{Name: util.HypershiftEnvVarImageAwsCapiProvider, Value: "cluster-api-aws-controller@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageAzureCapiProvider, Value: "cluster-api-provider-azure@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageKubevertCapiProvider, Value: "cluster-api-provider-kubevirt@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageKonnectivity, Value: "apiserver-network-proxy@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageAwsEncyptionProvider, Value: "aws-encryption-provider@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageClusterApi, Value: "cluster-api@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageAgentCapiProvider, Value: "cluster-api-provider-agent@sha256:aaa"},
+						},
+					}},
+				},
+			},
+		},
+	}
+	aCtrl.hubClient.Create(ctx, dp)
+	defer aCtrl.hubClient.Delete(ctx, dp)
+
+	tr := []imageapi.TagReference{}
+	tr = append(tr, imageapi.TagReference{Name: hsOperatorImage, From: &corev1.ObjectReference{Name: "hypershift-operator@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAwsCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-aws-controller@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAzureCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-azure@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamKubevertCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-kubevirt@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamKonnectivity, From: &corev1.ObjectReference{Name: "apiserver-network-proxy@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAwsEncyptionProvider, From: &corev1.ObjectReference{Name: "aws-encryption-provider@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamClusterApi, From: &corev1.ObjectReference{Name: "cluster-api@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAgentCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-agent@sha256:aaa"}})
+	ims := &imageapi.ImageStream{}
+	ims.Spec.Tags = tr
+	imb, err := yaml.Marshal(ims)
+	assert.Nil(t, err, "expected Marshal to succeed: %s", err)
+
+	imagesUpdated, err := aCtrl.operatorImagesUpdated(imb, *dp)
+	assert.False(t, imagesUpdated, "detected that there is NO difference between the image stream and deployment images")
+	assert.Nil(t, err, "expected Marshal to succeed: %s", err)
+
+	tr2 := []imageapi.TagReference{}
+	tr2 = append(tr2, imageapi.TagReference{Name: hsOperatorImage, From: &corev1.ObjectReference{Name: "hypershift-operator@sha256:bbb"}})
+	tr2 = append(tr2, imageapi.TagReference{Name: util.ImageStreamAwsCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-aws-controller@sha256:aaa"}})
+	tr2 = append(tr2, imageapi.TagReference{Name: util.ImageStreamAzureCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-azure@sha256:aaa"}})
+	tr2 = append(tr2, imageapi.TagReference{Name: util.ImageStreamKubevertCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-kubevirt@sha256:aaa"}})
+	tr2 = append(tr2, imageapi.TagReference{Name: util.ImageStreamKonnectivity, From: &corev1.ObjectReference{Name: "apiserver-network-proxy@sha256:aaa"}})
+	tr2 = append(tr2, imageapi.TagReference{Name: util.ImageStreamAwsEncyptionProvider, From: &corev1.ObjectReference{Name: "aws-encryption-provider@sha256:aaa"}})
+	tr2 = append(tr2, imageapi.TagReference{Name: util.ImageStreamClusterApi, From: &corev1.ObjectReference{Name: "cluster-api@sha256:aaa"}})
+	tr2 = append(tr2, imageapi.TagReference{Name: util.ImageStreamAgentCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-agent@sha256:aaa"}})
+	ims = &imageapi.ImageStream{}
+	ims.Spec.Tags = tr2
+	imb, err = yaml.Marshal(ims)
+	assert.Nil(t, err, "expected Marshal to succeed: %s", err)
+
+	imagesUpdated, err = aCtrl.operatorImagesUpdated(imb, *dp)
+	assert.True(t, imagesUpdated, "detected that there is difference between the image stream and deployment images")
+	assert.Nil(t, err, "expected Marshal to succeed: %s", err)
+
+	tr3 := []imageapi.TagReference{}
+	tr3 = append(tr3, imageapi.TagReference{Name: hsOperatorImage, From: &corev1.ObjectReference{Name: "hypershift-operator@sha256:bbb"}})
+	tr3 = append(tr3, imageapi.TagReference{Name: util.ImageStreamAwsCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-aws-contr3oller@sha256:bbb"}})
+	tr3 = append(tr3, imageapi.TagReference{Name: util.ImageStreamAzureCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-azure@sha256:bbb"}})
+	tr3 = append(tr3, imageapi.TagReference{Name: util.ImageStreamKubevertCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-kubevirt@sha256:bbb"}})
+	tr3 = append(tr3, imageapi.TagReference{Name: util.ImageStreamKonnectivity, From: &corev1.ObjectReference{Name: "apiserver-network-proxy@sha256:bbb"}})
+	tr3 = append(tr3, imageapi.TagReference{Name: util.ImageStreamAwsEncyptionProvider, From: &corev1.ObjectReference{Name: "aws-encryption-provider@sha256:bbb"}})
+	tr3 = append(tr3, imageapi.TagReference{Name: util.ImageStreamClusterApi, From: &corev1.ObjectReference{Name: "cluster-api@sha256:bbb"}})
+	tr3 = append(tr3, imageapi.TagReference{Name: util.ImageStreamAgentCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-agent@sha256:bbb"}})
+	ims = &imageapi.ImageStream{}
+	ims.Spec.Tags = tr3
+	imb, err = yaml.Marshal(ims)
+	assert.Nil(t, err, "expected Marshal to succeed: %s", err)
+
+	imagesUpdated, err = aCtrl.operatorImagesUpdated(imb, *dp)
+	assert.True(t, imagesUpdated, "detected that there is difference between the image stream and deployment images")
+	assert.Nil(t, err, "expected Marshal to succeed: %s", err)
 }
