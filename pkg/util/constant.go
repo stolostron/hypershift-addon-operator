@@ -22,12 +22,15 @@ const (
 	HypershiftDownstreamOverride = "hypershift-operator-imagestream"
 	HypershiftOverrideKey        = "imagestream"
 	AddonControllerName          = "hypershift-addon"
+	AddonStatusControllerName    = "hypershift-addon-status"
+	AgentDeploymentName          = "hypershift-addon-agent"
 
 	HypershiftOverrideImagesCM = "hypershift-override-images"
 	ImageUpgradeControllerName = "hypershift-image-upgrade"
 
-	HypershiftOperatorNamespace = "hypershift"
-	HypershiftOperatorName      = "operator"
+	HypershiftOperatorNamespace       = "hypershift"
+	HypershiftOperatorName            = "operator"
+	HypershiftOperatorExternalDNSName = "external-dns"
 
 	// Labels for resources to reference the Hosted Cluster
 	HypershiftClusterNameLabel      = "hypershiftdeployments.cluster.open-cluster-management.io/cluster-name"
