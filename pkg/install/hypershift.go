@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"time"
 
@@ -169,6 +170,8 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context, controller
 	// If controllerStartup = false, we are here because the image override configmap or some operator secrets have changed. No check required.
 	reinstallCheckRequired := (operatorDeployment != nil) && controllerStartup
 
+	c.log.Info("reinstallCheckRequired = " + strconv.FormatBool(reinstallCheckRequired))
+
 	awsPlatform := true
 
 	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.clusterName}
@@ -185,6 +188,8 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context, controller
 	args := []string{
 		"--namespace", hypershiftOperatorKey.Namespace,
 	}
+
+	spl := &corev1.Secret{}
 
 	if awsPlatform { // if the S3 secret is found, install hypershift with s3 options
 		bucketName := string(se.Data["bucket"])
@@ -225,7 +230,7 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context, controller
 
 		//Private link creds
 		privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
-		spl := &corev1.Secret{}
+
 		if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
 			if err := c.createAwsSpokeSecret(ctx, spl); err != nil {
 				return err
@@ -288,20 +293,13 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context, controller
 		hypershiftImage = getHyperShiftOperatorImage(im)
 		args = append(args, "--image-refs", filepath.Join(os.TempDir(), util.HypershiftDownstreamOverride))
 
-		// compare installed operator images to the newly built image stream
+		// compare installed operator images to the new image stream
+		// compare locally saved secrets to the hub secrets as well
 		// If they are the same, skip re-install.
-		if reinstallCheckRequired {
-			reinstall, err := c.operatorImagesUpdated(im, *operatorDeployment)
-
-			if err != nil {
-				c.log.Info("failed to compare hypershift operator images, skipping hypershift operator installation")
-				return nil
-			}
-
-			if !reinstall {
-				c.log.Info("no change in hypershift operator images, skipping hypershift operator installation")
-				return nil
-			}
+		if reinstallCheckRequired &&
+			!(c.operatorImagesUpdated(im, *operatorDeployment) || c.secretDataUpdated(*se, *spl, *sExtDNS)) {
+			c.log.Info("no change in hypershift operator images and secrets, skipping hypershift operator installation")
+			return nil
 		}
 	} else {
 		args = append(args, "--hypershift-image", hypershiftImage)
@@ -321,6 +319,17 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context, controller
 	}
 	c.log.Info(fmt.Sprintf("HyperShift install job: %s completed successfully", job.Name))
 
+	// Upon successful installation, save the secrets locally to check any changes on addon restart
+	if err := c.saveSecretLocally(ctx, se); err != nil { // S3 bucket secret
+		return err
+	}
+	if err := c.saveSecretLocally(ctx, spl); err != nil { // private link secret
+		return err
+	}
+	if err := c.saveSecretLocally(ctx, sExtDNS); err != nil { // external DNS secret
+		return err
+	}
+
 	// Add label to Hypershift deployment
 	err = c.addAddonLabelToDeployment(ctx)
 
@@ -332,6 +341,7 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context, controller
 }
 
 func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
+	spokeSecret := hubSecret.DeepCopy()
 
 	region := hubSecret.Data["region"]
 	awsSecretKey := hubSecret.Data["aws-secret-access-key"]
@@ -340,11 +350,11 @@ func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret 
 		return fmt.Errorf("secret(%s/%s) does not contain a valid credential or region", hubSecret.Namespace, hubSecret.Name)
 	} else {
 		if awsSecretKey != nil {
-			hubSecret.Data["credentials"] = []byte(fmt.Sprintf("[default]\naws_access_key_id = %s\naws_secret_access_key = %s", awsKeyId, awsSecretKey))
+			spokeSecret.Data["credentials"] = []byte(fmt.Sprintf("[default]\naws_access_key_id = %s\naws_secret_access_key = %s", awsKeyId, awsSecretKey))
 		}
 	}
 
-	return c.createSpokeSecret(ctx, hubSecret)
+	return c.createSpokeSecret(ctx, spokeSecret)
 }
 
 func (c *UpgradeController) createSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
@@ -362,6 +372,24 @@ func (c *UpgradeController) createSpokeSecret(ctx context.Context, hubSecret *co
 	_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeSecret, func() error { return nil })
 
 	return err
+}
+
+func (c *UpgradeController) saveSecretLocally(ctx context.Context, hubSecret *corev1.Secret) error {
+	if hubSecret.Name != "" {
+		spokeSecret := &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hubSecret.Name,
+				Namespace: c.addonNamespace,
+			},
+		}
+		c.log.Info(fmt.Sprintf("save the secret (%s/%s) locally on cluster %s", c.addonNamespace, hubSecret.Name, c.clusterName))
+		_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeSecret, func() error {
+			spokeSecret.Data = hubSecret.Data
+			return nil
+		})
+		return err
+	}
+	return nil
 }
 
 func (c *UpgradeController) ensurePullSecret(ctx context.Context) error {
@@ -548,7 +576,7 @@ func getHyperShiftOperatorImage(im []byte) string {
 	return ""
 }
 
-func (c *UpgradeController) operatorImagesUpdated(im []byte, operatorDeployment appsv1.Deployment) (bool, error) {
+func (c *UpgradeController) operatorImagesUpdated(im []byte, operatorDeployment appsv1.Deployment) bool {
 	different := false
 
 	hsOperatorContainer := operatorDeployment.Spec.Template.Spec.Containers[0]
@@ -556,47 +584,56 @@ func (c *UpgradeController) operatorImagesUpdated(im []byte, operatorDeployment 
 	imObj := &imageapi.ImageStream{}
 	if err := yaml.Unmarshal(im, imObj); err != nil {
 		c.log.Error(err, "failed to get image stream content: ", err.Error())
-		return false, err
+		return false
 	}
 
+	c.log.Info("comparing hypershift operator images to the existing hypershift operator")
 	for _, tag := range imObj.Spec.Tags {
 		switch tag.Name {
 		case util.ImageStreamAgentCapiProvider:
 			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAgentCapiProvider) {
+				c.log.Info(fmt.Sprintf("image(%s) has changed", util.ImageStreamAgentCapiProvider))
 				different = true
 			}
 		case util.ImageStreamAwsCapiProvider:
 			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAwsCapiProvider) {
+				c.log.Info(fmt.Sprintf("image(%s) has changed", util.ImageStreamAwsCapiProvider))
 				different = true
 			}
 		case util.ImageStreamAwsEncyptionProvider:
 			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAwsEncyptionProvider) {
+				c.log.Info(fmt.Sprintf("image(%s) has changed", util.ImageStreamAwsEncyptionProvider))
 				different = true
 			}
 		case util.ImageStreamAzureCapiProvider:
 			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAzureCapiProvider) {
+				c.log.Info(fmt.Sprintf("image(%s) has changed", util.ImageStreamAzureCapiProvider))
 				different = true
 			}
 		case util.ImageStreamClusterApi:
 			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageClusterApi) {
+				c.log.Info(fmt.Sprintf("image(%s) has changed", util.ImageStreamClusterApi))
 				different = true
 			}
 		case util.ImageStreamKonnectivity:
 			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageKonnectivity) {
+				c.log.Info(fmt.Sprintf("image(%s) has changed", util.ImageStreamKonnectivity))
 				different = true
 			}
 		case util.ImageStreamKubevertCapiProvider:
 			if tag.From.Name != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageKubevertCapiProvider) {
+				c.log.Info(fmt.Sprintf("image(%s) has changed", util.ImageStreamKubevertCapiProvider))
 				different = true
 			}
 		case util.ImageStreamHypershiftOperator:
 			if tag.From.Name != hsOperatorContainer.Image {
+				c.log.Info(fmt.Sprintf("image(%s) has changed", util.ImageStreamHypershiftOperator))
 				different = true
 			}
 		}
 	}
 
-	return different, nil
+	return different
 }
 
 func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
@@ -606,4 +643,42 @@ func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
 		}
 	}
 	return ""
+}
+
+func (c *UpgradeController) secretDataUpdated(bucketSecret, privateLinkSecret, extDnsSecret corev1.Secret) bool {
+	c.log.Info("comparing hypershift operator secrets to the locally saved secrets")
+	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.addonNamespace}
+	localBucketSecret := &corev1.Secret{}
+	if err := c.spokeUncachedClient.Get(context.TODO(), bucketSecretKey, localBucketSecret); err != nil && !apierrors.IsNotFound(err) {
+		c.log.Error(err, "failed to find secret: ", err.Error()) // just log and continue
+	}
+
+	privateLinkSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.addonNamespace}
+	localPrivateLinkSecret := &corev1.Secret{}
+	if err := c.spokeUncachedClient.Get(context.TODO(), privateLinkSecretKey, localPrivateLinkSecret); err != nil && !apierrors.IsNotFound(err) {
+		c.log.Error(err, "failed to find secret: ", err.Error()) // just log and continue
+	}
+
+	extDnsSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.addonNamespace}
+	localExtDnsSecret := &corev1.Secret{}
+	if err := c.spokeUncachedClient.Get(context.TODO(), extDnsSecretKey, localExtDnsSecret); err != nil && !apierrors.IsNotFound(err) {
+		c.log.Error(err, "failed to find secret: ", err.Error()) // just log and continue
+	}
+
+	if !reflect.DeepEqual(localBucketSecret.Data, bucketSecret.Data) { // compare only the secret data
+		c.log.Info(fmt.Sprintf("secret(%s) has changed", util.HypershiftBucketSecretName))
+		return true
+	}
+
+	if !reflect.DeepEqual(localPrivateLinkSecret.Data, privateLinkSecret.Data) { // compare only the secret data
+		c.log.Info(fmt.Sprintf("secret(%s) has changed", util.HypershiftPrivateLinkSecretName))
+		return true
+	}
+
+	if !reflect.DeepEqual(localExtDnsSecret.Data, extDnsSecret.Data) { // compare only the secret data
+		c.log.Info(fmt.Sprintf("secret(%s) has changed", util.HypershiftExternalDNSSecretName))
+		return true
+	}
+
+	return false
 }
