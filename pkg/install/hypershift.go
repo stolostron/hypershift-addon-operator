@@ -156,7 +156,7 @@ func (c *UpgradeController) RunHypershiftOperatorInstallOnAgentStartup(ctx conte
 
 func (c *UpgradeController) RunHypershiftOperatorUpdate(ctx context.Context) error {
 	c.log.Info("enter RunHypershiftOperatorUpdate")
-	defer c.log.Info("exit RunHypershiftOperatoRunHypershiftOperatorUpdateInstallOnAgentStartup")
+	defer c.log.Info("exit RunHypershiftOperatorUpdate")
 
 	return c.runHypershiftInstall(ctx, false)
 }
