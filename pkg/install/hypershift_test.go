@@ -544,7 +544,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 
 	// Install hypershift job failed
 	go updateHsInstallJobToFailed(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
-	err = aCtrl.RunHypershiftInstall(ctx, false)
+	err = aCtrl.RunHypershiftOperatorUpdate(ctx)
 	assert.NotNil(t, err, "is nil if install HyperShift is sucessful")
 	assert.Equal(t, "install HyperShift job failed", err.Error())
 	if err := deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace); err != nil {
@@ -1116,14 +1116,14 @@ func TestSkipHypershiftInstallWithNoChange(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test operator deployment was created successfully")
 
-	// Run the hypershift operator installation code controllerStartup=true to simulate addon agent startup
-	err = aCtrl.RunHypershiftInstall(ctx, true)
+	// Run the hypershift operator installation to simulate addon agent startup
+	err = aCtrl.RunHypershiftOperatorInstallOnAgentStartup(ctx)
 	assert.Nil(t, err, "there was no error in calling HyperShift installation")
 	// All images in the hypershift operator deployment are the same as what is in the image override configmap
 	// All secrets data from the hub is the same as those saved locally on the agent side
 	// expect no install job
 	noInstallJob, err := noInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
-	assert.Nil(t, err, "there should be no error in RunHypershiftInstall")
+	assert.Nil(t, err, "there should be no error in RunHypershiftOperatorInstallOnAgentStartup")
 	assert.True(t, noInstallJob, "there should be no hypershift installation job")
 }
 
@@ -1193,7 +1193,7 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 
 func installHyperShiftOperator(t *testing.T, ctx context.Context, aCtrl *UpgradeController, deleteJobs bool) error {
 	go updateHsInstallJobToSucceeded(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
-	err := aCtrl.RunHypershiftInstall(ctx, false)
+	err := aCtrl.RunHypershiftOperatorUpdate(ctx)
 
 	if deleteJobs {
 		if err := deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace); err != nil {

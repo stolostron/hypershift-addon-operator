@@ -147,19 +147,26 @@ func (c *UpgradeController) RunHypershiftCleanup(ctx context.Context) error {
 	return nil
 }
 
-// This is run when:
-//   1) the controller starts up, controllerStartup = true
-//   2) when the hypershift installation options (secrets and configmap) change, controllerStartup = false
-func (c *UpgradeController) RunHypershiftInstall(ctx context.Context, controllerStartup bool) error {
-	c.log.Info("enter runHypershiftInstall, controllerStartup = " + strconv.FormatBool(controllerStartup))
-	defer c.log.Info("exit runHypershiftInstall")
+func (c *UpgradeController) RunHypershiftOperatorInstallOnAgentStartup(ctx context.Context) error {
+	c.log.Info("enter RunHypershiftOperatorInstallOnAgentStartup")
+	defer c.log.Info("exit RunHypershiftOperatorInstallOnAgentStartup")
 
+	return c.runHypershiftInstall(ctx, true)
+}
+
+func (c *UpgradeController) RunHypershiftOperatorUpdate(ctx context.Context) error {
+	c.log.Info("enter RunHypershiftOperatorUpdate")
+	defer c.log.Info("exit RunHypershiftOperatoRunHypershiftOperatorUpdateInstallOnAgentStartup")
+
+	return c.runHypershiftInstall(ctx, false)
+}
+
+func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controllerStartup bool) error {
 	err, ok, operatorDeployment := c.operatorUpgradable(ctx)
 
-	if !ok || err != nil {
-		if err != nil {
-			return err
-		}
+	if err != nil {
+		return err
+	} else if !ok {
 		c.log.Info("hypershift operator exists but not deployed by addon, skip update")
 		return nil
 	}
@@ -297,7 +304,10 @@ func (c *UpgradeController) RunHypershiftInstall(ctx context.Context, controller
 		// compare locally saved secrets to the hub secrets as well
 		// If they are the same, skip re-install.
 		if reinstallCheckRequired &&
-			!(c.operatorImagesUpdated(im, *operatorDeployment) || c.secretDataUpdated(*se, *spl, *sExtDNS)) {
+			!(c.operatorImagesUpdated(im, *operatorDeployment) ||
+				c.secretDataUpdated(util.HypershiftBucketSecretName, *se) ||
+				c.secretDataUpdated(util.HypershiftPrivateLinkSecretName, *spl) ||
+				c.secretDataUpdated(util.HypershiftExternalDNSSecretName, *sExtDNS)) {
 			c.log.Info("no change in hypershift operator images and secrets, skipping hypershift operator installation")
 			return nil
 		}
@@ -645,38 +655,16 @@ func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
 	return ""
 }
 
-func (c *UpgradeController) secretDataUpdated(bucketSecret, privateLinkSecret, extDnsSecret corev1.Secret) bool {
-	c.log.Info("comparing hypershift operator secrets to the locally saved secrets")
-	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.addonNamespace}
-	localBucketSecret := &corev1.Secret{}
-	if err := c.spokeUncachedClient.Get(context.TODO(), bucketSecretKey, localBucketSecret); err != nil && !apierrors.IsNotFound(err) {
+func (c *UpgradeController) secretDataUpdated(secretName string, secret corev1.Secret) bool {
+	c.log.Info(fmt.Sprintf("comparing hypershift operator installation secret(%s) to the locally saved secret", secretName))
+	secretKey := types.NamespacedName{Name: secretName, Namespace: c.addonNamespace}
+	localSecret := &corev1.Secret{}
+	if err := c.spokeUncachedClient.Get(context.TODO(), secretKey, localSecret); err != nil && !apierrors.IsNotFound(err) {
 		c.log.Error(err, "failed to find secret: ", err.Error()) // just log and continue
 	}
 
-	privateLinkSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.addonNamespace}
-	localPrivateLinkSecret := &corev1.Secret{}
-	if err := c.spokeUncachedClient.Get(context.TODO(), privateLinkSecretKey, localPrivateLinkSecret); err != nil && !apierrors.IsNotFound(err) {
-		c.log.Error(err, "failed to find secret: ", err.Error()) // just log and continue
-	}
-
-	extDnsSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.addonNamespace}
-	localExtDnsSecret := &corev1.Secret{}
-	if err := c.spokeUncachedClient.Get(context.TODO(), extDnsSecretKey, localExtDnsSecret); err != nil && !apierrors.IsNotFound(err) {
-		c.log.Error(err, "failed to find secret: ", err.Error()) // just log and continue
-	}
-
-	if !reflect.DeepEqual(localBucketSecret.Data, bucketSecret.Data) { // compare only the secret data
-		c.log.Info(fmt.Sprintf("secret(%s) has changed", util.HypershiftBucketSecretName))
-		return true
-	}
-
-	if !reflect.DeepEqual(localPrivateLinkSecret.Data, privateLinkSecret.Data) { // compare only the secret data
-		c.log.Info(fmt.Sprintf("secret(%s) has changed", util.HypershiftPrivateLinkSecretName))
-		return true
-	}
-
-	if !reflect.DeepEqual(localExtDnsSecret.Data, extDnsSecret.Data) { // compare only the secret data
-		c.log.Info(fmt.Sprintf("secret(%s) has changed", util.HypershiftExternalDNSSecretName))
+	if !reflect.DeepEqual(localSecret.Data, secret.Data) { // compare only the secret data
+		c.log.Info("the secret has changed")
 		return true
 	}
 

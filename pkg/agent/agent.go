@@ -158,7 +158,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		o.HypershiftOperatorImage, o.PullSecretName, o.WithOverride, ctx)
 
 	// retry 3 times, in case something wrong with creating the hypershift install job
-	if err := uCtrl.RunHypershiftInstall(ctx, true); err != nil {
+	if err := uCtrl.RunHypershiftOperatorInstallOnAgentStartup(ctx); err != nil {
 		log.Error(err, "failed to install hypershift Operator")
 		return err
 	}
