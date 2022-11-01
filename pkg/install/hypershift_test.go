@@ -696,7 +696,6 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 		operatorImage:             "my-test-image",
 		clusterName:               "cluster1",
 		pullSecret:                "pull-secret",
-		withOverride:              true,
 		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
 	}
 
@@ -889,6 +888,7 @@ func TestSkipHypershiftInstallWithNoChange(t *testing.T) {
 		operatorImage:             "my-test-image",
 		clusterName:               "cluster1",
 		pullSecret:                "pull-secret",
+		withOverride:              true,
 		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
 	}
 
