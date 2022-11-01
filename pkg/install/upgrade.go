@@ -67,7 +67,7 @@ func (c *UpgradeController) Start() {
 		if c.installOptionsChanged() || c.upgradeImageCheck() {
 			c.reinstallNeeded = true
 			c.log.Info("change has been detected to require hypershift operator re-installation")
-			if err := c.RunHypershiftInstall(c.ctx); err != nil {
+			if err := c.RunHypershiftOperatorUpdate(c.ctx); err != nil {
 				c.log.Error(err, "failed to install hypershift operator")
 			}
 		}

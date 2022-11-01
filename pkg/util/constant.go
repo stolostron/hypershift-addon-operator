@@ -55,6 +55,15 @@ const (
 	HypershiftInstallJobServiceAccount = "hypershift-addon-agent-sa"
 	HypershiftInstallJobVolume         = "hypershift-imagestream-volume"
 	HypershiftInstallJobImageStream    = "hypershift-install-job-imagestream"
+
+	// Hypershift Operator Deployment env vars for images
+	HypershiftEnvVarImageAwsCapiProvider      = "IMAGE_AWS_CAPI_PROVIDER"
+	HypershiftEnvVarImageAzureCapiProvider    = "IMAGE_AZURE_CAPI_PROVIDER"
+	HypershiftEnvVarImageKubevertCapiProvider = "IMAGE_KUBEVIRT_CAPI_PROVIDER"
+	HypershiftEnvVarImageKonnectivity         = "IMAGE_KONNECTIVITY"
+	HypershiftEnvVarImageAwsEncyptionProvider = "IMAGE_AWS_ENCRYPTION_PROVIDER"
+	HypershiftEnvVarImageClusterApi           = "IMAGE_CLUSTER_API"
+	HypershiftEnvVarImageAgentCapiProvider    = "IMAGE_AGENT_CAPI_PROVIDER"
 )
 
 // GenerateClientConfigFromSecret generate a client config from a given secret
