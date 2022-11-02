@@ -64,7 +64,6 @@ func deleteOIDCProviderSecret(ctx context.Context, client kubernetes.Interface, 
 
 var _ = ginkgo.Describe("Install", func() {
 	var ctx context.Context
-	var agentDeploymentName = "hypershift-addon-agent"
 	ginkgo.BeforeEach(func() {
 		ctx = context.TODO()
 		err := createOIDCProviderSecret(ctx, kubeClient, defaultManagedCluster)
@@ -103,7 +102,7 @@ var _ = ginkgo.Describe("Install", func() {
 
 			ginkgo.By("Check the addon agent deletion")
 			gomega.Eventually(func() bool {
-				_, err := kubeClient.AppsV1().Deployments(defaultInstallNamespace).Get(ctx, agentDeploymentName, metav1.GetOptions{})
+				_, err := kubeClient.AppsV1().Deployments(defaultInstallNamespace).Get(ctx, util.AgentDeploymentName, metav1.GetOptions{})
 				return apierrors.IsNotFound(err)
 			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue())
 		})
@@ -111,7 +110,7 @@ var _ = ginkgo.Describe("Install", func() {
 		ginkgo.It("did not exist", func() {
 			ginkgo.By("Check the addon agent installation")
 			gomega.Eventually(func() bool {
-				deployment, err := kubeClient.AppsV1().Deployments(defaultInstallNamespace).Get(ctx, agentDeploymentName, metav1.GetOptions{})
+				deployment, err := kubeClient.AppsV1().Deployments(defaultInstallNamespace).Get(ctx, util.AgentDeploymentName, metav1.GetOptions{})
 				if err != nil {
 					return false
 				}

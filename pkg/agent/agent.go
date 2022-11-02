@@ -188,6 +188,18 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to create agent controller: %s, err: %w", util.AddonControllerName, err)
 	}
 
+	addonStatusController := &AddonStatusController{
+		spokeClient: spokeKubeClient,
+		hubClient:   hubClient,
+		log:         o.Log.WithName("addon-status-controller"),
+		addonNsn:    types.NamespacedName{Namespace: o.SpokeClusterName, Name: util.AddonControllerName},
+		clusterName: o.SpokeClusterName,
+	}
+
+	if err = addonStatusController.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("unable to create agent status controller: %s, err: %w", util.AddonStatusControllerName, err)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		return fmt.Errorf("unable to set up health check, err: %w", err)
 	}
