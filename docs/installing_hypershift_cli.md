@@ -10,9 +10,9 @@ With the HyperShift command-line interface (CLI) as a `oc` command-line [plugin]
 
 1. Download the HyperShift CLI binary.
 
-- [HyperShift CLI binary for Linux x86_64](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift-linux-amd64.tar.gz)
-- [HyperShift CLI binary for Mac x86_64](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift-darwin-amd64.tar.gz)
-- [HyperShift CLI binary for Windows x86_64](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift-windows-amd64.tar.gz)
+- [HyperShift CLI binary for Linux x86_64](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift-linux-amd64.tar.gz?raw=true)
+- [HyperShift CLI binary for Mac x86_64](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift-darwin-amd64.tar.gz?raw=true)
+- [HyperShift CLI binary for Windows x86_64](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift-windows-amd64.tar.gz?raw=true)
 
 2. Unpack the archive.
 
