@@ -22,26 +22,20 @@ const (
 	HypershiftDownstreamOverride = "hypershift-operator-imagestream"
 	HypershiftOverrideKey        = "imagestream"
 	AddonControllerName          = "hypershift-addon"
+	AddonStatusControllerName    = "hypershift-addon-status"
+	AgentDeploymentName          = "hypershift-addon-agent"
 
 	HypershiftOverrideImagesCM = "hypershift-override-images"
 	ImageUpgradeControllerName = "hypershift-image-upgrade"
 
-	HypershiftOperatorNamespace = "hypershift"
-	HypershiftOperatorName      = "operator"
+	HypershiftOperatorNamespace       = "hypershift"
+	HypershiftOperatorName            = "operator"
+	HypershiftOperatorExternalDNSName = "external-dns"
 
 	// Labels for resources to reference the Hosted Cluster
 	HypershiftClusterNameLabel      = "hypershiftdeployments.cluster.open-cluster-management.io/cluster-name"
 	HypershiftHostingNamespaceLabel = "hypershiftdeployments.cluster.open-cluster-management.io/hosting-namespace"
 	HypershiftAddonAnnotationKey    = "hypershift.open-cluster-management.io/createBy"
-
-	// Hypershift Operator Deployment env vars for images
-	HypershiftEnvVarImageAwsCapiProvider      = "IMAGE_AWS_CAPI_PROVIDER"
-	HypershiftEnvVarImageAzureCapiProvider    = "IMAGE_AZURE_CAPI_PROVIDER"
-	HypershiftEnvVarImageKubevertCapiProvider = "IMAGE_KUBEVIRT_CAPI_PROVIDER"
-	HypershiftEnvVarImageKonnectivity         = "IMAGE_KONNECTIVITY"
-	HypershiftEnvVarImageAwsEncyptionProvider = "IMAGE_AWS_ENCRYPTION_PROVIDER"
-	HypershiftEnvVarImageClusterApi           = "IMAGE_CLUSTER_API"
-	HypershiftEnvVarImageAgentCapiProvider    = "IMAGE_AGENT_CAPI_PROVIDER"
 
 	// ImageStream image names
 	ImageStreamAwsCapiProvider      = "cluster-api-provider-aws"
@@ -64,6 +58,15 @@ const (
 	HypershiftInstallJobServiceAccount = "hypershift-addon-agent-sa"
 	HypershiftInstallJobVolume         = "hypershift-imagestream-volume"
 	HypershiftInstallJobImageStream    = "hypershift-install-job-imagestream"
+
+	// Hypershift Operator Deployment env vars for images
+	HypershiftEnvVarImageAwsCapiProvider      = "IMAGE_AWS_CAPI_PROVIDER"
+	HypershiftEnvVarImageAzureCapiProvider    = "IMAGE_AZURE_CAPI_PROVIDER"
+	HypershiftEnvVarImageKubevertCapiProvider = "IMAGE_KUBEVIRT_CAPI_PROVIDER"
+	HypershiftEnvVarImageKonnectivity         = "IMAGE_KONNECTIVITY"
+	HypershiftEnvVarImageAwsEncyptionProvider = "IMAGE_AWS_ENCRYPTION_PROVIDER"
+	HypershiftEnvVarImageClusterApi           = "IMAGE_CLUSTER_API"
+	HypershiftEnvVarImageAgentCapiProvider    = "IMAGE_AGENT_CAPI_PROVIDER"
 )
 
 // GenerateClientConfigFromSecret generate a client config from a given secret

@@ -5,8 +5,11 @@ metadata:
   namespace: {{ .ClusterName }}
 rules:
   - apiGroups: [""]
-    resources: ["secrets"]
+    resources: ["secrets", "configmaps"]
     verbs: ["get", "list", "watch", "create", "delete"]
   - apiGroups: ["addon.open-cluster-management.io"]
     resources: ["managedclusteraddons"]
     verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["addon.open-cluster-management.io"]
+    resources: ["managedclusteraddons/status"]
+    verbs: ["patch", "update"]

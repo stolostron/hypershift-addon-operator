@@ -3,15 +3,14 @@ package install
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"time"
 
 	"github.com/go-logr/logr"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	ctrl "sigs.k8s.io/controller-runtime"
+	"k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
-	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -29,10 +28,17 @@ type UpgradeController struct {
 	pullSecret                string
 	withOverride              bool
 	hypershiftInstallExecutor HypershiftInstallExecutorInterface
+	stopch                    chan struct{}
+	ctx                       context.Context
+	bucketSecret              corev1.Secret
+	extDnsSecret              corev1.Secret
+	privateLinkSecret         corev1.Secret
+	imageOverrideConfigmap    corev1.ConfigMap
+	reinstallNeeded           bool // this is used only for code test
 }
 
 func NewUpgradeController(hubClient, spokeClient client.Client, logger logr.Logger, addonName, addonNamespace, clusterName, operatorImage,
-	pullSecretName string, withOverride bool) *UpgradeController {
+	pullSecretName string, withOverride bool, context context.Context) *UpgradeController {
 	return &UpgradeController{
 		hubClient:                 hubClient,
 		spokeUncachedClient:       spokeClient,
@@ -44,132 +50,97 @@ func NewUpgradeController(hubClient, spokeClient client.Client, logger logr.Logg
 		pullSecret:                pullSecretName,
 		withOverride:              withOverride,
 		hypershiftInstallExecutor: &HypershiftLibExecutor{},
+		ctx:                       context,
 	}
 }
 
-func (c *UpgradeController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	c.log.Info(fmt.Sprintf("Reconciling hypershift update images configmap %s", req))
-	defer c.log.Info(fmt.Sprintf("Done hypershift update images configmap %s", req))
-
-	upgradeRequired, err := c.upgradeImageCheck()
-	if err != nil {
-		return ctrl.Result{}, err
+func (c *UpgradeController) Start() {
+	// do nothing if already started
+	if c.stopch != nil {
+		return
 	}
 
-	if upgradeRequired {
-		c.log.Info("image changes detected, upgrade the HyperShift operator")
-		if err := c.RunHypershiftInstall(ctx); err != nil {
-			c.log.Error(err, "failed to install hypershift Operator")
-			return ctrl.Result{}, err
+	c.stopch = make(chan struct{})
+
+	go wait.Until(func() {
+		c.reinstallNeeded = false
+		if c.installOptionsChanged() || c.upgradeImageCheck() {
+			c.reinstallNeeded = true
+			c.log.Info("change has been detected to require hypershift operator re-installation")
+			if err := c.RunHypershiftOperatorUpdate(c.ctx); err != nil {
+				c.log.Error(err, "failed to install hypershift operator")
+			}
 		}
-	}
-
-	return ctrl.Result{}, nil
+	}, 2*time.Minute, c.stopch) // Connect to the hub every 2 minutes to check for any changes
 }
 
-func (c *UpgradeController) upgradeImageCheck() (bool, error) {
-	hsOperatorKey := types.NamespacedName{
-		Name:      util.HypershiftOperatorName,
-		Namespace: util.HypershiftOperatorNamespace,
-	}
+func (c *UpgradeController) Stop() {
+	close(c.stopch)
 
-	hsOperator := &appsv1.Deployment{}
-	if err := c.spokeUncachedClient.Get(context.TODO(), hsOperatorKey, hsOperator); err != nil {
-		return false, fmt.Errorf("failed to get the hypershift operator deployment, err: %w", err)
-	}
-
-	if len(hsOperator.Spec.Template.Spec.Containers) != 1 {
-		c.log.Info("no containers found for HyperShift operator deployment, skip upgrade")
-		return false, nil
-	}
-
-	if hsOperator.Annotations[util.HypershiftAddonAnnotationKey] != util.AddonControllerName {
-		c.log.Info("HyperShift operator deployment not deployed by the HyperShift addon, skip upgrade")
-		return false, nil
-	}
-
-	imageOverrideMap, err := c.getImageOverrideMap()
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			c.log.Info("image override configmap is deleted, re-install HyperShift operator using imagestream images")
-			return true, nil
-		}
-
-		return false, fmt.Errorf("failed to get the image override configmap, err: %w", err)
-	}
-
-	hsOperatorContainer := hsOperator.Spec.Template.Spec.Containers[0]
-	for k, v := range imageOverrideMap {
-		switch k {
-		case util.ImageStreamAgentCapiProvider:
-			if v != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAgentCapiProvider) {
-				return true, nil
-			}
-		case util.ImageStreamAwsCapiProvider:
-			if v != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAwsCapiProvider) {
-				return true, nil
-			}
-		case util.ImageStreamAwsEncyptionProvider:
-			if v != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAwsEncyptionProvider) {
-				return true, nil
-			}
-		case util.ImageStreamAzureCapiProvider:
-			if v != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageAzureCapiProvider) {
-				return true, nil
-			}
-		case util.ImageStreamClusterApi:
-			if v != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageClusterApi) {
-				return true, nil
-			}
-		case util.ImageStreamKonnectivity:
-			if v != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageKonnectivity) {
-				return true, nil
-			}
-		case util.ImageStreamKubevertCapiProvider:
-			if v != getContainerEnvVar(hsOperatorContainer.Env, util.HypershiftEnvVarImageKubevertCapiProvider) {
-				return true, nil
-			}
-		case util.ImageStreamHypershiftOperator:
-			if v != hsOperatorContainer.Image {
-				return true, nil
-			}
-		}
-	}
-
-	return false, nil
+	c.stopch = nil
 }
 
-func (c *UpgradeController) SetupWithManager(mgr ctrl.Manager) error {
-	filterByCM := func(obj client.Object) bool {
-		if obj.GetName() == util.HypershiftOverrideImagesCM && obj.GetNamespace() == c.addonNamespace {
-			return true
-		}
-
-		return false
+func (c *UpgradeController) installOptionsChanged() bool {
+	// check for changes in AWS S3 bucket secret
+	newBucketSecret := c.getSecretFromHub(util.HypershiftBucketSecretName)
+	if c.secretDataChanged(newBucketSecret, c.bucketSecret, util.HypershiftBucketSecretName) {
+		c.bucketSecret = newBucketSecret // save the new secret for the next cycle of comparison
+		return true
 	}
 
-	return ctrl.NewControllerManagedBy(mgr).
-		For(&corev1.ConfigMap{}).
-		WithEventFilter(predicate.NewPredicateFuncs(filterByCM)).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		Complete(c)
+	// check for changes in external DNS secret
+	newExtDnsSecret := c.getSecretFromHub(util.HypershiftExternalDNSSecretName)
+	if c.secretDataChanged(newExtDnsSecret, c.extDnsSecret, util.HypershiftExternalDNSSecretName) {
+		c.extDnsSecret = newExtDnsSecret // save the new secret for the next cycle of comparison
+		return true
+	}
+
+	// check for changes in AWS private link secret
+	newPrivateLinkSecret := c.getSecretFromHub(util.HypershiftPrivateLinkSecretName)
+	if c.secretDataChanged(newPrivateLinkSecret, c.privateLinkSecret, util.HypershiftPrivateLinkSecretName) {
+		c.privateLinkSecret = newPrivateLinkSecret // save the new secret for the next cycle of comparison
+		return true
+	}
+
+	return false
 }
 
-func (c *UpgradeController) getImageOverrideMap() (map[string]string, error) {
+func (c *UpgradeController) getSecretFromHub(secretName string) corev1.Secret {
+	secretKey := types.NamespacedName{Name: secretName, Namespace: c.clusterName}
+	newSecret := &corev1.Secret{}
+	if err := c.hubClient.Get(context.TODO(), secretKey, newSecret); err != nil && !errors.IsNotFound(err) {
+		c.log.Error(err, "failed to get secret from the hub: ")
+	}
+	return *newSecret
+}
+
+func (c *UpgradeController) secretDataChanged(oldSecret, newSecret corev1.Secret, secretName string) bool {
+	if !reflect.DeepEqual(oldSecret.Data, newSecret.Data) { // compare only the secret data
+		c.log.Info(fmt.Sprintf("secret(%s) has changed", secretName))
+		return true
+	}
+	return false
+}
+
+func (c *UpgradeController) upgradeImageCheck() bool {
+	// Get the image override configmap from the hub and compare it to the controller's cached image override configmap
+	newImageOverrideConfigmap := c.getImageOverrideMapFromHub()
+
+	// If changed, we want to re-install the operator
+	if !reflect.DeepEqual(c.imageOverrideConfigmap.Data, newImageOverrideConfigmap.Data) {
+		c.log.Info(fmt.Sprintf("the image override configmap(%s) has changed", util.HypershiftOverrideImagesCM))
+		c.imageOverrideConfigmap = newImageOverrideConfigmap // save the new configmap for the next cycle of comparison
+		return true
+	}
+
+	return false
+}
+
+func (c *UpgradeController) getImageOverrideMapFromHub() corev1.ConfigMap {
 	overrideImagesCm := &corev1.ConfigMap{}
-	overrideImagesCmKey := types.NamespacedName{Name: util.HypershiftOverrideImagesCM, Namespace: c.addonNamespace}
-	if err := c.spokeUncachedClient.Get(context.TODO(), overrideImagesCmKey, overrideImagesCm); err != nil {
-		return nil, err
+	overrideImagesCmKey := types.NamespacedName{Name: util.HypershiftOverrideImagesCM, Namespace: c.clusterName}
+	if err := c.hubClient.Get(context.TODO(), overrideImagesCmKey, overrideImagesCm); err != nil && !errors.IsNotFound(err) {
+		c.log.Error(err, "failed to get configmap from the hub: ")
 	}
-
-	return overrideImagesCm.Data, nil
-}
-
-func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
-	for _, ev := range envVars {
-		if ev.Name == imageName {
-			return ev.Value
-		}
-	}
-	return ""
+	return *overrideImagesCm
 }
