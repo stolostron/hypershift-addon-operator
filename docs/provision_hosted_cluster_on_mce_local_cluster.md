@@ -234,12 +234,12 @@ If not included, the name used when importing the cluster is the `InfraID` value
         import.open-cluster-management.io/hosting-cluster-name: local-cluster    
         import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
         open-cluster-management/created-via: other  
-    labels:    
-      cloud: auto-detect    
-      cluster.open-cluster-management.io/clusterset: default    
-      name: $CLUSTER_NAME   
-      vendor: OpenShift  
-    name: $CLUSTER_NAME
+      labels:    
+        cloud: auto-detect    
+        cluster.open-cluster-management.io/clusterset: default    
+        name: $CLUSTER_NAME   
+        vendor: OpenShift  
+      name: $CLUSTER_NAME
     spec:  
       hubAcceptsClient: true  
       leaseDurationSeconds: 60
