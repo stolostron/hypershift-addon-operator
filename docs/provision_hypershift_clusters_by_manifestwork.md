@@ -464,7 +464,7 @@ spec:
 
 The payload resources are under `spec.workload.manifests`. Once these resources are created on the hosting cluster, the hypershift operator reconciles with these resources to create the specified hosted cluster. This manifestwork CR is the delivery or placement mechanism for a hosted cluster.
 
-**NOTE: You must set the `HostedCluster.spec.clusterID` with an UUID to avoid a race condition between the manifestwork controller and the hypershift operator on this causing the HostedCluster and cluster version operator deployment to have a high and increasing .generation number. You can use an online UUID generator tool or programming language specific UUID API to generate one. 
+**Important:** You must set the `HostedCluster.spec.clusterID` with an UUID to avoid a race condition between the manifestwork controller and the hypershift operator on this causing the HostedCluster and cluster version operator deployment to have a high and increasing .generation number. You can use an online UUID generator tool or programming language specific UUID API to generate one. 
 
 ## How a hosted cluster is automatically imported into ACM hub cluster as a managed cluster
 
