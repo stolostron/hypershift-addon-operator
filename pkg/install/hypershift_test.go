@@ -1155,6 +1155,55 @@ func TestCreateSpokeCredential(t *testing.T) {
 
 }
 
+func TestSpokeCredentialUpdated(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	aCtrl := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+	}
+
+	hubSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftExternalDNSSecretName,
+			Namespace: aCtrl.clusterName,
+		},
+		Data: map[string][]byte{
+			"credentials": []byte("January"),
+		},
+	}
+
+	err := aCtrl.createSpokeSecret(ctx, hubSecret)
+	assert.Nil(t, err, "expected secret creation to succeed")
+
+	spokeSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftExternalDNSSecretName,
+			Namespace: "hypershift",
+		},
+	}
+
+	aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(spokeSecret), spokeSecret)
+
+	assert.Equal(t, "January", string(spokeSecret.Data["credentials"]))
+
+	// now update the hub secret and propagate that change to spoke
+	hubSecret.Data["credentials"] = []byte("February")
+	err = aCtrl.createSpokeSecret(ctx, hubSecret)
+	assert.Nil(t, err, "expected updating secret to succeed")
+
+	aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(spokeSecret), spokeSecret)
+	assert.Equal(t, "February", string(spokeSecret.Data["credentials"]))
+}
+
 func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 	hc := &hyperv1alpha1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{
