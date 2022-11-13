@@ -374,12 +374,15 @@ func (c *UpgradeController) createSpokeSecret(ctx context.Context, hubSecret *co
 			Name:      hubSecret.Name,
 			Namespace: hypershiftOperatorKey.Namespace,
 		},
-		Data: map[string][]byte{
-			"credentials": hubSecret.Data["credentials"],
-		},
 	}
 	c.log.Info(fmt.Sprintf("createorupdate the the secret (%s/%s) on cluster %s", hypershiftOperatorKey.Namespace, hubSecret.Name, hubSecret.Namespace))
-	_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeSecret, func() error { return nil })
+	_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeSecret, func() error {
+		spokeSecret.Data = map[string][]byte{
+			"credentials": hubSecret.Data["credentials"],
+		}
+
+		return nil
+	})
 
 	return err
 }
