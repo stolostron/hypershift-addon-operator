@@ -69,7 +69,9 @@ The secret must contain 3 fields:
 
 - `provider`: DNS provider that manages the service-level DNS zone (example: aws)
 - `domain-filter`: The service-level domain
-- `credentials`: A credentials file appropriate for the specified DNS provider
+- `credentials`: *(Optional, only when using aws keys) - For all external DNS types, a credential file is supported
+- `aws-access-key-id`: *OPTIONAL* - When using AWS DNS service, credential access key id
+- `aws-secret-access-key`: *OPTIONAL* - When using AWS DNS service, credential access key secret
 
 For details, please check: [HyperShift Project Documentation](https://hypershift-docs.netlify.app/how-to/external-dns/). For convenience, you can create this secret using the CLI by:
 
