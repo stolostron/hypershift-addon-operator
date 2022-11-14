@@ -477,6 +477,7 @@ metadata:
   annotations:
     import.open-cluster-management.io/hosting-cluster-name: my-hosting-cluster
     import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
+    addon.open-cluster-management.io/enable-hosted-mode: "true"
     open-cluster-management/created-via: other
   labels:
     cloud: auto-detect
@@ -488,6 +489,8 @@ spec:
   hubAcceptsClient: true
   leaseDurationSeconds: 60
 ```
+
+**NOTE:** The following three annotations in the `ManagedCluster` causes the work manager and policy managed cluster addons to be enabled in hosted mode running along side with the OpenShift hosted control plane and all other managed cluster addons to be disabled.
 
 The name of the managed cluster is the `infra ID` of the hosted cluster. `hubAcceptsClient: true` means that the ACM hub accepts or approves this managed cluster.
 
