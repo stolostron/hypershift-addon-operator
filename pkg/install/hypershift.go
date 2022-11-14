@@ -220,7 +220,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			}
 		}
 
-		if err := c.createAwsSpokeSecret(ctx, se); err != nil {
+		if err := c.createAwsSpokeSecret(ctx, se, true); err != nil {
 			return err
 		}
 		c.log.Info("oidc s3 bucket, region & credential arguments included")
@@ -239,7 +239,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
 
 		if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
-			if err := c.createAwsSpokeSecret(ctx, spl); err != nil {
+			if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
 				return err
 			}
 			c.log.Info("private link region & credential arguments included")
@@ -260,9 +260,18 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
 	sExtDNS := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, extDNSSecretKey, sExtDNS); err == nil {
-		if err := c.createSpokeSecret(ctx, sExtDNS); err != nil {
-			return err
+		if awsPlatform {
+			// For AWS DNS provider, users can specify either credentials or
+			// aws-access-key-id and aws-secret-access-key
+			if err := c.createAwsSpokeSecret(ctx, sExtDNS, false); err != nil {
+				return err
+			}
+		} else {
+			if err := c.createSpokeSecret(ctx, sExtDNS); err != nil {
+				return err
+			}
 		}
+
 		c.log.Info("external dns provider & domain-filter arguments included")
 		awsArgs := []string{
 			"--external-dns-secret", util.HypershiftExternalDNSSecretName,
@@ -350,13 +359,13 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	return nil
 }
 
-func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
+func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret, regionRequired bool) error {
 	spokeSecret := hubSecret.DeepCopy()
 
 	region := hubSecret.Data["region"]
 	awsSecretKey := hubSecret.Data["aws-secret-access-key"]
 	awsKeyId := hubSecret.Data["aws-access-key-id"]
-	if (hubSecret.Data["credentials"] == nil && (awsKeyId == nil || awsSecretKey == nil)) || region == nil {
+	if (hubSecret.Data["credentials"] == nil && (awsKeyId == nil || awsSecretKey == nil)) || (region == nil && regionRequired) {
 		return fmt.Errorf("secret(%s/%s) does not contain a valid credential or region", hubSecret.Namespace, hubSecret.Name)
 	} else {
 		if awsSecretKey != nil {
