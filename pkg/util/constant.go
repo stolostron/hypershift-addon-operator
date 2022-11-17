@@ -71,7 +71,7 @@ const (
 	// AddOnPlacementScore resource name
 	HostedClusterScoresResourceName = "hosted-clusters-score"
 	// AddOnPlacementScore score name
-	HostedClusterScoresScoreName = "hosted-clusters-score"
+	HostedClusterScoresScoreName = "hostedClustersCount"
 )
 
 // GenerateClientConfigFromSecret generate a client config from a given secret
