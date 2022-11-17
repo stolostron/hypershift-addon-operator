@@ -28,6 +28,7 @@ func (c *UpgradeController) runHyperShiftInstallJob(ctx context.Context, image, 
 		},
 		RestartPolicy:      "Never",
 		ServiceAccountName: util.HypershiftInstallJobServiceAccount,
+		ImagePullSecrets:   []corev1.LocalObjectReference{{Name: c.pullSecret}},
 	}
 
 	if len(imageStreamCMData) > 0 {
