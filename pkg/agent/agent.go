@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +29,7 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/lease"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
+	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/install"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
@@ -43,6 +43,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(hyperv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(addonv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(clusterv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -324,6 +325,9 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
+	// Update the AddOnPlacementScore resource
+	c.CreateAddOnPlacementScore()
+
 	// Delete HC secrets on the hub using labels for HC and the hosting NS
 	deleteMirrorSecrets := func() error {
 		secretSelector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
@@ -375,8 +379,8 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
-	if hc.Status.Version == nil || len(hc.Status.Version.History) == 0 ||
-		!isVersionHistoryStateFound(hc.Status.Version.History, configv1.CompletedUpdate) {
+	if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 ||
+		!c.isHostedControlPlaneAvailable(hc.Status) {
 		// Wait for secrets to exist
 		return ctrl.Result{}, nil
 	}
@@ -457,13 +461,63 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return ctrl.Result{}, nil
 }
 
-func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1.UpdateState) bool {
-	for _, h := range history {
-		if h.State == state {
+func (c *agentController) isHostedControlPlaneAvailable(status hyperv1alpha1.HostedClusterStatus) bool {
+	for _, condition := range status.Conditions {
+		c.log.Info("condition.Reason: " + condition.Reason + ",  condition.Status: " + string(condition.Status))
+		if condition.Reason == "HostedClusterAsExpected" && condition.Status == metav1.ConditionTrue {
 			return true
 		}
 	}
 	return false
+}
+
+func (c *agentController) CreateAddOnPlacementScore() {
+	listopts := &client.ListOptions{}
+	hcList := &hyperv1alpha1.HostedClusterList{}
+	err := c.spokeClient.List(context.TODO(), hcList, listopts)
+	if err != nil {
+		// just log the error. it should not stop the rest of reconcile
+		c.log.Error(err, "failed to get HostedCluster list")
+		return
+	}
+
+	items := []clusterv1alpha1.AddOnPlacementScoreItem{
+		{
+			Name:  util.HostedClusterScoresScoreName,
+			Value: int32(len(hcList.Items)),
+		},
+	}
+
+	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "AddOnPlacementScore",
+			APIVersion: "cluster.open-cluster-management.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HostedClusterScoresResourceName,
+			Namespace: c.clusterName,
+		},
+		Status: clusterv1alpha1.AddOnPlacementScoreStatus{
+			Scores: items,
+		},
+	}
+
+	_, err = controllerutil.CreateOrUpdate(context.TODO(), c.hubClient, addOnPlacementScore, func() error { return nil })
+	if err != nil {
+		// just log the error. it should not stop the rest of reconcile
+		c.log.Error(err, fmt.Sprintf("failed to create or update the addOnPlacementScore resource in %s", c.clusterName))
+		return
+	}
+
+	addOnPlacementScore.Status.Scores = items
+	err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.UpdateOptions{})
+	if err != nil {
+		// just log the error. it should not stop the rest of reconcile
+		c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))
+		return
+	}
+
+	c.log.Info(fmt.Sprintf("updated the addOnPlacementScore for %s: %v", c.clusterName, len(hcList.Items)))
 }
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
