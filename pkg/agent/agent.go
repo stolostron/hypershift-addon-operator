@@ -577,5 +577,47 @@ func (o *AgentOptions) runCleanup(ctx context.Context, uCtrl *install.UpgradeCon
 		return err
 	}
 
+	/*if err := o.DeleteAddOnPlacementScore(); err != nil {
+		log.Error(err, "failed to clean up addOnPlacementScore")
+		return err
+	}*/
+
 	return nil
 }
+
+// To be enabled after https://github.com/stolostron/backlog/issues/26908 is fixed
+/*func (o *AgentOptions) DeleteAddOnPlacementScore() error {
+	log := o.Log.WithName("hypershift-addon-cleanup")
+
+	hubConfig, err := clientcmd.BuildConfigFromFlags("", o.HubKubeconfigFile)
+	if err != nil {
+		log.Error(err, "failed to create hubConfig from flag")
+		return fmt.Errorf("failed to create hubConfig from flag, err: %w", err)
+	}
+
+	hubClient, err := client.New(hubConfig, client.Options{Scheme: scheme})
+	if err != nil {
+		log.Error(err, "failed to create hubClient")
+		return fmt.Errorf("failed to create hubClient, err: %w", err)
+	}
+
+	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{}
+	addOnPlacementScoreKey := &types.NamespacedName{Name: util.HostedClusterScoresResourceName, Namespace: o.SpokeClusterName}
+
+	err = hubClient.Get(context.TODO(), *addOnPlacementScoreKey, addOnPlacementScore)
+
+	if err == nil {
+		log.Info("found AddOnPlacementScore for "+o.SpokeClusterName, ". Deleting ...")
+
+		err2 := hubClient.Delete(context.TODO(), addOnPlacementScore)
+		if err2 != nil {
+			log.Error(err2, fmt.Sprintf("failed to delete the addOnPlacementScore resource from %s", o.SpokeClusterName))
+			return err2
+		}
+
+		log.Info(fmt.Sprintf("deleted the addOnPlacementScore resource from %s", o.SpokeClusterName))
+	} else {
+		log.Error(err, "failed to find AddOnPlacementScore")
+	}
+	return err
+}*/
