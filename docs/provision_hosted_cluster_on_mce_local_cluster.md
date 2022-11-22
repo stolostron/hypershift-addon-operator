@@ -1,14 +1,8 @@
 # Provisioning hosted clusters on MCE (Without Hypershift Deployment)
 
-Configuring hosted control planes requires a hosting service cluster and a hosted cluster. By deploying the HyperShift operator on an existing cluster, you can make that cluster into a hosting service cluster and start the creation of the hosted cluster. 
+As per the [Hypershift Docs](https://hypershift-docs.netlify.app/), configuring hosted control planes requires a hosting service cluster and a hosted cluster. By deploying the HyperShift operator on an existing cluster via the Hypershift Add-on, you can make that cluster into a hosting service cluster and start the creation of the hosted cluster. 
 
-Hosted control planes is a Technology Preview feature, so the related components are disabled by default. Enable the feature by editing the `multiclusterengine` custom resource to set the `spec.overrides.components[?(@.name=='hypershift-preview')].enabled` to `true`. 
-
-Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine` with your MCE's instance name:
-
-```bash
-$ oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
-```
+Hosted control planes is a Technology Preview feature, so the related components are disabled by default. In Multicluster engine operator (MCE) 2.1, this was done using HypershiftDeployment. As of MCE 2.2, HypershiftDeployment is now obsolete and this guide will show how we can enable the feature follwed by deploying a hosted cluster on Amazon Web Services via MCE using the Hypershift command line binary.
 
 ## Configuring the hosting service cluster
 
@@ -16,33 +10,31 @@ You can deploy hosted control planes by configuring an existing cluster to funct
 
 ### Prerequisites
 
-You must have the following prerequisites to configure a hosting service cluster: 
+You must have the following prerequisites to deploy the hosted cluster:
 
-- Multicluster engine operator (MCE) installed on OCP cluster.
+* MCE v2.2 installed on a OCP cluster
+* Openshift `oc` command
+* The Hypershift binary as a plugin to `oc`. This binary plugin is required in order to create and manage the hosted cluster in MCE. Get this binary by one of the following ways:
+  1. Go to your Openshift cluster's console command line tools page. Select the Hosted Control Plane CLI tool and follow the instructions to set up `oc` plugin.
+  2. Go to the [Getting started with Hosted Control Plane (Hypershift) CLI documentation](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/installing_hypershift_cli.md) and follow the instructions to set up `oc` plugin.
+  3. Clone and build the binary from the [official Hypershift source](https://github.com/openshift/hypershift).
+* MCE has at least one managed OCP cluster. We will make this OCP managed cluster a hypershift management cluster. In this example, we will use the MCE hub cluster as the hypershift management cluster. In MCE 2.2, local-cluster is now imported automatically. You can check the status of your hub cluster using the following `oc` command:
 
-- MCE has at least one managed OCP cluster. We will make this OCP managed cluster a hypershift management cluster. In this example, we will use the MCE hub cluster as the hypershift management cluster. This requires importing the hub cluster as an OCP managed cluster called `local-cluster`:
+    ```bash
+    $ oc get managedclusters local-cluster
+    ```
 
-  ```bash
-  $ oc apply -f - <<EOF
-  apiVersion: cluster.open-cluster-management.io/v1
-  kind: ManagedCluster
-  metadata:
-    labels:
-      local-cluster: "true"
-      cloud: auto-detect
-      vendor: auto-detect
-    name: local-cluster
-  spec:
-    hubAcceptsClient: true
-    leaseDurationSeconds: 60
-  EOF
-  ```
+### Enabling the Hosted Control Plane feature
 
-### Configuring the hosting service cluster
+Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine` with your MCE's instance name:
 
-Complete the following steps on the cluster where the multicluster engine operator is installed to enable an {ocp-short} managed cluster as a hosting service cluster:
+```bash
+$ oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+```
 
-1. If you plan to provision hosted clusters on the AWS platform, create an OIDC s3 credentials secret for the HyperShift operator, and name it `hypershift-operator-oidc-provider-s3-credentials`. It should reside in managed cluster namespace (i.e., the namespace of the managed cluster that will be used as the hosting service cluster). If you used `local-cluster`, then create the secret in the `local-cluster` namespace
+### Creating the Amazon Web Services (AWS) S3 Secret
+
+If you plan to provision hosted clusters on the AWS platform, create an OIDC s3 credentials secret for the HyperShift operator, and name it `hypershift-operator-oidc-provider-s3-credentials`. It should reside in managed cluster namespace (i.e., the namespace of the managed cluster that will be used as the hosting service cluster). As we're using the `local-cluster` as the hosted cluster, we'll create the secret in the `local-cluster` namespace here.
 
 The secret must contain 3 fields:
 
@@ -85,9 +77,9 @@ Add the special label to the `hypershift-operator-external-dns-credentials` secr
   $ oc label secret hypershift-operator-external-dns-credentials -n local-cluster cluster.open-cluster-management.io/backup=true
   ```
 
-### Enable on a HostedCluster
+### Enable the Hypershift add-on on MCE
 
-1. Install the HyperShift add-on. The cluster that hosts the HyperShift operator is the management cluster. This step uses the `ManagedClusterAddon` hypershift-addon to install the HyperShift operator on a managed cluster. The namespace will be the managed cluster on which you want to install the HyperShift operator on. In this case, we will use the MCE hub cluster, so we'll set `local-cluster` for this value:
+The Hypershift add-on is required on the management cluster to install the Hypershift operator. The namespace will be the managed cluster on which you want to install the HyperShift operator on. Again, we're using the MCE hub, `local-cluster`, in this guide:
   
     ```bash
     $ oc apply -f - <<EOF
@@ -101,19 +93,24 @@ Add the special label to the `hypershift-operator-external-dns-credentials` secr
     EOF
     ```
 
-2. Confirm that the `hypershift-addon` is installed by running the following command:
+Confirm that the `hypershift-addon` is installed by running the following command:
   
     ```bash
     $ oc get managedclusteraddons -n local-cluster hypershift-addon
     NAME               AVAILABLE   DEGRADED   PROGRESSING
-    hypershift-addon   True
+    hypershift-addon   True        False
     ```
+You run the following wait commands to wait for the addon to reach this state with a timeout:
 
-Your HyperShift add-on is installed and the management cluster is available to manage HyperShift hosted clusters.
+    ```bash
+    $ oc wait --for=condition=Degraded=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
+    $ oc wait --for=condition=Available=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
+    ```
+Once complete, the HyperShift add-on is installed and the management cluster is available to create and manage hosted clusters.
 
-## Provision a HyperShift hosted cluster on AWS
+## Provision a hosted cluster on AWS
 
-After installing the HyperShift operator and enabling an existing cluster as a hosting service cluster, you can provision a hypershift hosted cluster via the hypershift CLI.
+After setting up the binary and enabling the existing cluster as a hosting service cluster, you can provision a hosted cluster via `oc hcp`
 
 1. Set the following environment variables
 
@@ -126,17 +123,153 @@ After installing the HyperShift operator and enabling an existing cluster as a h
     export PULL_SECRET=/Users/dhuynh/dhu-pull-secret.txt
     export BUCKET_NAME=acmqe-hypershift
     export BUCKET_REGION=us-east-1
-    export INFRA_OUTPUT_FILE=$HOME/hostedcluster_infra.json
-    export IAM_OUTPUT_FILE=$HOME/hostedcluster_iam.json
     ```
     <b>Note:</b> <i>in order for the cluster to show correctly in the MCE console UI, it is recommended to keep the `CLUSTER_NAME` and `INFRA_ID` the same.</i>
 
 2. Ensure you are logged into your hub cluster.
 
-3. If you do not want to create the infrastructure and IAM pieces separately, skip to step 6. Otherwise run the following command to create the infrastructure first:
+3. If you do want to create the hypershift infrastructure and IAM pieces separately, refer to the [How do I create the hypershift infrastructure and IAM pieces separately?](#how-do-i-create-the-hypershift-infrastructure-and-iam-pieces-separately) section at the end. Otherwise run the following command to create the hosted cluster:
 
     ```bash
-    $ hypershift create infra aws --name $CLUSTER_NAME \
+    $ oc hcp create cluster aws \
+        --name $CLUSTER_NAME \
+        --infra-id $INFRA_ID \
+        --aws-creds $AWS_CREDS \
+        --pull-secret $PULL_SECRET \
+        --region $REGION \
+        --generate-ssh \
+        --node-pool-replicas 3 \
+        --namespace local-cluster
+    ```
+
+For more options when interacting with the CLI, refer to [Hypershift Project Documentation for creating a HostedCluster](https://hypershift-docs.netlify.app/getting-started/#create-a-hostedcluster).
+
+That's all! Your hosted cluster is now created.
+
+Check the status of your hosted cluster via:
+
+    ```bash
+    $ oc get hostedclusters -n local-cluster
+    ```
+
+## Importing the Hosted cluster into MCE via UI
+
+After creating the hosted cluster, the next step is to import it into MCE.
+
+You can import do this from the MCE Console UI by going to Infrastructure > Clusters and then clicking the your $CLUSTER_NAME in the cluster list and clicking `Import hosted cluster`.
+
+## Importing the Hosted Cluster into MCE via CLI
+
+After creating the hosted cluster, the next step is to import it into MCE.
+
+### How to name your ManagedCluster
+* The $CLUSTER_NAME listed below will be the registred name of your hosted cluster in ACM/MCE.  
+* When the name is provided in the `HostedCluster` annotation `cluster.open-cluster-management.io/managedcluster-name`, it must match CLUSTER_NAME when creating the `ManagedCluster` resource.
+* When the annotation is not present, the CLUSTER_NAME for the `ManagedCluster` must be the `InfraID` of the `HostedCluster`.
+* If the annotation and `ManagedCluster` name do not match, the console will display the cluster as `Pending import`, and it can not be used by ACM/MCE. The same state will occur when the annotation is not present and the `ManagedCluster` name does not equal the `HostedCluster` Infra-ID value.
+
+1. Add a required annotation to the HostedCluster CR by doing:
+
+    ```bash
+    $ oc annotate hostedclusters $INFRA_ID cluster.open-cluster-management.io/hypershiftdeployment=$INFRA_ID -n local-cluster
+    ```
+
+2. In order to complete the import process, create the managed cluster resource:
+    
+    ```bash
+    $ cat <<EOF | oc apply -f -
+    apiVersion: cluster.open-cluster-management.io/v1
+    kind: ManagedCluster
+    metadata:  
+      annotations:    
+        import.open-cluster-management.io/hosting-cluster-name: local-cluster    
+        import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
+        open-cluster-management/created-via: other  
+      labels:    
+        cloud: auto-detect    
+        cluster.open-cluster-management.io/clusterset: default    
+        name: $CLUSTER_NAME   
+        vendor: OpenShift  
+      name: $CLUSTER_NAME
+    spec:  
+      hubAcceptsClient: true  
+      leaseDurationSeconds: 60
+    EOF
+    ```
+
+3. After the hosted cluster is created, it will be imported to the hub automatically, you can check it with:
+  
+    ```bash
+     $ oc get managedcluster $CLUSTER_NAME
+     ```
+
+Your hosted cluster is now created and imported to MCE/ACM, which should also be visible from the MCE console.
+
+## Access the hosted cluster
+
+The access secrets are stored in the hypershift-management-cluster namespace.
+The formats of the secrets name are:
+
+- kubeconfig secret: `<hostingNamespace>-<name>-admin-kubeconfig` (e.g clusters-hypershift-demo-admin-kubeconfig)
+- kubeadmin password secret: `<hostingNamespace>-<name>-kubeadmin-password` (e.g clusters-hypershift-demo-kubeadmin-password)
+
+## Destroying your hypershift Hosted cluster
+
+Delete the hypershift cluster and its backend resources:
+
+    ```bash
+    $ oc hcp destroy cluster aws --name $CLUSTER_NAME --infra-id $INFRA_ID --aws-creds $AWS_CREDS --base-domain $BASE_DOMAIN --destroy-cloud-resources
+    ```
+
+## Destroying your hypershift managed cluster
+
+Delete the managed cluster resource on MCE:
+
+    ```bash
+    $ oc delete managedcluster $CLUSTER_NAME
+    ```
+
+## Destroying hypershift operator
+
+Delete the hypershift-addon
+
+    ```bash
+    $ oc delete managedclusteraddon -n local-cluster hypershift-addon
+    ```
+    
+## Troubleshooting
+
+### How do I manually install the local-cluster on MCE?
+Apply the following YAML via `oc`:
+
+  ```bash
+  $ oc apply -f - <<EOF
+  apiVersion: cluster.open-cluster-management.io/v1
+  kind: ManagedCluster
+  metadata:
+    labels:
+      local-cluster: "true"
+      cloud: auto-detect
+      vendor: auto-detect
+    name: local-cluster
+  spec:
+    hubAcceptsClient: true
+    leaseDurationSeconds: 60
+  EOF
+  ```
+
+### How do I create the hypershift infrastructure and IAM pieces separately?
+1. Set the additional variables to save each part:
+
+    ```bash
+    export INFRA_OUTPUT_FILE=$HOME/hostedcluster_infra.json
+    export IAM_OUTPUT_FILE=$HOME/hostedcluster_iam.json
+    ```
+
+2. Create the infrastructure:
+
+    ```bash
+    $ oc hcp create infra aws --name $CLUSTER_NAME \
         --aws-creds $AWS_CREDS \
         --base-domain $BASE_DOMAIN \
         --infra-id $CLUSTER_NAME \
@@ -144,7 +277,7 @@ After installing the HyperShift operator and enabling an existing cluster as a h
         --output-file $INFRA_OUTPUT_FILE
     ```
 
-4. In order to create the related IAM pieces, we'll need some info from the infra output.
+3. In order to create the related IAM pieces, we'll need some info from the infra output.
 
     ```bash
     $ cat $INFRA_OUTPUT_FILE                                                                                          
@@ -169,12 +302,14 @@ After installing the HyperShift operator and enabling an existing cluster as a h
       "proxyAddr": ""
     }
     ```
-Specically, we'll need the `publicZoneID`, `privateZoneID`, and `localZoneID`
 
-5. Create the IAM:
+Specically, we'll need the `publicZoneID`, `privateZoneID`, and `localZoneID`. 
+You can pipe this data to the next step in order to save time.
+
+4. Create the IAM:
 
     ```bash
-    $ hypershift create iam aws --infra-id $CLUSTER_NAME \
+    $ oc hcp create iam aws --infra-id $CLUSTER_NAME \
         --aws-creds $AWS_CREDS \
         --oidc-storage-provider-s3-bucket-name $BUCKET_NAME \
         --oidc-storage-provider-s3-region $BUCKET_REGION \
@@ -185,10 +320,10 @@ Specically, we'll need the `publicZoneID`, `privateZoneID`, and `localZoneID`
         --output-file $IAM_OUTPUT_FILE
     ```
 
-6. We can use the `hypershift create cluster aws` command to create our hosted cluster. If you created the infrastructure and IAM pieces separately, we can specify them as arguments via `--infra-json` and `--iam-json`:
+5. We can now use the `oc hcp create cluster aws` command to create our hosted cluster. We can specify the infrastructure and IAM pieces as arguments via `--infra-json` and `--iam-json`:
 
     ```bash
-    $ hypershift create cluster aws \
+    $ oc hcp create cluster aws \
         --name $CLUSTER_NAME \
         --infra-id $INFRA_ID \
         --infra-json $INFRA_OUTPUT_FILE \
@@ -198,97 +333,15 @@ Specically, we'll need the `publicZoneID`, `privateZoneID`, and `localZoneID`
         --region $REGION \
         --generate-ssh \
         --node-pool-replicas 3 \
-        --namespace local-cluster \
-        --render > hosted-cluster-cr-render.yaml
+        --namespace local-cluster
     ```
 
-Note: This command will also perform what `hypershift create infra` and `hypershift create iam` does if those fields are not specified, however we'll also need to provide the required arguments for those portions (such as the S3 bucket name)
+For more options when interacting with the CLI, refer to [Hypershift Project Documentation for creating a HostedCluster](https://hypershift-docs.netlify.app/getting-started/#create-a-hostedcluster).
 
-7. Edit the `hosted-cluster-cr-render.yaml` above by adding this annotation to the HostedCluster CR:
+That's all! Your hosted cluster is now created. Refer to the main section above for importing the cluster into MCE/ACM.
 
-    ```yaml
-      annotations:
-        cluster.open-cluster-management.io/managedcluster-name: CLUSTER_NAME
-    ```
-If not included, the name used when importing the cluster is the `InfraID` value.
-
-8. Now we can apply the CR to the hub:
-
-    ```bash
-    $ oc apply -f hosted-cluster-cr-render.yaml
-    ```
-
-9. In order to complete the import process, we also need to create the managed cluster resource:
-    ## How to name your ManagedCluster
-    * The CLUSTER_NAME listed below will be the registred name of your hosted cluster in ACM/MCE.  
-    * When the name is provided in the `HostedCluster` annotation `cluster.open-cluster-management.io/managedcluster-name`, it must match CLUSTER_NAME when creating the `ManagedCluster` resource.
-    * When the annotation is not present, the CLUSTER_NAME for the `ManagedCluster` must be the `InfraID` of the `HostedCluster`.
-    * If the annotation and `ManagedCluster` name do not match, the console will display the cluster as `Pending import`, and it can not be used by ACM/MCE. The same state will occur when the annotation is not present and the `ManagedCluster` name does not equal the `HostedCluster` Infra-ID value.
-    
-    ```bash
-    $ cat <<EOF | oc apply -f -
-    apiVersion: cluster.open-cluster-management.io/v1
-    kind: ManagedCluster
-    metadata:  
-      annotations:    
-        import.open-cluster-management.io/hosting-cluster-name: local-cluster    
-        import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
-        open-cluster-management/created-via: other  
-      labels:    
-        cloud: auto-detect    
-        cluster.open-cluster-management.io/clusterset: default    
-        name: $CLUSTER_NAME   
-        vendor: OpenShift  
-      name: $CLUSTER_NAME
-    spec:  
-      hubAcceptsClient: true  
-      leaseDurationSeconds: 60
-    EOF
-    ```
-
-
-10. Check the status of your hosted cluster via:
+Check the status of your hosted cluster via:
 
     ```bash
     $ oc get hostedclusters -n local-cluster
     ```
-
-11.  After the hosted cluster is created, it will be imported to the hub automatically, you can check it with:
-  
-      ```bash
-     $ oc get managedcluster $INFRA_ID
-     ```
-
-Your hosted cluster is now created and imported to MCE/ACM, which should also be visible from the MCE console.
-
-## Access the hosted cluster
-
-The access secrets are stored in the hypershift-management-cluster namespace.
-The formats of the secrets name are:
-
-- kubeconfig secret: `<hostingNamespace>-<name>-admin-kubeconfig` (e.g clusters-hypershift-demo-admin-kubeconfig)
-- kubeadmin password secret: `<hostingNamespace>-<name>-kubeadmin-password` (e.g clusters-hypershift-demo-kubeadmin-password)
-
-## Destroying your hypershift Hosted cluster
-
-Delete the hypershift cluster:
-
-```bash
-$ hypershift destroy cluster aws --name $CLUSTER_NAME --infra-id $INFRA_ID --aws-creds $AWS_CREDS --base-domain $BASE_DOMAIN
-```
-
-## Destroying your hypershift managed cluster
-
-Delete the managed cluster resource:
-
-```bash
-$ oc delete managedcluster $INFRA_ID
-```
-
-## Destroying hypershift operator
-
-Delete the hypershift-addon
-
-```bash
-$ oc delete managedclusteraddon -n local-cluster hypershift-addon
-```

@@ -22,7 +22,7 @@ The Hosted Control Plane command-line interface (CLI) is an `oc` command-line [p
 
 3. Rename the file to `oc-hcp` to make it an `oc` command-line [plugin](https://docs.openshift.com/container-platform/4.11/cli_reference/openshift_cli/extending-cli-plugins.html). `hcp` stands for `Hosted Control Plane`.
 
-4. Move the `oc-hcp` binary to a directory in your PATH.
+4. Follow the [oc plugin instructions](https://docs.openshift.com/container-platform/4.11/cli_reference/openshift_cli/extending-cli-plugins.html#cli-installing-plugins_cli-extend-plugins) to bind the `oc-hcp` plugin to a directory in your PATH.
 
 After you install the Hosted Control Plane CLI, you can start using the `oc hcp ...` command. For more information on the CLI usage, see [this](https://hypershift-docs.netlify.app/getting-started/)
 
