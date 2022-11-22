@@ -463,8 +463,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 func (c *agentController) isHostedControlPlaneAvailable(status hyperv1alpha1.HostedClusterStatus) bool {
 	for _, condition := range status.Conditions {
-		c.log.Info("condition.Reason: " + condition.Reason + ",  condition.Status: " + string(condition.Status))
-		if condition.Reason == "HostedClusterAsExpected" && condition.Status == metav1.ConditionTrue {
+		if condition.Reason == hyperv1alpha1.HostedClusterAsExpectedReason && condition.Status == metav1.ConditionTrue && condition.Type == string(hyperv1alpha1.HostedClusterAvailable) {
 			return true
 		}
 	}
