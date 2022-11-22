@@ -33,6 +33,9 @@ rules:
 - apiGroups: ["authorization.k8s.io"]
   resources: ["subjectaccessreviews"]
   verbs: ["get", "create"]
+- apiGroups: ["cluster.open-cluster-management.io"]
+  resources: ["addonplacementscores", "addonplacementscores/status"]
+  verbs: ["get", "list", "watch", "create", "delete", "update", patch]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
