@@ -15,6 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
+	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -75,7 +76,7 @@ kind: Config`)
 	// Secret for kubconfig and kubeadmin-password are created
 	secret := &corev1.Secret{}
 	kcSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-admin-kubeconfig", hc.Spec.InfraID), Namespace: aCtrl.clusterName}
-	err = aCtrl.hubClient.Get(ctx, kcSecretNN, secret)
+	err = aCtrl.spokeClient.Get(ctx, kcSecretNN, secret)
 	assert.Nil(t, err, "is nil when the admin kubeconfig secret is found")
 
 	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-kubeadmin-password", hc.Spec.InfraID), Namespace: aCtrl.clusterName}
@@ -85,6 +86,13 @@ kind: Config`)
 	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-" + hc.Spec.InfraID}
 	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
 	assert.Nil(t, err, "is nil when external-managed-kubeconfig secret is found")
+
+	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{}
+	addOnPlacementScoreNN := types.NamespacedName{Name: util.HostedClusterScoresResourceName, Namespace: aCtrl.clusterName}
+	err = aCtrl.hubClient.Get(ctx, addOnPlacementScoreNN, addOnPlacementScore)
+	assert.Nil(t, err, "is nil when hosted-clusters-score AddOnPlacementScore is found")
+	assert.Equal(t, util.HostedClusterScoresScoreName, addOnPlacementScore.Status.Scores[0].Name, "hosted-clusters-score AddOnPlacementScore score name should be "+util.HostedClusterScoresScoreName)
+	assert.Equal(t, int32(1), addOnPlacementScore.Status.Scores[0].Value, "hosted-clusters-score AddOnPlacementScore score value should be 1")
 
 	kubeconfig, err := clientcmd.Load(secret.Data["kubeconfig"])
 	assert.Nil(t, err, "is nil when kubeconfig data can be loaded")
@@ -131,7 +139,7 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 		Status: hyperv1alpha1.HostedClusterStatus{
 			KubeConfig:        &corev1.LocalObjectReference{Name: "kubeconfig"},
 			KubeadminPassword: &corev1.LocalObjectReference{Name: "kubeadmin"},
-			Conditions:        []metav1.Condition{{Type: string(hyperv1alpha1.HostedClusterAvailable), Status: metav1.ConditionTrue}},
+			Conditions:        []metav1.Condition{{Type: string(hyperv1alpha1.HostedClusterAvailable), Status: metav1.ConditionTrue, Reason: hyperv1alpha1.HostedClusterAsExpectedReason}},
 			Version: &hyperv1alpha1.ClusterVersionStatus{
 				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate}},
 			},
@@ -182,6 +190,7 @@ func initClient() client.Client {
 	corev1.AddToScheme(scheme)
 	metav1.AddMetaToScheme(scheme)
 	hyperv1alpha1.AddToScheme(scheme)
+	clusterv1alpha1.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
 	ncb.WithScheme(scheme)
