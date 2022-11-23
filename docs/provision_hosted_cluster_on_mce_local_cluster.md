@@ -24,14 +24,6 @@ You must have the following prerequisites to deploy the hosted cluster:
     $ oc get managedclusters local-cluster
     ```
 
-### Enabling the Hosted Control Plane feature
-
-Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine` with your MCE's instance name:
-
-```bash
-$ oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
-```
-
 ### Creating the Amazon Web Services (AWS) S3 Secret
 
 If you plan to provision hosted clusters on the AWS platform, create an OIDC s3 credentials secret for the HyperShift operator, and name it `hypershift-operator-oidc-provider-s3-credentials`. It should reside in managed cluster namespace (i.e., the namespace of the managed cluster that will be used as the hosting service cluster). As we're using the `local-cluster` as the hosted cluster, we'll create the secret in the `local-cluster` namespace here.
@@ -77,21 +69,23 @@ Add the special label to the `hypershift-operator-external-dns-credentials` secr
   $ oc label secret hypershift-operator-external-dns-credentials -n local-cluster cluster.open-cluster-management.io/backup=true
   ```
 
-### Enable the Hypershift add-on on MCE
+### Enabling the Hosted Control Plane feature
 
-The Hypershift add-on is required on the management cluster to install the Hypershift operator. The namespace will be the managed cluster on which you want to install the HyperShift operator on. Again, we're using the MCE hub, `local-cluster`, in this guide:
-  
-    ```bash
-    $ oc apply -f - <<EOF
-    apiVersion: addon.open-cluster-management.io/v1alpha1
-    kind: ManagedClusterAddOn
-    metadata:
-      name: hypershift-addon
-      namespace: local-cluster
-    spec:
-      installNamespace: open-cluster-management-agent-addon
-    EOF
-    ```
+Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine` with your MCE's instance name:
+
+  ```bash
+  $ oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+  ```
+
+**Note:** The AWS S3 secret must be created before creating the add-on. As enabling the preview creates the add-on automatically, be sure [to do that step first](#creating-the-amazon-web-services-aws-s3-secret).
+
+**Note:** Disabling the feature will NOT delete the Hypershift add-on automatically and will cause it to be inoperable. If disabling, first modify or remove the add-on separately.
+
+### Enabling the Hypershift Add-on
+
+The Hypershift add-on is required on the management cluster to install the Hypershift operator. The namespace will be the managed cluster on which you want to install the HyperShift operator on. Again, we're using the MCE hub, `local-cluster`, in this guide which will have the hostingCluster value turned on by default.
+
+The Hypershift add-on will be automatically installed after [enabling the Hosted Control Plane feature](#enabling-the-hosted-control-plane-feature).
 
 Confirm that the `hypershift-addon` is installed by running the following command:
   
@@ -100,6 +94,7 @@ Confirm that the `hypershift-addon` is installed by running the following comman
     NAME               AVAILABLE   DEGRADED   PROGRESSING
     hypershift-addon   True        False
     ```
+
 You run the following wait commands to wait for the addon to reach this state with a timeout:
 
     ```bash
@@ -164,14 +159,13 @@ After creating the hosted cluster, the next step is to import it into MCE.
 
 ### How to name your ManagedCluster
 * The $CLUSTER_NAME listed below will be the registred name of your hosted cluster in ACM/MCE.  
-* When the name is provided in the `HostedCluster` annotation `cluster.open-cluster-management.io/managedcluster-name`, it must match CLUSTER_NAME when creating the `ManagedCluster` resource.
-* When the annotation is not present, the CLUSTER_NAME for the `ManagedCluster` must be the `InfraID` of the `HostedCluster`.
 * If the annotation and `ManagedCluster` name do not match, the console will display the cluster as `Pending import`, and it can not be used by ACM/MCE. The same state will occur when the annotation is not present and the `ManagedCluster` name does not equal the `HostedCluster` Infra-ID value.
 
 1. Add a required annotation to the HostedCluster CR by doing:
 
     ```bash
-    $ oc annotate hostedclusters $INFRA_ID cluster.open-cluster-management.io/hypershiftdeployment=$INFRA_ID -n local-cluster
+    $ cluster.open-cluster-management.io/hypershiftdeployment: local-cluster/$CLUSTER_NAME
+    cluster.open-cluster-management.io/managedcluster-name: $CLUSTER_NAME
     ```
 
 2. In order to complete the import process, create the managed cluster resource:
@@ -213,15 +207,20 @@ The formats of the secrets name are:
 - kubeconfig secret: `<hostingNamespace>-<name>-admin-kubeconfig` (e.g clusters-hypershift-demo-admin-kubeconfig)
 - kubeadmin password secret: `<hostingNamespace>-<name>-kubeadmin-password` (e.g clusters-hypershift-demo-kubeadmin-password)
 
-## Destroying your hypershift Hosted cluster
 
-Delete the hypershift cluster and its backend resources:
+## Cleaning up the Hosted Control Plane Cluster
+
+**NOTE:** When cleaning up your hosted cluster, you must delete both the hosted cluster and the managed cluster resource on MCE/ACM. Deleting only one can have negative side effects when trying to create the hosted cluster again if you're using the same managed cluster name.
+
+### Destroying your Hosted Cluster
+
+Delete the hosted cluster and its backend resources:
 
     ```bash
     $ oc hcp destroy cluster aws --name $CLUSTER_NAME --infra-id $INFRA_ID --aws-creds $AWS_CREDS --base-domain $BASE_DOMAIN --destroy-cloud-resources
     ```
 
-## Destroying your hypershift managed cluster
+### Destroying your Hosted Cluster's managed cluster
 
 Delete the managed cluster resource on MCE:
 
@@ -229,14 +228,16 @@ Delete the managed cluster resource on MCE:
     $ oc delete managedcluster $CLUSTER_NAME
     ```
 
-## Destroying hypershift operator
+### Destroying the Hypershift add-on and Hypershift operator
 
 Delete the hypershift-addon
 
     ```bash
     $ oc delete managedclusteraddon -n local-cluster hypershift-addon
     ```
-    
+
+**NOTE:** Deleting the hypershift-addon will not destroy existing hosted clusters, nor the hypershift operator.
+
 ## Troubleshooting
 
 ### How do I manually install the local-cluster on MCE?
@@ -257,6 +258,22 @@ Apply the following YAML via `oc`:
     leaseDurationSeconds: 60
   EOF
   ```
+
+### How do I manually install or delete the Hypershift Add-on?
+Run the following `oc` command:
+
+  ```bash
+  $ oc apply -f - <<EOF
+  apiVersion: addon.open-cluster-management.io/v1alpha1
+  kind: ManagedClusterAddOn
+  metadata:
+    name: hypershift-addon
+    namespace: local-cluster
+  spec:
+    installNamespace: open-cluster-management-agent-addon
+  EOF
+  ```
+For deleting, do `oc delete` instead.
 
 ### How do I create the hypershift infrastructure and IAM pieces separately?
 1. Set the additional variables to save each part:
