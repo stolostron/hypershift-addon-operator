@@ -82,6 +82,7 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+oc create secret generic hypershift-operator-oidc-provider-s3-credentials --from-file=credentials=${S3_CREDS} --from-literal=bucket=${BUCKET_NAME} --from-literal=region=${BUCKET_REGION} -n local-cluster
 oc patch multiclusterengine ${mce_name} --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
 
 # import local cluster
@@ -108,9 +109,11 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# install hypershift addon
-echo "start to install hypershift addon on the local cluster"
-oc apply -f - <<EOF
+# install hypershift addon if it's not there
+oc get managedclusteraddon hypershift-addon -n local-cluster
+if [ $? -ne 0 ]; then
+  echo "hypershift-addon is not installed on the hub, try to install it"
+  oc apply -f - <<EOF
 apiVersion: addon.open-cluster-management.io/v1alpha1
 kind: ManagedClusterAddOn
 metadata:
@@ -119,8 +122,7 @@ metadata:
 spec:
   installNamespace: open-cluster-management-agent-addon
 EOF
-
-oc create secret generic hypershift-operator-oidc-provider-s3-credentials --from-file=credentials=${S3_CREDS} --from-literal=bucket=${BUCKET_NAME} --from-literal=region=${BUCKET_REGION} -n local-cluster
+fi
 
 echo "wait for managed cluster addon hypershift addon to be available ..."
 oc wait --for=condition=Available managedclusteraddon/hypershift-addon -n local-cluster --timeout=600s

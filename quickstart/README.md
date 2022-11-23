@@ -35,11 +35,16 @@ This document describes how to quickly get started with Hosting Control Planes a
 
 ## What it does
 1. Enables preview_hypershift
-2. Creates a `local-cluster` `managedCluster` for the OpenShift cluster you are installing to
-3. Imports the `local-cluster`
-4. Applies the Hosting Service Cluster addon (Hypershift) to the `local-cluster` (Hub)
+2. Creates a `local-cluster` `managedCluster` for the OpenShift cluster you are installing to if it doesn't
+3. Imports the `local-cluster` if it doesn't exist
+4. Applies the Hosting Service Cluster addon (Hypershift) to the `local-cluster` (Hub) if it doesn't exist
 
-## Use the hypershift CLI to create a HostedCluster and NodePool
+## Use the oc hcp or hypershift CLI to create a HostedCluster and NodePool
+1. Get the `oc hcp` cli:
+https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/installing_hypershift_cli.md
+2. `oc hcp --help` to get a list of command parameters
+
+Alternatively, use the Hypershift CLI:
 1. Get the `hypershift` Linux cli:
 ```shell
 # Docker command, this places the hypershift binary in your $HOME directory
