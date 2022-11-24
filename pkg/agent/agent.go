@@ -326,7 +326,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
 	// Update the AddOnPlacementScore resource
-	c.CreateAddOnPlacementScore()
+	c.CreateAddOnPlacementScore(ctx)
 
 	// Delete HC secrets on the hub using labels for HC and the hosting NS
 	deleteMirrorSecrets := func() error {
@@ -470,7 +470,22 @@ func (c *agentController) isHostedControlPlaneAvailable(status hyperv1alpha1.Hos
 	return false
 }
 
-func (c *agentController) CreateAddOnPlacementScore() {
+func (c *agentController) createOrUpdatePlacementAvail(ctx context.Context, threshold int) {
+
+	var hostedClaim *clusterv1alpha1.ClusterClaim
+	if threshold >= util.HostedClusterPlacementThreshhold {
+		hostedClaim = newClusterClaim("placementavailable.hypershift.openshift.io", "unavailable")
+	} else {
+		hostedClaim = newClusterClaim("placementavailable.hypershift.openshift.io", "available")
+	}
+	err := createOrUpdate(ctx, c.spokeClustersClient, hostedClaim)
+	if err != nil {
+		c.log.Error(err, "coulnt not create/update cluster claim")
+		return
+	}
+}
+
+func (c *agentController) CreateAddOnPlacementScore(ctx context.Context) {
 	listopts := &client.ListOptions{}
 	hcList := &hyperv1alpha1.HostedClusterList{}
 	err := c.spokeClient.List(context.TODO(), hcList, listopts)
@@ -486,6 +501,8 @@ func (c *agentController) CreateAddOnPlacementScore() {
 			Value: int32(len(hcList.Items)),
 		},
 	}
+
+	c.createOrUpdatePlacementAvail(ctx, len(hcList.Items))
 
 	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{
 		TypeMeta: metav1.TypeMeta{
