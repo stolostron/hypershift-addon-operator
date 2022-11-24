@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	corev1 "k8s.io/api/core/v1"
@@ -20,8 +21,9 @@ const (
 	// labelExcludeBackup is true for the local-cluster will not be backed up into velero
 	labelExcludeBackup = "velero.io/exclude-from-backup"
 
-	hypershiftManagementClusterClaimKey = "hostingcluster.hypershift.openshift.io"
-	hypershiftHostedClusterClaimKey     = "hostedcluster.hypershift.openshift.io"
+	hypershiftManagementClusterClaimKey   = "hostingcluster.hypershift.openshift.io"
+	hypershiftHostedClusterClaimKey       = "hostedcluster.hypershift.openshift.io"
+	hostedClusterCountFullClusterClaimKey = "hostedclustercount.full.hypershift.openshift.io"
 )
 
 func newClusterClaim(name, value string) *clusterv1alpha1.ClusterClaim {
@@ -58,6 +60,11 @@ func createOrUpdate(ctx context.Context, client clusterclientset.Interface, newC
 
 func (c *agentController) createManagementClusterClaim(ctx context.Context) error {
 	managementClaim := newClusterClaim(hypershiftManagementClusterClaimKey, "true")
+	return createOrUpdate(ctx, c.spokeClustersClient, managementClaim)
+}
+
+func (c *agentController) createHostedClusterCountClusterClaim(ctx context.Context, count int) error {
+	managementClaim := newClusterClaim(hostedClusterCountFullClusterClaimKey, strconv.FormatBool(count > (util.MaxHostedClusterCount-1)))
 	return createOrUpdate(ctx, c.spokeClustersClient, managementClaim)
 }
 

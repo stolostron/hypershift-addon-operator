@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/go-logr/zapr"
@@ -15,6 +16,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/clientcmd"
+	clustercsfake "open-cluster-management.io/api/client/cluster/clientset/versioned/fake"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -109,6 +111,91 @@ kind: Config`)
 	assert.True(t, err != nil && errors.IsNotFound(err), "is nil when the kubeadmin password secret is deleted")
 }
 
+func TestHostedClusterCount(t *testing.T) {
+	ctx := context.Background()
+	client := initClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
+	aCtrl := &agentController{
+		spokeClustersClient: fakeClusterCS,
+		spokeUncachedClient: client,
+		spokeClient:         client,
+		hubClient:           client,
+		log:                 zapr.NewLogger(zapLog),
+	}
+
+	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
+
+	i := 0
+	for i < (util.MaxHostedClusterCount - 1) {
+		hc := getHostedCluster(hcNN)
+		hc.SetName("test-" + strconv.Itoa(i))
+		err := aCtrl.hubClient.Create(ctx, hc)
+		assert.Nil(t, err, "err nil when hosted cluster is created successfull")
+		i++
+	}
+
+	err := aCtrl.CreateAddOnPlacementScore(ctx)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
+
+	clusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), clusterClaim.Spec.Value)
+
+	placementScore := &clusterv1alpha1.AddOnPlacementScore{}
+	placementScoreNN := types.NamespacedName{Name: util.HostedClusterScoresResourceName, Namespace: aCtrl.clusterName}
+	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
+	assert.Nil(t, err, "is nil when addonPlacementScore is found")
+	assert.Equal(t, int32(util.MaxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
+
+	// Create one more hosted cluster and expect the cluserclaim to have hostedclustercount.full.hypershift.openshift.io=true
+	// indicating it reached the maximum number of hosted clusters
+	hc := getHostedCluster(hcNN)
+	hc.SetName("test-80")
+	err = aCtrl.hubClient.Create(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is created successfull")
+
+	err = aCtrl.CreateAddOnPlacementScore(ctx)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
+
+	clusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(true), clusterClaim.Spec.Value)
+
+	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
+	assert.Nil(t, err, "is nil when addonPlacementScore is found")
+	assert.Equal(t, int32(util.MaxHostedClusterCount), placementScore.Status.Scores[0].Value)
+
+	// Delete one hosted cluster and expect the cluserclaim to have hostedclustercount.full.hypershift.openshift.io=false
+	// indicating it did not reach the maximum number of hosted clusters after removing one
+	err = aCtrl.hubClient.Delete(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is deleted successfull")
+
+	err = aCtrl.CreateAddOnPlacementScore(ctx)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
+
+	clusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), clusterClaim.Spec.Value)
+
+	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
+	assert.Nil(t, err, "is nil when addonPlacementScore is found")
+	assert.Equal(t, int32(util.MaxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
+
+	// Simulate that it fails to get a list of all hosted clusters. In this case, the addonPlacementScore
+	// should contain a condition indicating the failure but the existing score should not change
+	aCtrl.spokeUncachedClient = initErrorClient()
+	err = aCtrl.CreateAddOnPlacementScore(ctx)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
+
+	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
+	assert.Nil(t, err, "is nil when addonPlacementScore is found")
+	assert.Equal(t, metav1.ConditionFalse, placementScore.Status.Conditions[0].Status)
+	assert.Equal(t, int32(util.MaxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
+}
+
 func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 	hc := &hyperv1alpha1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{
@@ -191,6 +278,19 @@ func initClient() client.Client {
 	metav1.AddMetaToScheme(scheme)
 	hyperv1alpha1.AddToScheme(scheme)
 	clusterv1alpha1.AddToScheme(scheme)
+
+	ncb := fake.NewClientBuilder()
+	ncb.WithScheme(scheme)
+	return ncb.Build()
+
+}
+
+func initErrorClient() client.Client {
+	scheme := runtime.NewScheme()
+	//corev1.AddToScheme(scheme)
+	appsv1.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
+	metav1.AddMetaToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
 	ncb.WithScheme(scheme)

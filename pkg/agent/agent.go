@@ -134,7 +134,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("failed to create hubClient, err: %w", err)
 	}
 
-	spokeKubeClient, err := client.New(spokeConfig, client.Options{})
+	spokeKubeClient, err := client.New(spokeConfig, client.Options{Scheme: scheme})
 	if err != nil {
 		return fmt.Errorf("failed to create spoke client, err: %w", err)
 	}
@@ -180,6 +180,12 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 
 	if err := aCtrl.createManagementClusterClaim(ctx); err != nil {
 		return fmt.Errorf("unable to create management cluster claim, err: %w", err)
+	}
+
+	err = aCtrl.CreateAddOnPlacementScore(ctx)
+	if err != nil {
+		// AddOnPlacementScore must be created initially
+		return fmt.Errorf("failed to create AddOnPlacementScore, err: %w", err)
 	}
 
 	log.Info("starting manager")
@@ -325,8 +331,8 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
-	// Update the AddOnPlacementScore resource
-	c.CreateAddOnPlacementScore()
+	// Update the AddOnPlacementScore resource, continue reconcile even if error occurred
+	_ = c.CreateAddOnPlacementScore(ctx)
 
 	// Delete HC secrets on the hub using labels for HC and the hosting NS
 	deleteMirrorSecrets := func() error {
@@ -470,22 +476,7 @@ func (c *agentController) isHostedControlPlaneAvailable(status hyperv1alpha1.Hos
 	return false
 }
 
-func (c *agentController) CreateAddOnPlacementScore() {
-	listopts := &client.ListOptions{}
-	hcList := &hyperv1alpha1.HostedClusterList{}
-	err := c.spokeClient.List(context.TODO(), hcList, listopts)
-	if err != nil {
-		// just log the error. it should not stop the rest of reconcile
-		c.log.Error(err, "failed to get HostedCluster list")
-		return
-	}
-
-	items := []clusterv1alpha1.AddOnPlacementScoreItem{
-		{
-			Name:  util.HostedClusterScoresScoreName,
-			Value: int32(len(hcList.Items)),
-		},
-	}
+func (c *agentController) CreateAddOnPlacementScore(ctx context.Context) error {
 
 	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{
 		TypeMeta: metav1.TypeMeta{
@@ -496,27 +487,77 @@ func (c *agentController) CreateAddOnPlacementScore() {
 			Name:      util.HostedClusterScoresResourceName,
 			Namespace: c.clusterName,
 		},
-		Status: clusterv1alpha1.AddOnPlacementScoreStatus{
-			Scores: items,
-		},
 	}
 
-	_, err = controllerutil.CreateOrUpdate(context.TODO(), c.hubClient, addOnPlacementScore, func() error { return nil })
+	_, err := controllerutil.CreateOrUpdate(context.TODO(), c.hubClient, addOnPlacementScore, func() error { return nil })
 	if err != nil {
 		// just log the error. it should not stop the rest of reconcile
 		c.log.Error(err, fmt.Sprintf("failed to create or update the addOnPlacementScore resource in %s", c.clusterName))
-		return
+		return err
 	}
 
-	addOnPlacementScore.Status.Scores = items
-	err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.UpdateOptions{})
+	listopts := &client.ListOptions{}
+	hcList := &hyperv1alpha1.HostedClusterList{}
+	err = c.spokeUncachedClient.List(context.TODO(), hcList, listopts)
 	if err != nil {
 		// just log the error. it should not stop the rest of reconcile
-		c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))
-		return
+		c.log.Error(err, "failed to get HostedCluster list")
+
+		conditions := []metav1.Condition{
+			{
+				LastTransitionTime: metav1.Time{Time: time.Now()},
+				Type:               "HostedClusterCountUpdated",
+				Status:             metav1.ConditionFalse,
+				Reason:             "HostedClusterCountFailed",
+				Message:            err.Error(),
+			},
+		}
+
+		// Just add conditions, no score or keep the existing score
+		addOnPlacementScore.Status.Conditions = conditions
+
+		err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.UpdateOptions{})
+		if err != nil {
+			// just log the error. it should not stop the rest of reconcile
+			c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))
+			return err
+		}
+	} else {
+		scores := []clusterv1alpha1.AddOnPlacementScoreItem{
+			{
+				Name:  util.HostedClusterScoresScoreName,
+				Value: int32(len(hcList.Items)),
+			},
+		}
+		conditions := []metav1.Condition{
+			{
+				LastTransitionTime: metav1.Time{Time: time.Now()},
+				Type:               "HostedClusterCountUpdated",
+				Status:             metav1.ConditionTrue,
+				Reason:             "HostedClusterCountUpdated",
+				Message:            "Hosted cluster count was updated successfully",
+			},
+		}
+
+		addOnPlacementScore.Status.Conditions = conditions
+		addOnPlacementScore.Status.Scores = scores
+
+		err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.UpdateOptions{})
+		if err != nil {
+			// just log the error. it should not stop the rest of reconcile
+			c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))
+			return err
+		}
 	}
 
 	c.log.Info(fmt.Sprintf("updated the addOnPlacementScore for %s: %v", c.clusterName, len(hcList.Items)))
+
+	if err := c.createHostedClusterCountClusterClaim(ctx, len(hcList.Items)); err != nil {
+		c.log.Error(err, "unable to create hosted cluster count cluster claim")
+		return err
+	}
+
+	return nil
 }
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
