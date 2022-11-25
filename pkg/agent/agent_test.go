@@ -33,7 +33,10 @@ func TestReconcile(t *testing.T) {
 	client := initClient()
 	zapLog, _ := zap.NewDevelopment()
 
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
 	aCtrl := &agentController{
+		spokeClustersClient: fakeClusterCS,
 		spokeUncachedClient: client,
 		spokeClient:         client,
 		hubClient:           client,
