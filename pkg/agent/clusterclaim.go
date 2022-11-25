@@ -64,12 +64,12 @@ func (c *agentController) createManagementClusterClaim(ctx context.Context) erro
 }
 
 func (c *agentController) createHostedClusterCountClusterClaim(ctx context.Context, count int) error {
-	if count > (util.MaxHostedClusterCount - 1) {
+	if count >= util.MaxHostedClusterCount {
 		c.log.Info(fmt.Sprintf("ATTENTION: the hosted cluster count has reached the maximum %s.", strconv.Itoa(util.MaxHostedClusterCount)))
 	} else {
 		c.log.Info(fmt.Sprintf("the hosted cluster count has not reached the maximum %s yet. current count is %s", strconv.Itoa(util.MaxHostedClusterCount), strconv.Itoa(count)))
 	}
-	managementClaim := newClusterClaim(hostedClusterCountFullClusterClaimKey, strconv.FormatBool(count > (util.MaxHostedClusterCount-1)))
+	managementClaim := newClusterClaim(hostedClusterCountFullClusterClaimKey, strconv.FormatBool(count >= util.MaxHostedClusterCount))
 	return createOrUpdate(ctx, c.spokeClustersClient, managementClaim)
 }
 

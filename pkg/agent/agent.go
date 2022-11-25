@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -182,7 +183,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to create management cluster claim, err: %w", err)
 	}
 
-	err = aCtrl.CreateAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx)
 	if err != nil {
 		// AddOnPlacementScore must be created initially
 		return fmt.Errorf("failed to create AddOnPlacementScore, err: %w", err)
@@ -332,7 +333,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
 	// Update the AddOnPlacementScore resource, continue reconcile even if error occurred
-	_ = c.CreateAddOnPlacementScore(ctx)
+	_ = c.SyncAddOnPlacementScore(ctx)
 
 	// Delete HC secrets on the hub using labels for HC and the hosting NS
 	deleteMirrorSecrets := func() error {
@@ -476,7 +477,7 @@ func (c *agentController) isHostedControlPlaneAvailable(status hyperv1alpha1.Hos
 	return false
 }
 
-func (c *agentController) CreateAddOnPlacementScore(ctx context.Context) error {
+func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 
 	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{
 		TypeMeta: metav1.TypeMeta{
@@ -503,18 +504,13 @@ func (c *agentController) CreateAddOnPlacementScore(ctx context.Context) error {
 		// just log the error. it should not stop the rest of reconcile
 		c.log.Error(err, "failed to get HostedCluster list")
 
-		conditions := []metav1.Condition{
-			{
-				LastTransitionTime: metav1.Time{Time: time.Now()},
-				Type:               "HostedClusterCountUpdated",
-				Status:             metav1.ConditionFalse,
-				Reason:             "HostedClusterCountFailed",
-				Message:            err.Error(),
-			},
-		}
-
-		// Just add conditions, no score or keep the existing score
-		addOnPlacementScore.Status.Conditions = conditions
+		meta.SetStatusCondition(&addOnPlacementScore.Status.Conditions, metav1.Condition{
+			LastTransitionTime: metav1.Time{Time: time.Now()},
+			Type:               "HostedClusterCountUpdated",
+			Status:             metav1.ConditionFalse,
+			Reason:             "HostedClusterCountFailed",
+			Message:            err.Error(),
+		})
 
 		err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.UpdateOptions{})
 		if err != nil {
@@ -529,17 +525,14 @@ func (c *agentController) CreateAddOnPlacementScore(ctx context.Context) error {
 				Value: int32(len(hcList.Items)),
 			},
 		}
-		conditions := []metav1.Condition{
-			{
-				LastTransitionTime: metav1.Time{Time: time.Now()},
-				Type:               "HostedClusterCountUpdated",
-				Status:             metav1.ConditionTrue,
-				Reason:             "HostedClusterCountUpdated",
-				Message:            "Hosted cluster count was updated successfully",
-			},
-		}
 
-		addOnPlacementScore.Status.Conditions = conditions
+		meta.SetStatusCondition(&addOnPlacementScore.Status.Conditions, metav1.Condition{
+			LastTransitionTime: metav1.Time{Time: time.Now()},
+			Type:               "HostedClusterCountUpdated",
+			Status:             metav1.ConditionTrue,
+			Reason:             "HostedClusterCountUpdated",
+			Message:            "Hosted cluster count was updated successfully",
+		})
 		addOnPlacementScore.Status.Scores = scores
 
 		err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.UpdateOptions{})

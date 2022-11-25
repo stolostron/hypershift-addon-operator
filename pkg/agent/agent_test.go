@@ -136,11 +136,12 @@ func TestHostedClusterCount(t *testing.T) {
 		hc := getHostedCluster(hcNN)
 		hc.SetName("test-" + strconv.Itoa(i))
 		err := aCtrl.hubClient.Create(ctx, hc)
+		defer aCtrl.hubClient.Delete(ctx, hc)
 		assert.Nil(t, err, "err nil when hosted cluster is created successfull")
 		i++
 	}
 
-	err := aCtrl.CreateAddOnPlacementScore(ctx)
+	err := aCtrl.SyncAddOnPlacementScore(ctx)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
 
 	clusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
@@ -160,7 +161,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfull")
 
-	err = aCtrl.CreateAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
 
 	clusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
@@ -176,7 +177,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Delete(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is deleted successfull")
 
-	err = aCtrl.CreateAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
 
 	clusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
@@ -186,17 +187,59 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
 	assert.Nil(t, err, "is nil when addonPlacementScore is found")
 	assert.Equal(t, int32(util.MaxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
+}
+
+func TestHostedClusterCountErrorCase(t *testing.T) {
+	ctx := context.Background()
+	client := initClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
+	aCtrl := &agentController{
+		spokeClustersClient: fakeClusterCS,
+		spokeUncachedClient: client,
+		spokeClient:         client,
+		hubClient:           client,
+		log:                 zapr.NewLogger(zapLog),
+	}
+
+	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
+
+	i := 10
+	for i < 15 {
+		hc := getHostedCluster(hcNN)
+		hc.SetName("test-" + strconv.Itoa(i))
+		err := aCtrl.hubClient.Create(ctx, hc)
+		defer aCtrl.hubClient.Delete(ctx, hc)
+		assert.Nil(t, err, "err nil when hosted cluster is created successfull")
+		i++
+	}
+
+	err := aCtrl.SyncAddOnPlacementScore(ctx)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
+
+	clusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), clusterClaim.Spec.Value)
+
+	placementScore := &clusterv1alpha1.AddOnPlacementScore{}
+	placementScoreNN := types.NamespacedName{Name: util.HostedClusterScoresResourceName, Namespace: aCtrl.clusterName}
+	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
+	assert.Nil(t, err, "is nil when addonPlacementScore is found")
+	assert.Equal(t, int32(5), placementScore.Status.Scores[0].Value)
 
 	// Simulate that it fails to get a list of all hosted clusters. In this case, the addonPlacementScore
 	// should contain a condition indicating the failure but the existing score should not change
+	// The score should still be 5
 	aCtrl.spokeUncachedClient = initErrorClient()
-	err = aCtrl.CreateAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
 
 	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
 	assert.Nil(t, err, "is nil when addonPlacementScore is found")
 	assert.Equal(t, metav1.ConditionFalse, placementScore.Status.Conditions[0].Status)
-	assert.Equal(t, int32(util.MaxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
+	assert.Equal(t, int32(5), placementScore.Status.Scores[0].Value)
 }
 
 func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {

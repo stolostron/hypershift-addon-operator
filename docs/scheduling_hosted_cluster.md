@@ -50,7 +50,7 @@ spec:
         weight: -1
 ```
 
-This placement considers managed hosting clusters the belong to `default` cluster set and selects only one cluster.
+This placement considers managed hosting clusters that belong to `default` cluster set and selects only one cluster.
 
 With the predicates settings, this placement excludes managed clusters with clusterClaim `hostedclustercount.full.hypershift.openshift.io=true` and without label `purpose: production`. The hypershift addon agent sets the cluster claim to `"true"` when the number of hosted clusters on the hosting cluster has reached 80. With the label selector, you can easily take one or more hosting clusters out of placement consideration by removing the specified label from the managed clusters. Then with the prioritizerPolicy settings, this placement selects a hosting cluster with the least `hostedClustersCount` score which is contained in `AddOnPlacementScore` resource named `hosted-clusters-score` in the hosting cluster's namespace in the hub cluster. The hypershift addon agent constantly updates this `AddOnPlacementScore`. The score is multiplied by the weight and the cluster with the highest score gets selected. 
 
