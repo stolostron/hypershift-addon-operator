@@ -39,12 +39,12 @@ This document describes how to quickly get started with Hosting Control Planes a
 3. Applies the Hosting Service Cluster addon (Hypershift) to the `local-cluster` (Hub) if it the add-on isn't already applied
 
 ## Use the HyperShift Control Plane (HCP) CLI or HyperShift CLI to create a HostedCluster and NodePool
-1. Get the `oc hcp` cli:
+1. Get the `oc hcp` CLI:
 https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/installing_hypershift_cli.md
 2. `oc hcp --help` to get a list of command parameters
 
 Alternatively, use the Hypershift CLI:
-1. Get the `hypershift` Linux cli:
+1. Get the `hypershift` Linux CLI:
 ```shell
 # Docker command, this places the HyperShift binary in your $HOME directory
 docker run -it -v $HOME:/tmp --entrypoint /bin/bash quay.io/stolostron/hypershift-operator:4.11 -c 'cp /usr/bin/hypershift /tmp'
