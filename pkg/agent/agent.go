@@ -505,11 +505,10 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		c.log.Error(err, "failed to get HostedCluster list")
 
 		meta.SetStatusCondition(&addOnPlacementScore.Status.Conditions, metav1.Condition{
-			LastTransitionTime: metav1.Time{Time: time.Now()},
-			Type:               "HostedClusterCountUpdated",
-			Status:             metav1.ConditionFalse,
-			Reason:             "HostedClusterCountFailed",
-			Message:            err.Error(),
+			Type:    "HostedClusterCountUpdated",
+			Status:  metav1.ConditionFalse,
+			Reason:  "HostedClusterCountFailed",
+			Message: err.Error(),
 		})
 
 		err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.UpdateOptions{})
@@ -527,11 +526,10 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		}
 
 		meta.SetStatusCondition(&addOnPlacementScore.Status.Conditions, metav1.Condition{
-			LastTransitionTime: metav1.Time{Time: time.Now()},
-			Type:               "HostedClusterCountUpdated",
-			Status:             metav1.ConditionTrue,
-			Reason:             "HostedClusterCountUpdated",
-			Message:            "Hosted cluster count was updated successfully",
+			Type:    "HostedClusterCountUpdated",
+			Status:  metav1.ConditionTrue,
+			Reason:  "HostedClusterCountUpdated",
+			Message: "Hosted cluster count was updated successfully",
 		})
 		addOnPlacementScore.Status.Scores = scores
 
