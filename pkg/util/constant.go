@@ -72,6 +72,9 @@ const (
 	HostedClusterScoresResourceName = "hosted-clusters-score"
 	// AddOnPlacementScore score name
 	HostedClusterScoresScoreName = "hostedClustersCount"
+
+	// Maximum hosted cluster count on a hosting cluster
+	MaxHostedClusterCount = 80
 )
 
 // GenerateClientConfigFromSecret generate a client config from a given secret
