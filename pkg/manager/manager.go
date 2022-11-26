@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -28,9 +29,11 @@ import (
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
+	"open-cluster-management.io/addon-framework/pkg/agent"
 	frameworkagent "open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonapiv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
+	addonv1alpha1client "open-cluster-management.io/api/client/addon/clientset/versioned"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 )
 
@@ -75,12 +78,6 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 		if err != nil {
 			return err
 		}
-		registrationOption := newRegistrationOption(
-			controllerContext.KubeConfig,
-			controllerContext.EventRecorder,
-			componentName,
-			utilrand.String(5),
-		)
 
 		hubClient, err := client.New(controllerContext.KubeConfig, client.Options{Scheme: genericScheme})
 		if err != nil {
@@ -95,10 +92,12 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 			withOverride:      withOverride,
 		}
 
-		agentAddon, err := addonfactory.NewAgentAddonFactory(componentName, fs, templatePath).
-			WithGetValuesFuncs(o.getValueForAgentTemplate, addonfactory.GetValuesFromAddonAnnotation).
-			WithAgentRegistrationOption(registrationOption).
-			BuildTemplateAgentAddon()
+		addonClient, err := addonv1alpha1client.NewForConfig(controllerContext.KubeConfig)
+		if err != nil {
+			return err
+		}
+
+		agentAddon, err := getAgentAddon(componentName, o, controllerContext, addonClient)
 		if err != nil {
 			log.Error(err, "failed to build agent")
 			return err
@@ -133,6 +132,29 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 	flags.BoolVar(&withOverride, "with-image-override", false, "Use image from override configmap")
 
 	return cmd
+}
+
+func getAgentAddon(componentName string, o *override, controllerContext *controllercmd.ControllerContext, addonClient addonv1alpha1client.Interface) (agent.AgentAddon, error) {
+	registrationOption := newRegistrationOption(
+		controllerContext.KubeConfig,
+		controllerContext.EventRecorder,
+		componentName,
+		utilrand.String(5),
+	)
+
+	return addonfactory.NewAgentAddonFactory(componentName, fs, templatePath).
+		WithConfigGVRs(
+			schema.GroupVersionResource{Group: "addon.open-cluster-management.io", Version: "v1alpha1", Resource: "addondeploymentconfigs"},
+		).
+		WithGetValuesFuncs(
+			o.getValueForAgentTemplate,
+			addonfactory.GetValuesFromAddonAnnotation,
+			addonfactory.GetAddOnDeloymentConfigValues(
+				addonfactory.NewAddOnDeloymentConfigGetter(addonClient),
+				addonfactory.ToAddOnDeloymentConfigValues,
+			)).
+		WithAgentRegistrationOption(registrationOption).
+		BuildTemplateAgentAddon()
 }
 
 func newRegistrationOption(kubeConfig *rest.Config, recorder events.Recorder, componentName, agentName string) *frameworkagent.RegistrationOption {

@@ -5,105 +5,44 @@ metadata:
   namespace: {{ .AddonInstallNamespace }}
 rules:
   # Allow addon agent run with openshift library-go
-  - apiGroups:
-      - ""
-    resources:
-      - pods
-    verbs: 
-      - get
-      - list
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-    verbs: 
-      - '*'
-  - apiGroups:
-      - apps
-    resources:
-      - replicasets
-    verbs: 
-      - get
-  - apiGroups:
-      - ""
-      - events.k8s.io
-    resources:
-      - events
-    verbs: 
-      - create
-      - patch
-      - update
-  # Allow addon agent run with addon
-  - apiGroups:
-      - coordination.k8s.io
-    resources:
-      - leases
-    verbs:
-      - '*'
+  - apiGroups: [""]
+    resources: ["pod"]
+    verbs: ["get", "list", "patch", "update", "create", "watch"]  
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "patch", "update", "create", "watch"]  
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["get", "list"] 
+  - apiGroups: ["", "events.k8s.io"]
+    resources: ["events"]
+    verbs: ["create", "update", "patch"]         
   # Allow addon to install hypershift
-  - apiGroups:
-      - cluster.open-cluster-management.io
-    resources:
-      - clusterclaims
-    verbs:
-      - '*'
-  - apiGroups:
-      - ""
-    resources:
-      - services
-      - configmaps
-      - secrets
-      - namespaces
-      - serviceaccounts
-      - roles
-      - rolebindings
-      - clusterroles
-      - clusterrolebindings
-    verbs:
-      - '*'
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resources:
-      - roles
-      - rolebindings
-      - clusterroles
-      - clusterrolebindings
-    verbs:
-      - '*'
-  - apiGroups:
-      - apps
-    resources:
-      - deployments
-    verbs:
-      - '*'
-  - apiGroups:
-      - apiextensions.k8s.io
-    resources:
-      - customresourcedefinitions
-    verbs:
-      - '*'
-  - apiGroups:
-      - monitoring.coreos.com
-    resources:
-      - servicemonitors
-      - prometheusrules
-    verbs:
-      - '*'
-  - apiGroups:
-      - scheduling.k8s.io
-    resources:
-      - priorityclasses
-    verbs:
-      - '*'
-  - apiGroups:
-      - hypershift.openshift.io
-    resources:
-      - hostedclusters
-    verbs:
-      - '*'
-  - verbs:
-      - '*'
-    apiGroups:
-      - batch
-    resources:
-      - jobs
+  - apiGroups: ["cluster.open-cluster-management.io"]
+    resources: ["clusterclaims"]
+    verbs: ["get", "list", "create", "patch", "update", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "serviceaccounts", "configmaps", "secrets", "namespaces"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]     
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["get", "list", "create", "update", "delete"]  
+  - apiGroups: ["hypershift.openshift.io"]
+    resources: ["hostedclusters"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]                
+  - apiGroups: ["scheduling.k8s.io"]
+    resources: ["priorityclasses"]
+    verbs: ["get", "list", "create"]  
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "create", "patch", "update"]    
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "clusterroles", "rolebindings", "clusterrolebindings"]
+    verbs: ["*"]   
+  - apiGroups: ["monitoring.coreos.com"]
+    resources: ["servicemonitors", "prometheusrules"]
+    verbs: ["update", "patch", "create"] 
+  - apiGroups: ["apiextensions.k8s.io"]
+    resources: ["customresourcedefinitions"]
+    verbs: ["update", "patch", "create"]                       
+
