@@ -57,13 +57,6 @@ With the predicates settings, this placement excludes managed clusters with clus
 This is a sample `AddOnPlacementScore` resource named `hosted-clusters-score` in the hosting cluster's namespace in the hub cluster.
 
 ```yaml
-  - name: hostedclustercount.full.hypershift.openshift.io
-    value: "false"
-```
-
-This is a sample cluster claim that gets updated in the hosting cluster's `ManagedCluster` resource.
-
-```yaml
 apiVersion: cluster.open-cluster-management.io/v1alpha1
 kind: AddOnPlacementScore
 metadata:
@@ -83,6 +76,13 @@ status:
   scores:
   - name: hostedClustersCount
     value: 2
+```
+
+This is a sample cluster claim that gets updated in the hosting cluster's `ManagedCluster` resource.
+
+```yaml
+  - name: hostedclustercount.full.hypershift.openshift.io
+    value: "false"
 ```
 
 3. There should be a `PlacementDecision` in `default` namespace when the placement controller makes a successful decision based on the placement and it should look like this. In this example, the placement selected hosting cluster `cluster1`.
