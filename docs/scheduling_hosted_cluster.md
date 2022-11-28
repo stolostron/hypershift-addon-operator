@@ -54,6 +54,37 @@ This placement considers managed hosting clusters that belong to `default` clust
 
 With the predicates settings, this placement excludes managed clusters with clusterClaim `hostedclustercount.full.hypershift.openshift.io=true` and without label `purpose: production`. The hypershift addon agent sets the cluster claim to `"true"` when the number of hosted clusters on the hosting cluster has reached 80. With the label selector, you can easily take one or more hosting clusters out of placement consideration by removing the specified label from the managed clusters. Then with the prioritizerPolicy settings, this placement selects a hosting cluster with the least `hostedClustersCount` score which is contained in `AddOnPlacementScore` resource named `hosted-clusters-score` in the hosting cluster's namespace in the hub cluster. The hypershift addon agent constantly updates this `AddOnPlacementScore`. The score is multiplied by the weight and the cluster with the highest score gets selected. 
 
+This is a sample `AddOnPlacementScore` resource named `hosted-clusters-score` in the hosting cluster's namespace in the hub cluster.
+
+```yaml
+  - name: hostedclustercount.full.hypershift.openshift.io
+    value: "false"
+```
+
+This is a sample cluster claim that gets updated in the hosting cluster's `ManagedCluster` resource.
+
+```yaml
+apiVersion: cluster.open-cluster-management.io/v1alpha1
+kind: AddOnPlacementScore
+metadata:
+  creationTimestamp: "2022-11-28T19:35:56Z"
+  generation: 1
+  name: hosted-clusters-score
+  namespace: local-cluster
+  resourceVersion: "562117"
+  uid: cf1a7e80-6e16-4c39-beab-1d6beb0a4475
+status:
+  conditions:
+  - lastTransitionTime: "2022-11-28T19:36:00Z"
+    message: Hosted cluster count was updated successfully
+    reason: HostedClusterCountUpdated
+    status: "True"
+    type: HostedClusterCountUpdated
+  scores:
+  - name: hostedClustersCount
+    value: 2
+```
+
 3. There should be a `PlacementDecision` in `default` namespace when the placement controller makes a successful decision based on the placement and it should look like this. In this example, the placement selected hosting cluster `cluster1`.
 
 ```yaml
