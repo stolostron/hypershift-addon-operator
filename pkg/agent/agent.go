@@ -270,7 +270,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	secret.SetName("external-managed-kubeconfig")
 	managedClusterAnnoValue, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
 	if !ok || len(managedClusterAnnoValue) == 0 {
-		managedClusterAnnoValue = hc.Spec.InfraID
+		managedClusterAnnoValue = hc.Name
 	}
 	secret.SetNamespace("klusterlet-" + managedClusterAnnoValue)
 	kubeconfigData := secretData["kubeconfig"]
@@ -397,7 +397,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		managedClusterAnnoValue, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
 		if !ok || len(managedClusterAnnoValue) == 0 {
 			c.log.Info("did not find managed cluster's name annotation from hosted cluster, using infra-id")
-			managedClusterAnnoValue = hc.Spec.InfraID
+			managedClusterAnnoValue = hc.Name
 			ok = true
 		}
 
