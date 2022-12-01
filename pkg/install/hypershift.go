@@ -179,6 +179,20 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 	c.log.Info("reinstallCheckRequired = " + strconv.FormatBool(reinstallCheckRequired))
 
+	// Seed the hypershift namespace, the uninstall will remove this namespace.
+	ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hypershiftOperatorKey.Namespace}}
+	if err := c.spokeUncachedClient.Get(ctx, client.ObjectKeyFromObject(ns), ns); err != nil {
+		if apierrors.IsNotFound(err) {
+			if err := c.spokeUncachedClient.Create(ctx, ns); err != nil {
+				return err
+			}
+			// If the hypershift operator namespace does not exist, this is the initial installation.
+			reinstallCheckRequired = false
+		} else {
+			return err
+		}
+	}
+
 	awsPlatform := true
 
 	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.clusterName}
@@ -204,20 +218,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 		if bucketName == "" {
 			return fmt.Errorf("hypershift-operator-oidc-provider-s3-credentials does not contain a bucket key")
-		}
-
-		// Seed the hypershift namespace, the uninstall will remove this namespace.
-		ns := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hypershiftOperatorKey.Namespace}}
-		if err := c.spokeUncachedClient.Get(ctx, client.ObjectKeyFromObject(ns), ns); err != nil {
-			if apierrors.IsNotFound(err) {
-				if err := c.spokeUncachedClient.Create(ctx, ns); err != nil {
-					return err
-				}
-				// If the hypershift operator namespace does not exist, this is the initial installation.
-				reinstallCheckRequired = false
-			} else {
-				return err
-			}
 		}
 
 		if err := c.createAwsSpokeSecret(ctx, se, true); err != nil {
