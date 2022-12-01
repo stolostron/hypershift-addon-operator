@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app: hypershift-cli-download
+  name: hypershift-cli-download
+  namespace: multicluster-engine
+spec:
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: hypershift-cli-download
+status:
+  loadBalancer: {}

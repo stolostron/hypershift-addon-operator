@@ -4,10 +4,15 @@ import (
 	"testing"
 
 	"github.com/go-logr/zapr"
+	consolev1 "github.com/openshift/api/console/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	fakeaddon "open-cluster-management.io/api/client/addon/clientset/versioned/fake"
@@ -59,7 +64,12 @@ func Test_getAgentAddon(t *testing.T) {
 
 func initClient() client.Client {
 	scheme := runtime.NewScheme()
-	//corev1.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
+	operatorsv1alpha1.AddToScheme(scheme)
+	routev1.AddToScheme(scheme)
+	consolev1.AddToScheme(scheme)
+	appsv1.AddToScheme(scheme)
+	rbacv1.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
 	ncb.WithScheme(scheme)

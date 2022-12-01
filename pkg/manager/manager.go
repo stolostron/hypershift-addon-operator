@@ -26,7 +26,12 @@ import (
 	"k8s.io/component-base/version"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	consolev1 "github.com/openshift/api/console/v1"
+	routev1 "github.com/openshift/api/route/v1"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
+	appsv1 "k8s.io/api/apps/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	"open-cluster-management.io/addon-framework/pkg/agent"
@@ -45,6 +50,11 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(genericScheme))
+	utilruntime.Must(operatorsv1alpha1.AddToScheme(genericScheme))
+	utilruntime.Must(routev1.AddToScheme(genericScheme))
+	utilruntime.Must(consolev1.AddToScheme(genericScheme))
+	utilruntime.Must(appsv1.AddToScheme(genericScheme))
+	utilruntime.Must(rbacv1.AddToScheme(genericScheme))
 }
 
 const (
@@ -114,6 +124,14 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 			log.Error(err, "failed to start addon framework manager")
 			os.Exit(1)
 		}
+
+		err = EnableHypershiftCLIDownload(hubClient, log)
+		if err != nil {
+			// unable to install HypershiftCLIDownload is not critical.
+			// log and continue
+			log.Error(err, "failed to enable hypershift CLI download")
+		}
+
 		<-ctx.Done()
 
 		return nil
