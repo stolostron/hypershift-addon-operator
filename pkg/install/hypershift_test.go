@@ -394,38 +394,6 @@ func TestRunHypershiftInstall(t *testing.T) {
 	}
 	aCtrl.hubClient.Create(ctx, pullSecret)
 
-	bucketSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      util.HypershiftBucketSecretName,
-			Namespace: aCtrl.clusterName,
-		},
-		Data: map[string][]byte{
-			"bucket":      []byte(`my-bucket`),
-			"region":      []byte(`us-east-1`),
-			"credentials": []byte(`myCredential`),
-		},
-	}
-	aCtrl.hubClient.Create(ctx, bucketSecret)
-	defer aCtrl.hubClient.Delete(ctx, bucketSecret)
-
-	incompleteDp := &appsv1.Deployment{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Deployment",
-			APIVersion: "apps/v1",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        "operator",
-			Namespace:   "hypershift",
-			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
-		},
-	}
-	aCtrl.hubClient.Create(ctx, incompleteDp)
-
-	// No Spec in hypershift deployment operator - skip all operations
-	err := installHyperShiftOperator(t, ctx, aCtrl, true)
-	assert.Nil(t, err, "is nil if install HyperShift is successful")
-	aCtrl.hubClient.Delete(ctx, incompleteDp)
-
 	dp := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -451,8 +419,36 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, dp)
 	defer aCtrl.hubClient.Delete(ctx, dp)
 
+	// No OIDC secret, but hypershift NS should still be created
+	err := installHyperShiftOperator(t, ctx, aCtrl, true)
+	assert.Nil(t, err, "is nil if install HyperShift is successful")
+
+	// Hypershift NS is created (without OIDc secret)
+	hypershiftNs := &corev1.Namespace{}
+	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: "hypershift"}, hypershiftNs)
+	assert.Nil(t, err, "is nil if the hypershift namespace was created")
+
+	// Install with OIDC secret
+	bucketSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftBucketSecretName,
+			Namespace: aCtrl.clusterName,
+		},
+		Data: map[string][]byte{
+			"bucket":      []byte(`my-bucket`),
+			"region":      []byte(`us-east-1`),
+			"credentials": []byte(`myCredential`),
+		},
+	}
+	aCtrl.hubClient.Create(ctx, bucketSecret)
+	defer aCtrl.hubClient.Delete(ctx, bucketSecret)
+
 	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
+
+	// Hypershift NS is created (with OIDc secret)
+	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: "hypershift"}, hypershiftNs)
+	assert.Nil(t, err, "is nil if the hypershift namespace was created")
 
 	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
 	oidcSecret := &corev1.Secret{
