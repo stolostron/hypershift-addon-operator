@@ -22,7 +22,7 @@ import (
 )
 
 func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error {
-	// get the most current version of MCE CSV from multicluster-engine namespace
+	// get the current version of MCE CSV from multicluster-engine namespace
 	csv, err := GetMCECSV(hubclient, log)
 	if err != nil {
 		log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace")
@@ -49,7 +49,7 @@ func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error
 func GetMCECSV(hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.ClusterServiceVersion, error) {
 	csvlist := &operatorsv1alpha1.ClusterServiceVersionList{}
 
-	listopts := &client.ListOptions{}
+	listopts := &client.ListOptions{Namespace: "multicluster-engine"}
 
 	err := hubclient.List(context.TODO(), csvlist, listopts)
 
@@ -58,7 +58,7 @@ func GetMCECSV(hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.Clu
 		return nil, err
 	}
 
-	names := make([]string, 0, len(csvlist.Items))
+	var names []string
 	for _, csv := range csvlist.Items {
 		if strings.HasPrefix(csv.Name, "multicluster-engine.") {
 			names = append(names, csv.Name)
@@ -84,7 +84,7 @@ func GetMCECSV(hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.Clu
 		return nil, err
 	}
 
-	log.Info("MCE CSV found " + names[0])
+	log.Info("MCE CSV found " + csv.Name)
 	return csv, nil
 }
 
