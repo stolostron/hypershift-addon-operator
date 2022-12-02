@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: hypershift-cli-download
+  name: hypershift-cli-download
+  namespace: multicluster-engine
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: hypershift-cli-download
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: hypershift-cli-download
+        ocm-antiaffinity-selector: hypershift-cli-download
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+                - ppc64le
+                - s390x
+                - arm64
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: ocm-antiaffinity-selector
+                  operator: In
+                  values:
+                  - hypershift-cli-download
+              topologyKey: topology.kubernetes.io/zone
+            weight: 70
+          - podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: ocm-antiaffinity-selector
+                  operator: In
+                  values:
+                  - hypershift-cli-download
+              topologyKey: kubernetes.io/hostname
+            weight: 35
+      containers:
+      - image: docker.io/rokejung/hypershift-addon-operator:1130f
+        imagePullPolicy: IfNotPresent
+        name: hypershift-cli-download
+        ports:
+        - containerPort: 8080
+          name: file-server
+        resources:
+          requests:
+            cpu: 2m
+            memory: 2Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext:
+        runAsNonRoot: true
+      serviceAccount: hypershift-addon-manager-sa
+      serviceAccountName: hypershift-addon-manager-sa
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/infra
+        operator: Exists
+      - effect: NoSchedule
+        key: dedicated
+        operator: Exists

@@ -8,9 +8,10 @@ require (
 	github.com/go-logr/zapr v1.2.3
 	github.com/onsi/ginkgo/v2 v2.1.4
 	github.com/onsi/gomega v1.19.0
-	github.com/openshift/api v0.0.0-20220525145417-ee5b62754c68
+	github.com/openshift/api v0.0.0-20220831183848-09c070622e2c
 	github.com/openshift/hypershift v0.0.0-20220810221813-2b7ac5268ac7
 	github.com/openshift/library-go v0.0.0-20220525173854-9b950a41acdc
+	github.com/operator-framework/api v0.10.7
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.7.2
@@ -20,6 +21,7 @@ require (
 	k8s.io/apimachinery v0.25.0
 	k8s.io/client-go v0.25.0
 	k8s.io/component-base v0.25.0
+	k8s.io/kubernetes v1.13.0
 	open-cluster-management.io/addon-framework v0.5.0
 	open-cluster-management.io/api v0.9.0
 	sigs.k8s.io/controller-runtime v0.12.2
