@@ -56,7 +56,7 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	assert.Equal(t, "multicluster-engine.v2.1.1", csv.Name)
 
 	// upstream CSV should not contain the hypershift cli image
-	cliImage := GetHypershiftCLIDownloadImage(csv, o.log)
+	cliImage := getHypershiftCLIDownloadImage(csv, o.log)
 	assert.Equal(t, "", cliImage)
 
 	// Create downstream MCE 2.2.0 CSV
@@ -74,7 +74,7 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	assert.Nil(t, err, "err nil when mce csv is found")
 	assert.Equal(t, "multicluster-engine.v2.2.1", csv.Name)
 
-	cliImage = GetHypershiftCLIDownloadImage(csv, o.log)
+	cliImage = getHypershiftCLIDownloadImage(csv, o.log)
 	assert.Equal(t, "https://hypershift.cli.image.io", cliImage)
 
 	//

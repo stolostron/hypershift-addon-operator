@@ -30,14 +30,14 @@ func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error
 	}
 
 	// check if the CSV has hypershift_cli image, which is the downstream case
-	cliDownloadImage := GetHypershiftCLIDownloadImage(csv, log)
+	cliDownloadImage := getHypershiftCLIDownloadImage(csv, log)
 	if cliDownloadImage == "" {
 		// in upstream build, there is no hypershift CLI download image
 		log.Info("the hypershift CLI download image was not found in the CSV. Skip enabling the hypershift CLI download")
 		return nil
 	}
 
-	err = DeployHypershiftCLIDownload(hubclient, cliDownloadImage, log)
+	err = deployHypershiftCLIDownload(hubclient, cliDownloadImage, log)
 	if err != nil {
 		log.Error(err, "failed to deploy HypershiftCLIDownload")
 		return err
@@ -88,7 +88,7 @@ func GetMCECSV(hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.Clu
 	return csv, nil
 }
 
-func GetHypershiftCLIDownloadImage(csv *operatorsv1alpha1.ClusterServiceVersion, log logr.Logger) string {
+func getHypershiftCLIDownloadImage(csv *operatorsv1alpha1.ClusterServiceVersion, log logr.Logger) string {
 	for _, relatedImage := range csv.Spec.RelatedImages {
 		if strings.EqualFold(relatedImage.Name, "hypershift_cli") && relatedImage.Image != "" {
 			log.Info("the hypershift CLI download image was found in the CSV " + relatedImage.Image)
@@ -99,7 +99,7 @@ func GetHypershiftCLIDownloadImage(csv *operatorsv1alpha1.ClusterServiceVersion,
 	return ""
 }
 
-func DeployHypershiftCLIDownload(hubclient client.Client, cliImage string, log logr.Logger) error {
+func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log logr.Logger) error {
 	// Set owner reference to the addon manager deployment so that when the feature is disabled, HypershiftCLIDownload
 	// is uninstalled
 	ownerRef, envVars, err := getOwnerRef(hubclient, log)
