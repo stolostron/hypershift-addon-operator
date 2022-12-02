@@ -18,7 +18,7 @@ import (
 )
 
 func createHypershiftAddon(ctx context.Context, client addonv1alpha1client.Interface, namespace, installNamespace string) error {
-	ginkgo.By(fmt.Sprintf("Create hypershift managed cluster addon for %s", namespace))
+	ginkgo.By(fmt.Sprintf("Create hypershift managed cluster addon for %s, installNamespace:%s", namespace, installNamespace))
 	addon := &addonapi.ManagedClusterAddOn{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hypershift-addon",

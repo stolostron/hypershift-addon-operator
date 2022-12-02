@@ -49,7 +49,7 @@ var _ = ginkgo.BeforeSuite(func() {
 		defaultManagedCluster = "local-cluster"
 	}
 
-	defaultInstallNamespace = "open-cluster-management-agent-addon-test"
+	defaultInstallNamespace = "open-cluster-management-agent-addon"
 
 	dynamicClient, err = util.NewDynamicClient()
 	gomega.Expect(err).ToNot(gomega.HaveOccurred())

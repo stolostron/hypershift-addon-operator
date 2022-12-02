@@ -537,6 +537,13 @@ func TestRunHypershiftInstall(t *testing.T) {
 
 	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
+	hsOperatorDeployment := &appsv1.Deployment{}
+	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Namespace: "hypershift", Name: "operator"}, hsOperatorDeployment)
+	assert.Nil(t, err, "is nil if hypershift operator is found")
+	assert.NotNil(t, hsOperatorDeployment.Spec.Template.Spec.ImagePullSecrets, "is not nil if image pull secret is added to the HyperShift operator deployment")
+	hsOperatorDeployment.Spec.Template.Spec.ImagePullSecrets = nil
+	err = aCtrl.spokeUncachedClient.Update(ctx, hsOperatorDeployment)
+	assert.Nil(t, err, "is nil if the hypershift operator is updated successfully to remove the pull secret")
 
 	// Install hypershift job failed
 	go updateHsInstallJobToFailed(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
@@ -552,10 +559,24 @@ func TestRunHypershiftInstall(t *testing.T) {
 	aCtrl.hubClient.Delete(ctx, hsPullSecret)
 
 	err = installHyperShiftOperator(t, ctx, aCtrl, true)
-	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
+	assert.Nil(t, err, "is nil if install HyperShift  is sucessful")
+	hsOperatorDeployment = &appsv1.Deployment{}
+	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Namespace: "hypershift", Name: "operator"}, hsOperatorDeployment)
+	assert.Nil(t, err, "is nil if hypershift operator is found")
+	assert.Nil(t, hsOperatorDeployment.Spec.Template.Spec.ImagePullSecrets, "is nil if image pull secret is not added to the HyperShift operator deployment")
 
-	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: pullSecret.Name, Namespace: hypershiftOperatorKey.Namespace}, hsPullSecret)
-	assert.True(t, err != nil && errors.IsNotFound(err), "is true if the pull secret is not copied to the HyperShift namespace")
+	// Add pull secret back
+	pullSecret = &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      aCtrl.pullSecret,
+			Namespace: aCtrl.addonNamespace,
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(`docker-pull-secret`),
+		},
+	}
+	err = aCtrl.hubClient.Create(ctx, pullSecret)
+	assert.Nil(t, err, "is nil if pull-secret is created sucessfully")
 
 	// Run hypershift install again with s3 bucket secret deleted
 	aCtrl.hubClient.Delete(ctx, bucketSecret)

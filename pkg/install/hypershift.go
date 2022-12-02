@@ -193,6 +193,13 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		}
 	}
 
+	// Copy image pull secret to the HyperShift namespace
+	if c.pullSecret != "" {
+		if err := c.ensurePullSecret(ctx); err != nil {
+			return fmt.Errorf("failed to deploy pull secret to hypershift namespace, err: %w", err)
+		}
+	}
+
 	awsPlatform := true
 
 	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.clusterName}
@@ -230,10 +237,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			"--oidc-storage-provider-s3-secret", util.HypershiftBucketSecretName,
 		}
 		args = append(args, awsArgs...)
-
-		if err := c.ensurePullSecret(ctx); err != nil {
-			return fmt.Errorf("failed to deploy pull secret to hypershift namespace, err: %w", err)
-		}
 
 		//Private link creds
 		privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
@@ -349,11 +352,10 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		return err
 	}
 
-	// Add label to Hypershift deployment
-	err = c.addAddonLabelToDeployment(ctx)
-
+	// Add label and update image pull secret in Hypershift deployment
+	err = c.updateHyperShiftDeployment(ctx)
 	if err != nil {
-		c.log.Error(err, "failed to add addon label to the hypershift operator deployment")
+		c.log.Error(err, "failed to update the hypershift operator deployment")
 	}
 
 	return nil
@@ -415,10 +417,10 @@ func (c *UpgradeController) saveSecretLocally(ctx context.Context, hubSecret *co
 }
 
 func (c *UpgradeController) ensurePullSecret(ctx context.Context) error {
-	obj := &corev1.Secret{}
+	mcePullSecret := &corev1.Secret{}
 	mcePullSecretKey := types.NamespacedName{Name: c.pullSecret, Namespace: c.addonNamespace}
 
-	if err := c.spokeUncachedClient.Get(ctx, mcePullSecretKey, obj); err != nil {
+	if err := c.spokeUncachedClient.Get(ctx, mcePullSecretKey, mcePullSecret); err != nil {
 		if apierrors.IsNotFound(err) {
 			c.log.Info("mce pull secret not found, skip copy it to the hypershift namespace",
 				"namespace", c.addonNamespace, "name", c.pullSecret)
@@ -428,37 +430,22 @@ func (c *UpgradeController) ensurePullSecret(ctx context.Context) error {
 		return fmt.Errorf("failed to get mce pull secret, err: %w", err)
 	}
 
-	hypershiftNs := &corev1.Namespace{
+	hsPullSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: hypershiftOperatorKey.Namespace,
+			Name:      c.pullSecret,
+			Namespace: hypershiftOperatorKey.Namespace,
 		},
 	}
 
-	if err := c.spokeUncachedClient.Create(ctx, hypershiftNs); err != nil && !apierrors.IsAlreadyExists(err) {
-		c.log.Error(err, "failed to create hypershift operator's namespace")
+	c.log.Info(fmt.Sprintf("createorupdate the pull secret (%s/%s)", hsPullSecret.Namespace, hsPullSecret.Name))
+	_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, hsPullSecret, func() error {
+		hsPullSecret.Data = mcePullSecret.Data
+		hsPullSecret.Type = mcePullSecret.Type
+
 		return nil
-	}
+	})
 
-	overrideFunc := func(in *corev1.Secret, ns string) *corev1.Secret {
-		out := &corev1.Secret{}
-		out.SetName(in.GetName())
-		out.SetNamespace(ns)
-
-		out.Immutable = in.Immutable
-		out.Data = in.Data
-		out.StringData = in.StringData
-		out.Type = in.Type
-
-		return out
-	}
-
-	if err := c.spokeUncachedClient.Create(ctx, overrideFunc(obj, hypershiftOperatorKey.Namespace)); err != nil &&
-		!apierrors.IsAlreadyExists(err) {
-
-		return fmt.Errorf("failed to create hypershift operator's namespace, err: %w", err)
-	}
-
-	return nil
+	return err
 }
 
 func (c *UpgradeController) isDeploymentMarked(ctx context.Context) bool {
@@ -506,15 +493,31 @@ func (c *UpgradeController) operatorUpgradable(ctx context.Context) (error, bool
 	return nil, false, nil
 }
 
-func (c *UpgradeController) addAddonLabelToDeployment(ctx context.Context) error {
+func (c *UpgradeController) updateHyperShiftDeployment(ctx context.Context) error {
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
 		return err
 	}
 
-	// Check if deployment is created by the addon
+	// Add annotation
 	obj.Annotations[util.HypershiftAddonAnnotationKey] = util.AddonControllerName
+
+	// Update pull image
+	if c.pullSecret != "" {
+		addonPullSecretKey := types.NamespacedName{Namespace: c.addonNamespace, Name: c.pullSecret}
+		addonPullSecret := &corev1.Secret{}
+		if err := c.spokeUncachedClient.Get(ctx, addonPullSecretKey, addonPullSecret); err == nil {
+			if obj.Spec.Template.Spec.ImagePullSecrets == nil {
+				obj.Spec.Template.Spec.ImagePullSecrets = make([]corev1.LocalObjectReference, 0)
+			}
+			obj.Spec.Template.Spec.ImagePullSecrets = append(obj.Spec.Template.Spec.ImagePullSecrets,
+				corev1.LocalObjectReference{Name: c.pullSecret})
+		} else {
+			c.log.Info("mce pull secret not found, skip update HyperShift operator to use the pull secret")
+		}
+	}
+
 	if err := c.spokeUncachedClient.Update(ctx, obj); err != nil {
 		return err
 	}
