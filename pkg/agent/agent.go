@@ -153,12 +153,6 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		spokeClustersClient: spokeClusterClient,
 	}
 
-	maxHCNum, thresholdHCNum := aCtrl.getMaxAndThresholdHCCount()
-	aCtrl.maxHostedClusterCount = maxHCNum
-	aCtrl.thresholdHostedClusterCount = thresholdHCNum
-	log.Info("the maximum hosted cluster count set to " + strconv.Itoa(aCtrl.maxHostedClusterCount))
-	log.Info("the threshold hosted cluster count set to " + strconv.Itoa(aCtrl.thresholdHostedClusterCount))
-
 	o.Log = o.Log.WithName("agent-reconciler")
 	aCtrl.plugInOption(o)
 
@@ -189,6 +183,12 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	if err := aCtrl.createManagementClusterClaim(ctx); err != nil {
 		return fmt.Errorf("unable to create management cluster claim, err: %w", err)
 	}
+
+	maxHCNum, thresholdHCNum := aCtrl.getMaxAndThresholdHCCount()
+	aCtrl.maxHostedClusterCount = maxHCNum
+	aCtrl.thresholdHostedClusterCount = thresholdHCNum
+	log.Info("the maximum hosted cluster count set to " + strconv.Itoa(aCtrl.maxHostedClusterCount))
+	log.Info("the threshold hosted cluster count set to " + strconv.Itoa(aCtrl.thresholdHostedClusterCount))
 
 	err = aCtrl.SyncAddOnPlacementScore(ctx)
 	if err != nil {
