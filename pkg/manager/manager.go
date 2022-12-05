@@ -125,12 +125,12 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 			os.Exit(1)
 		}
 
-		/*err = EnableHypershiftCLIDownload(hubClient, log)
+		err = EnableHypershiftCLIDownload(hubClient, log)
 		if err != nil {
 			// unable to install HypershiftCLIDownload is not critical.
 			// log and continue
 			log.Error(err, "failed to enable hypershift CLI download")
-		}*/
+		}
 
 		<-ctx.Done()
 
