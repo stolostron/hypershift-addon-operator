@@ -124,8 +124,8 @@ func generateClusterClientFromSecret(secret *corev1.Secret) (clusterclientset.In
 
 // As the number of hosted cluster count reaches the max and threshold hosted cluster counts
 // are used to generate two cluster claims:
-// "hostedclustercount.above.threshold.hypershift.openshift.io" = true when the count > threshold
-// "hostedclustercount.full.hypershift.openshift.io" = true when the count >= max
+// "above.threshold.hostedclustercount.hypershift.openshift.io" = true when the count > threshold
+// "full.hostedclustercount.hypershift.openshift.io" = true when the count >= max
 // Both max and threshold numbers should be valid positive integer numbers and max >= threshold.
 // If not, they default to 80 max and 60 threshold.
 func (c *agentController) getMaxAndThresholdHCCount() (int, int) {
