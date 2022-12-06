@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"strconv"
 
@@ -21,9 +22,11 @@ const (
 	// labelExcludeBackup is true for the local-cluster will not be backed up into velero
 	labelExcludeBackup = "velero.io/exclude-from-backup"
 
-	hypershiftManagementClusterClaimKey   = "hostingcluster.hypershift.openshift.io"
-	hypershiftHostedClusterClaimKey       = "hostedcluster.hypershift.openshift.io"
-	hostedClusterCountFullClusterClaimKey = "hostedclustercount.full.hypershift.openshift.io"
+	hypershiftManagementClusterClaimKey             = "hostingcluster.hypershift.openshift.io"
+	hypershiftHostedClusterClaimKey                 = "hostedcluster.hypershift.openshift.io"
+	hostedClusterCountFullClusterClaimKey           = "full.hostedclustercount.hypershift.openshift.io"
+	hostedClusterCountAboveThresholdClusterClaimKey = "above.threshold.hostedclustercount.hypershift.openshift.io"
+	hostedClusterCountZeroClusterClaimKey           = "zero.hostedclustercount.hypershift.openshift.io"
 )
 
 func newClusterClaim(name, value string) *clusterv1alpha1.ClusterClaim {
@@ -55,6 +58,7 @@ func createOrUpdate(ctx context.Context, client clusterclientset.Interface, newC
 			return fmt.Errorf("unable to update ClusterClaim %q: %w", oldClaim.Name, err)
 		}
 	}
+
 	return nil
 }
 
@@ -63,14 +67,24 @@ func (c *agentController) createManagementClusterClaim(ctx context.Context) erro
 	return createOrUpdate(ctx, c.spokeClustersClient, managementClaim)
 }
 
-func (c *agentController) createHostedClusterCountClusterClaim(ctx context.Context, count int) error {
-	if count >= util.MaxHostedClusterCount {
-		c.log.Info(fmt.Sprintf("ATTENTION: the hosted cluster count has reached the maximum %s.", strconv.Itoa(util.MaxHostedClusterCount)))
+func (c *agentController) createHostedClusterFullClusterClaim(ctx context.Context, count int) error {
+	if count >= c.maxHostedClusterCount {
+		c.log.Info(fmt.Sprintf("ATTENTION: the hosted cluster count has reached the maximum %s.", strconv.Itoa(c.maxHostedClusterCount)))
 	} else {
-		c.log.Info(fmt.Sprintf("the hosted cluster count has not reached the maximum %s yet. current count is %s", strconv.Itoa(util.MaxHostedClusterCount), strconv.Itoa(count)))
+		c.log.Info(fmt.Sprintf("the hosted cluster count has not reached the maximum %s yet. current count is %s", strconv.Itoa(c.maxHostedClusterCount), strconv.Itoa(count)))
 	}
-	managementClaim := newClusterClaim(hostedClusterCountFullClusterClaimKey, strconv.FormatBool(count >= util.MaxHostedClusterCount))
-	return createOrUpdate(ctx, c.spokeClustersClient, managementClaim)
+	hcFullClaim := newClusterClaim(hostedClusterCountFullClusterClaimKey, strconv.FormatBool(count >= c.maxHostedClusterCount))
+	return createOrUpdate(ctx, c.spokeClustersClient, hcFullClaim)
+}
+
+func (c *agentController) createHostedClusterThresholdClusterClaim(ctx context.Context, count int) error {
+	hcThresholdClaim := newClusterClaim(hostedClusterCountAboveThresholdClusterClaimKey, strconv.FormatBool(count >= c.thresholdHostedClusterCount))
+	return createOrUpdate(ctx, c.spokeClustersClient, hcThresholdClaim)
+}
+
+func (c *agentController) createHostedClusterZeroClusterClaim(ctx context.Context, count int) error {
+	hcZeroClaim := newClusterClaim(hostedClusterCountZeroClusterClaimKey, strconv.FormatBool(count == 0))
+	return createOrUpdate(ctx, c.spokeClustersClient, hcZeroClaim)
 }
 
 func (c *agentController) createHostedClusterClaim(ctx context.Context, secretKey types.NamespacedName,
@@ -106,4 +120,56 @@ func generateClusterClientFromSecret(secret *corev1.Secret) (clusterclientset.In
 	}
 
 	return clusterClient, nil
+}
+
+// As the number of hosted cluster count reaches the max and threshold hosted cluster counts
+// are used to generate two cluster claims:
+// "above.threshold.hostedclustercount.hypershift.openshift.io" = true when the count > threshold
+// "full.hostedclustercount.hypershift.openshift.io" = true when the count >= max
+// Both max and threshold numbers should be valid positive integer numbers and max >= threshold.
+// If not, they default to 80 max and 60 threshold.
+func (c *agentController) getMaxAndThresholdHCCount() (int, int) {
+	maxNum := util.DefaultMaxHostedClusterCount
+	envMax := os.Getenv("HC_MAX_NUMBER")
+	if envMax == "" {
+		c.log.Info("env variable HC_MAX_NUMBER not found, defaulting to 80")
+	}
+
+	maxNum, err := strconv.Atoi(envMax)
+	if err != nil {
+		c.log.Error(nil, fmt.Sprintf("failed to convert env variable HC_MAX_NUMBER %s to integer, defaulting to 80", envMax))
+		maxNum = util.DefaultMaxHostedClusterCount
+	}
+
+	if maxNum < 1 {
+		c.log.Error(nil, fmt.Sprintf("invalid HC_MAX_NUMBER %s, defaulting to 80", envMax))
+		maxNum = util.DefaultMaxHostedClusterCount
+	}
+
+	thresholdNum := util.DefaultThresholdHostedClusterCount
+	envThreshold := os.Getenv("HC_THRESHOLD_NUMBER")
+	if envThreshold == "" {
+		c.log.Info("env variable HC_THRESHOLD_NUMBER not found, defaulting to 60")
+	}
+
+	thresholdNum, err = strconv.Atoi(envThreshold)
+	if err != nil {
+		c.log.Error(nil, fmt.Sprintf("failed to convert env variable HC_THRESHOLD_NUMBER %s to integer, defaulting to 60", envThreshold))
+		thresholdNum = util.DefaultThresholdHostedClusterCount
+	}
+
+	if thresholdNum < 1 {
+		c.log.Error(nil, fmt.Sprintf("invalid HC_MAX_NUMBER %s, defaulting to 60", envThreshold))
+		thresholdNum = util.DefaultThresholdHostedClusterCount
+	}
+
+	if maxNum < thresholdNum {
+		c.log.Error(nil, fmt.Sprintf(
+			"invalid HC_MAX_NUMBER %s HC_THRESHOLD_NUMBER %s: HC_MAX_NUMBER must be equal or bigger than HC_THRESHOLD_NUMBER, defaulting to 80 and 60 for max and threshold counts",
+			envMax, envThreshold))
+		maxNum = util.DefaultMaxHostedClusterCount
+		thresholdNum = util.DefaultThresholdHostedClusterCount
+	}
+
+	return maxNum, thresholdNum
 }

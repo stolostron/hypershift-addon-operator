@@ -477,7 +477,7 @@ metadata:
   annotations:
     import.open-cluster-management.io/hosting-cluster-name: my-hosting-cluster
     import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
-    addon.open-cluster-management.io/enable-hosted-mode: "true"
+    addon.open-cluster-management.io/enable-hosted-mode-addons: "true"
     open-cluster-management/created-via: other
   labels:
     cloud: auto-detect

@@ -3,11 +3,14 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/go-logr/zapr"
 	"github.com/openshift/library-go/pkg/operator/events/eventstesting"
 	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -149,4 +152,59 @@ func TestGenerateClusterClientFromSecret(t *testing.T) {
 
 	_, err := generateClusterClientFromSecret(kcSecret)
 	assert.NotNil(t, err, "is not nil if it fails to get a cluster client")
+}
+
+func Test_getMaxAndThresholdHCCount(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &agentController{
+		log: zapr.NewLogger(zapLog),
+	}
+
+	// No HC_MAX_NUMBER, HC_THRESHOLD_NUMBER env variables should return default values
+	max, threshold := aCtrl.getMaxAndThresholdHCCount()
+	assert.Equal(t, 80, max)
+	assert.Equal(t, 60, threshold)
+
+	// invalid HC_MAX_NUMBER should return default values
+	os.Setenv("HC_MAX_NUMBER", "abc")
+	max, threshold = aCtrl.getMaxAndThresholdHCCount()
+	assert.Equal(t, 80, max)
+	assert.Equal(t, 60, threshold)
+
+	// invalid HC_MAX_NUMBER should return default values
+	os.Setenv("HC_MAX_NUMBER", "0")
+	max, threshold = aCtrl.getMaxAndThresholdHCCount()
+	assert.Equal(t, 80, max)
+	assert.Equal(t, 60, threshold)
+
+	// no HC_THRESHOLD_NUMBER should return default values for HC_THRESHOLD_NUMBER
+	os.Setenv("HC_MAX_NUMBER", "70")
+	max, threshold = aCtrl.getMaxAndThresholdHCCount()
+	assert.Equal(t, 70, max)
+	assert.Equal(t, 60, threshold)
+
+	// invalid HC_THRESHOLD_NUMBER should return default values
+	os.Setenv("HC_THRESHOLD_NUMBER", "abc")
+	max, threshold = aCtrl.getMaxAndThresholdHCCount()
+	assert.Equal(t, 70, max)
+	assert.Equal(t, 60, threshold)
+
+	// invalid HC_THRESHOLD_NUMBER should return default values
+	os.Setenv("HC_THRESHOLD_NUMBER", "-9")
+	max, threshold = aCtrl.getMaxAndThresholdHCCount()
+	assert.Equal(t, 70, max)
+	assert.Equal(t, 60, threshold)
+
+	// valid HC_MAX_NUMBER and HC_THRESHOLD_NUMBER
+	os.Setenv("HC_THRESHOLD_NUMBER", "50")
+	max, threshold = aCtrl.getMaxAndThresholdHCCount()
+	assert.Equal(t, 70, max)
+	assert.Equal(t, 50, threshold)
+
+	// if HC_THRESHOLD_NUMBER > HC_MAX_NUMBER, invalid. return default values
+	os.Setenv("HC_THRESHOLD_NUMBER", "50")
+	os.Setenv("HC_MAX_NUMBER", "40")
+	max, threshold = aCtrl.getMaxAndThresholdHCCount()
+	assert.Equal(t, 80, max)
+	assert.Equal(t, 60, threshold)
 }

@@ -69,11 +69,11 @@ kind: Config`)
 	// Create hosted cluster
 	hc := getHostedCluster(hcNN)
 	err := aCtrl.hubClient.Create(ctx, hc)
-	assert.Nil(t, err, "err nil when hosted cluster is created successfull")
+	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
 	// Reconcile with annotation
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
-	assert.Nil(t, err, "err nil when reconcile was successfull")
+	assert.Nil(t, err, "err nil when reconcile was successfully")
 
 	// Secret for kubconfig and kubeadmin-password are created
 	secret := &corev1.Secret{}
@@ -96,7 +96,7 @@ kind: Config`)
 	// Delete hosted cluster and reconcile
 	aCtrl.hubClient.Delete(ctx, hc)
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
-	assert.Nil(t, err, "err nil when reconcile was successfull")
+	assert.Nil(t, err, "err nil when reconcile was successfully")
 
 	err = aCtrl.hubClient.Get(ctx, kcSecretNN, secret)
 	assert.True(t, err != nil && errors.IsNotFound(err), "is true when the admin kubeconfig secret is deleted")
@@ -147,11 +147,11 @@ kind: Config`)
 	hc := getHostedCluster(hcNN)
 	hc.Annotations = map[string]string{util.ManagedClusterAnnoKey: "infra-abcdef"}
 	err := aCtrl.hubClient.Create(ctx, hc)
-	assert.Nil(t, err, "err nil when hosted cluster is created successfull")
+	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
 	// Reconcile with no annotation
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
-	assert.Nil(t, err, "err nil when reconcile was successfull")
+	assert.Nil(t, err, "err nil when reconcile was successfully")
 
 	// Secret for kubconfig and kubeadmin-password are created
 	secret := &corev1.Secret{}
@@ -181,7 +181,7 @@ kind: Config`)
 	// Delete hosted cluster and reconcile
 	aCtrl.hubClient.Delete(ctx, hc)
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
-	assert.Nil(t, err, "err nil when reconcile was successfull")
+	assert.Nil(t, err, "err nil when reconcile was successfully")
 
 	err = aCtrl.hubClient.Get(ctx, kcSecretNN, secret)
 	assert.True(t, err != nil && errors.IsNotFound(err), "is true when the admin kubeconfig secret is deleted")
@@ -197,71 +197,176 @@ func TestHostedClusterCount(t *testing.T) {
 	fakeClusterCS := clustercsfake.NewSimpleClientset()
 
 	aCtrl := &agentController{
-		spokeClustersClient: fakeClusterCS,
-		spokeUncachedClient: client,
-		spokeClient:         client,
-		hubClient:           client,
-		log:                 zapr.NewLogger(zapLog),
+		spokeClustersClient:         fakeClusterCS,
+		spokeUncachedClient:         client,
+		spokeClient:                 client,
+		hubClient:                   client,
+		log:                         zapr.NewLogger(zapLog),
+		maxHostedClusterCount:       5,
+		thresholdHostedClusterCount: 3,
 	}
+
+	err := aCtrl.SyncAddOnPlacementScore(ctx)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
+
+	// No HC yet, so the zero cluster claim value should be true
+	zeroClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountZeroClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count zero clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(true), zeroClusterClaim.Spec.Value)
 
 	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
 
 	i := 0
-	for i < (util.MaxHostedClusterCount - 1) {
+	for i < (aCtrl.maxHostedClusterCount - 1) {
 		hc := getHostedCluster(hcNN)
 		hc.SetName("test-" + strconv.Itoa(i))
 		err := aCtrl.hubClient.Create(ctx, hc)
 		defer aCtrl.hubClient.Delete(ctx, hc)
-		assert.Nil(t, err, "err nil when hosted cluster is created successfull")
+		assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 		i++
 	}
 
-	err := aCtrl.SyncAddOnPlacementScore(ctx)
-	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
+	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
-	clusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
-	assert.Nil(t, err, "is nil when the clusterclaim is found")
-	assert.Equal(t, strconv.FormatBool(false), clusterClaim.Spec.Value)
+	// Created 4 HCs, max 5 so the full cluster claim value should be false
+	fullClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count full clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), fullClusterClaim.Spec.Value)
+
+	// Created 4 HCs, threshold 3 so the threshold cluster claim value should be true
+	thresholdClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountAboveThresholdClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count at threshold clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(true), thresholdClusterClaim.Spec.Value)
+
+	// Created 4 HCs, so the zero cluster claim value should be false
+	zeroClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountZeroClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count zero clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), zeroClusterClaim.Spec.Value)
 
 	placementScore := &clusterv1alpha1.AddOnPlacementScore{}
 	placementScoreNN := types.NamespacedName{Name: util.HostedClusterScoresResourceName, Namespace: aCtrl.clusterName}
 	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
 	assert.Nil(t, err, "is nil when addonPlacementScore is found")
-	assert.Equal(t, int32(util.MaxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
+	assert.Equal(t, int32(aCtrl.maxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
 
 	// Create one more hosted cluster and expect the cluserclaim to have hostedclustercount.full.hypershift.openshift.io=true
 	// indicating it reached the maximum number of hosted clusters
 	hc := getHostedCluster(hcNN)
 	hc.SetName("test-80")
 	err = aCtrl.hubClient.Create(ctx, hc)
-	assert.Nil(t, err, "err nil when hosted cluster is created successfull")
+	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
 	err = aCtrl.SyncAddOnPlacementScore(ctx)
-	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
-	clusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	// 5 HCs, max 5 so the full cluster claim value should be true
+	fullClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
 	assert.Nil(t, err, "is nil when the clusterclaim is found")
-	assert.Equal(t, strconv.FormatBool(true), clusterClaim.Spec.Value)
+	assert.Equal(t, strconv.FormatBool(true), fullClusterClaim.Spec.Value)
+
+	// Created 5 HCs, threshold 3 so the threshold cluster claim value should be true
+	thresholdClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountAboveThresholdClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count at threshold clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(true), thresholdClusterClaim.Spec.Value)
+
+	// Created 5 HCs, so the zero cluster claim value should be false
+	zeroClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountZeroClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count zero clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), zeroClusterClaim.Spec.Value)
 
 	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
 	assert.Nil(t, err, "is nil when addonPlacementScore is found")
-	assert.Equal(t, int32(util.MaxHostedClusterCount), placementScore.Status.Scores[0].Value)
+	assert.Equal(t, int32(aCtrl.maxHostedClusterCount), placementScore.Status.Scores[0].Value)
 
 	// Delete one hosted cluster and expect the cluserclaim to have hostedclustercount.full.hypershift.openshift.io=false
 	// indicating it did not reach the maximum number of hosted clusters after removing one
 	err = aCtrl.hubClient.Delete(ctx, hc)
-	assert.Nil(t, err, "err nil when hosted cluster is deleted successfull")
+	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
 
 	err = aCtrl.SyncAddOnPlacementScore(ctx)
-	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
-	clusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	fullClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
 	assert.Nil(t, err, "is nil when the clusterclaim is found")
-	assert.Equal(t, strconv.FormatBool(false), clusterClaim.Spec.Value)
+	assert.Equal(t, strconv.FormatBool(false), fullClusterClaim.Spec.Value)
+
+	// Created 4 HCs, threshold 3 so the threshold cluster claim value should be true
+	thresholdClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountAboveThresholdClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count at threshold clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(true), thresholdClusterClaim.Spec.Value)
+
+	// Created 4 HCs, so the zero cluster claim value should be false
+	zeroClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountZeroClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count zero clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), zeroClusterClaim.Spec.Value)
 
 	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
 	assert.Nil(t, err, "is nil when addonPlacementScore is found")
-	assert.Equal(t, int32(util.MaxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
+	assert.Equal(t, int32(aCtrl.maxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
+
+	hcNN = types.NamespacedName{Name: "test-3", Namespace: "clusters"}
+	hc = &hyperv1alpha1.HostedCluster{}
+	err = aCtrl.hubClient.Get(ctx, hcNN, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is found")
+	err = aCtrl.hubClient.Delete(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
+
+	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
+
+	// 3 HCs, threshold 3 so the threshold cluster claim value should be true
+	thresholdClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountAboveThresholdClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count at threshold clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(true), thresholdClusterClaim.Spec.Value)
+
+	hcNN = types.NamespacedName{Name: "test-2", Namespace: "clusters"}
+	hc = &hyperv1alpha1.HostedCluster{}
+	err = aCtrl.hubClient.Get(ctx, hcNN, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is found")
+	err = aCtrl.hubClient.Delete(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
+
+	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
+
+	// 2 HCs, threshold 3 so the threshold cluster claim value should be true
+	thresholdClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountAboveThresholdClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count at threshold clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), thresholdClusterClaim.Spec.Value)
+
+	hcNN = types.NamespacedName{Name: "test-1", Namespace: "clusters"}
+	hc = &hyperv1alpha1.HostedCluster{}
+	err = aCtrl.hubClient.Get(ctx, hcNN, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is found")
+	err = aCtrl.hubClient.Delete(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
+
+	hcNN = types.NamespacedName{Name: "test-0", Namespace: "clusters"}
+	hcNN.Name = "test-0"
+	hc = &hyperv1alpha1.HostedCluster{}
+	err = aCtrl.hubClient.Get(ctx, hcNN, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is found")
+	err = aCtrl.hubClient.Delete(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
+
+	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
+
+	// 0 HC, max 5 so the full cluster claim value should be false
+	fullClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), fullClusterClaim.Spec.Value)
+
+	// 0 HC, threshold 3 so the threshold cluster claim value should be false
+	thresholdClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountAboveThresholdClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count at threshold clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), thresholdClusterClaim.Spec.Value)
+
+	// 0 HC, so the zero cluster claim value should be true
+	zeroClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountZeroClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count zero clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(true), zeroClusterClaim.Spec.Value)
 }
 
 func TestHostedClusterCountErrorCase(t *testing.T) {
@@ -272,11 +377,13 @@ func TestHostedClusterCountErrorCase(t *testing.T) {
 	fakeClusterCS := clustercsfake.NewSimpleClientset()
 
 	aCtrl := &agentController{
-		spokeClustersClient: fakeClusterCS,
-		spokeUncachedClient: client,
-		spokeClient:         client,
-		hubClient:           client,
-		log:                 zapr.NewLogger(zapLog),
+		spokeClustersClient:         fakeClusterCS,
+		spokeUncachedClient:         client,
+		spokeClient:                 client,
+		hubClient:                   client,
+		log:                         zapr.NewLogger(zapLog),
+		maxHostedClusterCount:       80,
+		thresholdHostedClusterCount: 60,
 	}
 
 	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
@@ -287,12 +394,12 @@ func TestHostedClusterCountErrorCase(t *testing.T) {
 		hc.SetName("test-" + strconv.Itoa(i))
 		err := aCtrl.hubClient.Create(ctx, hc)
 		defer aCtrl.hubClient.Delete(ctx, hc)
-		assert.Nil(t, err, "err nil when hosted cluster is created successfull")
+		assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 		i++
 	}
 
 	err := aCtrl.SyncAddOnPlacementScore(ctx)
-	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	clusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
 	assert.Nil(t, err, "is nil when the clusterclaim is found")
@@ -309,12 +416,24 @@ func TestHostedClusterCountErrorCase(t *testing.T) {
 	// The score should still be 5
 	aCtrl.spokeUncachedClient = initErrorClient()
 	err = aCtrl.SyncAddOnPlacementScore(ctx)
-	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfull")
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
 	assert.Nil(t, err, "is nil when addonPlacementScore is found")
 	assert.Equal(t, metav1.ConditionFalse, placementScore.Status.Conditions[0].Status)
 	assert.Equal(t, int32(5), placementScore.Status.Scores[0].Value)
+
+	fullClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), fullClusterClaim.Spec.Value)
+
+	thresholdClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountAboveThresholdClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count at threshold clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), thresholdClusterClaim.Spec.Value)
+
+	zeroClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountZeroClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count zero clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), zeroClusterClaim.Spec.Value)
 }
 
 func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {

@@ -236,7 +236,7 @@ Delete the hypershift-addon
     $ oc delete managedclusteraddon -n local-cluster hypershift-addon
     ```
 
-**NOTE:** Deleting the hypershift-addon will not destroy existing hosted clusters, nor the hypershift operator.
+**NOTE:** Deleting the hypershift-addon will remove only the hypershift addon agent from the managed cluster if there are hosted clusters. If there is no hosted cluster, deleting the hypershift-addon will also uninstall the hypershift operator on the managed cluster.
 
 ## Troubleshooting
 

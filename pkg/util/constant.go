@@ -73,8 +73,10 @@ const (
 	// AddOnPlacementScore score name
 	HostedClusterScoresScoreName = "hostedClustersCount"
 
-	// Maximum hosted cluster count on a hosting cluster
-	MaxHostedClusterCount = 80
+	// Default xaximum hosted cluster count on a hosting cluster
+	DefaultMaxHostedClusterCount = 80
+	// Default threshold hosted cluster count on a hosting cluster
+	DefaultThresholdHostedClusterCount = 60
 )
 
 // GenerateClientConfigFromSecret generate a client config from a given secret

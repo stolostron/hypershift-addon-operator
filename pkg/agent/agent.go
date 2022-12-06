@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -183,6 +184,12 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to create management cluster claim, err: %w", err)
 	}
 
+	maxHCNum, thresholdHCNum := aCtrl.getMaxAndThresholdHCCount()
+	aCtrl.maxHostedClusterCount = maxHCNum
+	aCtrl.thresholdHostedClusterCount = thresholdHCNum
+	log.Info("the maximum hosted cluster count set to " + strconv.Itoa(aCtrl.maxHostedClusterCount))
+	log.Info("the threshold hosted cluster count set to " + strconv.Itoa(aCtrl.thresholdHostedClusterCount))
+
 	err = aCtrl.SyncAddOnPlacementScore(ctx)
 	if err != nil {
 		// AddOnPlacementScore must be created initially
@@ -223,13 +230,15 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 }
 
 type agentController struct {
-	hubClient           client.Client
-	spokeUncachedClient client.Client
-	spokeClient         client.Client              //local for agent
-	spokeClustersClient clusterclientset.Interface // client used to create cluster claim for the hypershift management cluster
-	log                 logr.Logger
-	recorder            events.Recorder
-	clusterName         string
+	hubClient                   client.Client
+	spokeUncachedClient         client.Client
+	spokeClient                 client.Client              //local for agent
+	spokeClustersClient         clusterclientset.Interface // client used to create cluster claim for the hypershift management cluster
+	log                         logr.Logger
+	recorder                    events.Recorder
+	clusterName                 string
+	maxHostedClusterCount       int
+	thresholdHostedClusterCount int
 }
 
 func (c *agentController) plugInOption(o *AgentOptions) {
@@ -478,7 +487,6 @@ func (c *agentController) isHostedControlPlaneAvailable(status hyperv1alpha1.Hos
 }
 
 func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
-
 	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "AddOnPlacementScore",
@@ -518,10 +526,11 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 			return err
 		}
 	} else {
+		hcCount := len(hcList.Items)
 		scores := []clusterv1alpha1.AddOnPlacementScoreItem{
 			{
 				Name:  util.HostedClusterScoresScoreName,
-				Value: int32(len(hcList.Items)),
+				Value: int32(hcCount),
 			},
 		}
 
@@ -539,13 +548,26 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 			c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))
 			return err
 		}
-	}
 
-	c.log.Info(fmt.Sprintf("updated the addOnPlacementScore for %s: %v", c.clusterName, len(hcList.Items)))
+		c.log.Info(fmt.Sprintf("updated the addOnPlacementScore for %s: %v", c.clusterName, hcCount))
 
-	if err := c.createHostedClusterCountClusterClaim(ctx, len(hcList.Items)); err != nil {
-		c.log.Error(err, "unable to create hosted cluster count cluster claim")
-		return err
+		// Based on the new HC count, update the zero, threshold, full cluster claim values.
+		if err := c.createHostedClusterFullClusterClaim(ctx, hcCount); err != nil {
+			c.log.Error(err, "failed to create or update hosted cluster full cluster claim")
+			return err
+		}
+
+		if err = c.createHostedClusterThresholdClusterClaim(ctx, hcCount); err != nil {
+			c.log.Error(err, "failed to create or update hosted cluster threshold cluster claim")
+			return err
+		}
+
+		if err = c.createHostedClusterZeroClusterClaim(ctx, hcCount); err != nil {
+			c.log.Error(err, "failed to create hosted cluster zero cluster claim")
+			return err
+		}
+
+		c.log.Info("updated the hosted cluster cound cluster claims successfully")
 	}
 
 	return nil
