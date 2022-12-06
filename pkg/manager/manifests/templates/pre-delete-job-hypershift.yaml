@@ -26,4 +26,7 @@ spec:
           - "cleanup"
           - "--addon-namespace={{ .AddonInstallNamespace }}"
           - "--cluster-name={{ .ClusterName }}"
+      imagePullSecrets:
+      - name: "{{ .MulticlusterEnginePullSecret }}"  
+      
 
