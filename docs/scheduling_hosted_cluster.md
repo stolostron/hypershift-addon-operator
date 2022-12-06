@@ -37,7 +37,7 @@ spec:
             purpose: production
         claimSelector:
           matchExpressions:
-            - key: hostedclustercount.full.hypershift.openshift.io
+            - key: full.hostedclustercount.hypershift.openshift.io
               operator: In
               values:
                 - "false"
@@ -54,7 +54,7 @@ spec:
 
 This placement considers managed hosting clusters that belong to `default` cluster set and selects only one cluster.
 
-With the predicates settings, this placement excludes managed clusters with clusterClaim `hostedclustercount.full.hypershift.openshift.io=true` and without label `purpose: production`. The hypershift addon agent sets the cluster claim to `"true"` when the number of hosted clusters on the hosting cluster has reached 80. With the label selector, you can easily take one or more hosting clusters out of placement consideration by removing the specified label from the managed clusters. Then with the prioritizerPolicy settings, this placement selects a hosting cluster with the least `hostedClustersCount` score which is contained in `AddOnPlacementScore` resource named `hosted-clusters-score` in the hosting cluster's namespace in the hub cluster. The hypershift addon agent constantly updates this `AddOnPlacementScore`. The score is multiplied by the weight and the cluster with the highest score gets selected. 
+With the predicates settings, this placement excludes managed clusters with clusterClaim `full.hostedclustercount.hypershift.openshift.io=true` and without label `purpose: production`. The hypershift addon agent sets the cluster claim to `"true"` when the number of hosted clusters on the hosting cluster has reached 80. With the label selector, you can easily take one or more hosting clusters out of placement consideration by removing the specified label from the managed clusters. Then with the prioritizerPolicy settings, this placement selects a hosting cluster with the least `hostedClustersCount` score which is contained in `AddOnPlacementScore` resource named `hosted-clusters-score` in the hosting cluster's namespace in the hub cluster. The hypershift addon agent constantly updates this `AddOnPlacementScore`. The score is multiplied by the weight and the cluster with the highest score gets selected. 
 
 This is a sample `AddOnPlacementScore` resource named `hosted-clusters-score` in the hosting cluster's namespace in the hub cluster.
 
@@ -83,7 +83,7 @@ status:
 This is a sample cluster claim that gets updated in the hosting cluster's `ManagedCluster` resource. The default maximum number of hosted clusters is 80.
 
 ```yaml
-  - name: hostedclustercount.full.hypershift.openshift.io
+  - name: full.hostedclustercount.hypershift.openshift.io
     value: "false"
 ```
 
@@ -119,7 +119,7 @@ status:
 This is a sample cluster claim that gets updated in the hosting cluster's `ManagedCluster` resource on the hub cluster. The value becomes `"true"` when there is no hosted cluster on the hosting managed cluster. You can use this cluster claim in a `Placement` to get the list of hosting clusters with no hosted cluster.
 
 ```yaml
-  - name: hostedclustercount.zero.hypershift.openshift.io
+  - name: zero.hostedclustercount.hypershift.openshift.io
     value: "true"
 ```
 
@@ -141,7 +141,7 @@ spec:
             purpose: production
         claimSelector:
           matchExpressions:
-            - key: hostedclustercount.zero.hypershift.openshift.io
+            - key: zero.hostedclustercount.hypershift.openshift.io
               operator: In
               values:
                 - "true"
@@ -152,7 +152,7 @@ spec:
 This is a sample cluster claim that gets updated in the hosting cluster's `ManagedCluster` resource on the hub cluster. The value becomes `"true"` when the number of hosted clusters on the hosting managed cluster exceeds (>=) the threshold number. The default threshold is 60 hosted clusters. You can use this cluster claim in a `Placement` to get the list of hosting clusters that either have or have not exceeded the threshold.
 
 ```yaml
-  - name: hostedclustercount.above.threshold.hypershift.openshift.io
+  - name: above.threshold.hostedclustercount.hypershift.openshift.io
     value: "true"
 ```
 
@@ -174,7 +174,7 @@ spec:
             purpose: production
         claimSelector:
           matchExpressions:
-            - key: hostedclustercount.above.threshold.hypershift.openshift.io
+            - key: above.threshold.hostedclustercount.hypershift.openshift.io
               operator: In
               values:
                 - "false"

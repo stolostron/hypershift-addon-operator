@@ -24,9 +24,9 @@ const (
 
 	hypershiftManagementClusterClaimKey             = "hostingcluster.hypershift.openshift.io"
 	hypershiftHostedClusterClaimKey                 = "hostedcluster.hypershift.openshift.io"
-	hostedClusterCountFullClusterClaimKey           = "hostedclustercount.full.hypershift.openshift.io"
-	hostedClusterCountAboveThresholdClusterClaimKey = "hostedclustercount.above.threshold.hypershift.openshift.io"
-	hostedClusterCountZeroClusterClaimKey           = "hostedclustercount.zero.hypershift.openshift.io"
+	hostedClusterCountFullClusterClaimKey           = "full.hostedclustercount.hypershift.openshift.io"
+	hostedClusterCountAboveThresholdClusterClaimKey = "above.threshold.hostedclustercount.hypershift.openshift.io"
+	hostedClusterCountZeroClusterClaimKey           = "zero.hostedclustercount.hypershift.openshift.io"
 )
 
 func newClusterClaim(name, value string) *clusterv1alpha1.ClusterClaim {
@@ -129,7 +129,7 @@ func generateClusterClientFromSecret(secret *corev1.Secret) (clusterclientset.In
 // Both max and threshold numbers should be valid positive integer numbers and max >= threshold.
 // If not, they default to 80 max and 60 threshold.
 func (c *agentController) getMaxAndThresholdHCCount() (int, int) {
-	maxNum := 80
+	maxNum := util.DefaultMaxHostedClusterCount
 	envMax := os.Getenv("HC_MAX_NUMBER")
 	if envMax == "" {
 		c.log.Info("env variable HC_MAX_NUMBER not found, defaulting to 80")
@@ -138,15 +138,15 @@ func (c *agentController) getMaxAndThresholdHCCount() (int, int) {
 	maxNum, err := strconv.Atoi(envMax)
 	if err != nil {
 		c.log.Error(nil, fmt.Sprintf("failed to convert env variable HC_MAX_NUMBER %s to integer, defaulting to 80", envMax))
-		maxNum = 80
+		maxNum = util.DefaultMaxHostedClusterCount
 	}
 
 	if maxNum < 1 {
 		c.log.Error(nil, fmt.Sprintf("invalid HC_MAX_NUMBER %s, defaulting to 80", envMax))
-		maxNum = 80
+		maxNum = util.DefaultMaxHostedClusterCount
 	}
 
-	thresholdNum := 60
+	thresholdNum := util.DefaultThresholdHostedClusterCount
 	envThreshold := os.Getenv("HC_THRESHOLD_NUMBER")
 	if envThreshold == "" {
 		c.log.Info("env variable HC_THRESHOLD_NUMBER not found, defaulting to 60")
@@ -155,20 +155,20 @@ func (c *agentController) getMaxAndThresholdHCCount() (int, int) {
 	thresholdNum, err = strconv.Atoi(envThreshold)
 	if err != nil {
 		c.log.Error(nil, fmt.Sprintf("failed to convert env variable HC_THRESHOLD_NUMBER %s to integer, defaulting to 60", envThreshold))
-		thresholdNum = 60
+		thresholdNum = util.DefaultThresholdHostedClusterCount
 	}
 
 	if thresholdNum < 1 {
 		c.log.Error(nil, fmt.Sprintf("invalid HC_MAX_NUMBER %s, defaulting to 60", envThreshold))
-		thresholdNum = 60
+		thresholdNum = util.DefaultThresholdHostedClusterCount
 	}
 
 	if maxNum < thresholdNum {
 		c.log.Error(nil, fmt.Sprintf(
 			"invalid HC_MAX_NUMBER %s HC_THRESHOLD_NUMBER %s: HC_MAX_NUMBER must be equal or bigger than HC_THRESHOLD_NUMBER, defaulting to 80 and 60 for max and threshold counts",
 			envMax, envThreshold))
-		maxNum = 80
-		thresholdNum = 60
+		maxNum = util.DefaultMaxHostedClusterCount
+		thresholdNum = util.DefaultThresholdHostedClusterCount
 	}
 
 	return maxNum, thresholdNum

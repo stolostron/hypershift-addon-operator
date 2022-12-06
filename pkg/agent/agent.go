@@ -526,10 +526,11 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 			return err
 		}
 	} else {
+		hcCount := len(hcList.Items)
 		scores := []clusterv1alpha1.AddOnPlacementScoreItem{
 			{
 				Name:  util.HostedClusterScoresScoreName,
-				Value: int32(len(hcList.Items)),
+				Value: int32(hcCount),
 			},
 		}
 
@@ -548,20 +549,20 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 			return err
 		}
 
-		c.log.Info(fmt.Sprintf("updated the addOnPlacementScore for %s: %v", c.clusterName, len(hcList.Items)))
+		c.log.Info(fmt.Sprintf("updated the addOnPlacementScore for %s: %v", c.clusterName, hcCount))
 
 		// Based on the new HC count, update the zero, threshold, full cluster claim values.
-		if err := c.createHostedClusterFullClusterClaim(ctx, len(hcList.Items)); err != nil {
+		if err := c.createHostedClusterFullClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create or update hosted cluster full cluster claim")
 			return err
 		}
 
-		if err = c.createHostedClusterThresholdClusterClaim(ctx, len(hcList.Items)); err != nil {
+		if err = c.createHostedClusterThresholdClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create or update hosted cluster threshold cluster claim")
 			return err
 		}
 
-		if err = c.createHostedClusterZeroClusterClaim(ctx, len(hcList.Items)); err != nil {
+		if err = c.createHostedClusterZeroClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create hosted cluster zero cluster claim")
 			return err
 		}
