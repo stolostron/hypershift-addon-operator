@@ -13,12 +13,21 @@ The Hypershift Hosted Control Plane command-line interface (CLI) is an `oc` comm
 3. Unpack the archive.
 
 ```
-    $ tar xvzf <file>
+    $ tar xvzf hypershift.tar.gz
 ```
 
-4. Rename the file to `oc-hcp` to make it an `oc` command-line [plugin](https://docs.openshift.com/container-platform/4.11/cli_reference/openshift_cli/extending-cli-plugins.html). `hcp` stands for `Hosted Control Plane`.
+4. Rename `hypershift` to `oc-hcp` to make it an `oc` command-line [plugin](https://docs.openshift.com/container-platform/4.11/cli_reference/openshift_cli/extending-cli-plugins.html). `hcp` stands for `Hosted Control Plane`.
+
+```
+    $ sudo mv hypershift oc-hcp
+```
 
 5. Follow the [oc plugin instructions](https://docs.openshift.com/container-platform/4.11/cli_reference/openshift_cli/extending-cli-plugins.html#cli-installing-plugins_cli-extend-plugins) to bind the `oc-hcp` plugin to a directory in your PATH.
+
+```
+    $ chmod +x oc-hcp
+    $ sudo mv oc-hcp /usr/local/bin/.
+```
 
 After you install the Hypershift Hosted Control Plane CLI, you can start using the `oc hcp ...` command. For more information on the CLI usage, see [this](https://hypershift-docs.netlify.app/getting-started/)
 
