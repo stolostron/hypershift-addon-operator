@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"os"
 	"testing"
 	"time"
 
@@ -886,6 +887,93 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(localExtDnsSecret), localExtDnsSecret)
 	assert.Nil(t, err, "is nil when locally saved external DNS secret is found")
 	assert.Equal(t, []byte(`my.house.com`), localExtDnsSecret.Data["domain-filter"], "the domain-filter should be equal if the copy was a success")
+
+	// Cleanup
+	err = aCtrl.RunHypershiftCmdWithRetires(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)
+	assert.Nil(t, err, "is nil if cleanup is succcessful")
+}
+
+func TestRunHypershiftInstallEnableRHOBS(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	aCtrl := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+	}
+
+	addonNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: aCtrl.addonNamespace,
+		},
+	}
+	aCtrl.hubClient.Create(ctx, addonNs)
+	defer aCtrl.hubClient.Delete(ctx, addonNs)
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      aCtrl.pullSecret,
+			Namespace: aCtrl.addonNamespace,
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(`docker-pull-secret`),
+		},
+	}
+	aCtrl.hubClient.Create(ctx, pullSecret)
+
+	dp := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "operator",
+			Namespace:   "hypershift",
+			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "nginx",
+						Image: "nginx:1.14.2",
+						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+					}},
+				},
+			},
+		},
+	}
+	aCtrl.hubClient.Create(ctx, dp)
+	defer aCtrl.hubClient.Delete(ctx, dp)
+
+	os.Setenv("ENABLE_RHOBS_MONITORING", "true")
+
+	err := installHyperShiftOperator(t, ctx, aCtrl, false)
+	defer deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
+	assert.Nil(t, err, "is nil if install HyperShift is successful")
+
+	installJobList := &kbatch.JobList{}
+	err = aCtrl.spokeUncachedClient.List(ctx, installJobList)
+	if assert.Nil(t, err, "listing jobs should succeed: %s", err) {
+		if assert.Equal(t, 1, len(installJobList.Items), "there should be exactly one install job") {
+			installJob := installJobList.Items[0]
+			expectArgs := []string{
+				"--namespace", "hypershift",
+				"--enable-uwm-telemetry-remote-write",
+				"--platform-monitoring", "OperatorOnly",
+				"--rhobs-monitoring", "true",
+				"--hypershift-image", "my-test-image",
+			}
+			assert.Equal(t, expectArgs, installJob.Spec.Template.Spec.Containers[0].Args, "mismatched container arguments")
+		}
+	}
 
 	// Cleanup
 	err = aCtrl.RunHypershiftCmdWithRetires(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)

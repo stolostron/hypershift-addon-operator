@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v2"
@@ -298,6 +299,16 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		"--platform-monitoring", "OperatorOnly",
 	}
 	args = append(args, telemetryArgs...)
+
+	// Enable RHOBS
+	if strings.EqualFold(os.Getenv("ENABLE_RHOBS_MONITORING"), "true") {
+		c.log.Info("ENABLE_RHOBS_MONITORING=true, adding --rhobs-monitoring=true")
+		rhobsArgs := []string{
+			"--rhobs-monitoring",
+			"true",
+		}
+		args = append(args, rhobsArgs...)
+	}
 
 	hypershiftImage := c.operatorImage
 	imageStreamCMData := make(map[string]string, 0)
