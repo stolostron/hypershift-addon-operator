@@ -269,23 +269,23 @@ func getConsoleDownload(routeUrl string, log logr.Logger) (*consolev1.ConsoleCLI
 
 	links := []consolev1.CLIDownloadLink{
 		{
-			Href: "https://" + routeUrl + "/hypershift-linux-amd64.tar.gz",
+			Href: "https://" + routeUrl + "/linux/amd64/hypershift.tar.gz",
 			Text: "Download oc hcp for Linux for x86_64",
 		},
 		{
-			Href: "https://" + routeUrl + "/hypershift-darwin-amd64.tar.gz",
+			Href: "https://" + routeUrl + "/darwin/amd64/hypershift.tar.gz",
 			Text: "Download oc hcp for Mac for x86_64",
 		},
 		{
-			Href: "https://" + routeUrl + "/hypershift-windows-amd64.tar.gz",
+			Href: "https://" + routeUrl + "/windows/amd64/hypershift.tar.gz",
 			Text: "Download oc hcp for Windows for x86_64",
 		},
 		{
-			Href: "https://" + routeUrl + "/hypershift-linux-arm64.tar.gz",
+			Href: "https://" + routeUrl + "/linux/arm64/hypershift.tar.gz",
 			Text: "Download oc hcp for Linux for ARM 64",
 		},
 		{
-			Href: "https://" + routeUrl + "/hypershift-darwin-arm64.tar.gz",
+			Href: "https://" + routeUrl + "/darwin/arm64/hypershift.tar.gz",
 			Text: "Download oc hcp for Mac for ARM 64",
 		},
 	}

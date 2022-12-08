@@ -42,6 +42,15 @@ spec:
           - "--with-image-override={{ .HyeprshiftImageOverride }}"
           - "--hypershfit-operator-image={{ .HypershiftOperatorImage }}"
           - "--multicluster-pull-secret={{ .MulticlusterEnginePullSecret }}"
+        env:
+{{- if .hcMaxNumber }}
+        - name: HC_MAX_NUMBER
+          value: "{{ .hcMaxNumber }}"
+{{- end }}
+{{- if .hcThresholdNumber }}
+        - name: HC_THRESHOLD_NUMBER
+          value: "{{ .hcThresholdNumber }}"
+{{- end }}
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub
