@@ -3,6 +3,8 @@ package install
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
@@ -29,6 +31,16 @@ func (c *UpgradeController) runHyperShiftInstallJob(ctx context.Context, image, 
 		RestartPolicy:      "Never",
 		ServiceAccountName: util.HypershiftInstallJobServiceAccount,
 		ImagePullSecrets:   []corev1.LocalObjectReference{{Name: c.pullSecret}},
+	}
+
+	// Enable RHOBS
+	if strings.EqualFold(os.Getenv("ENABLE_RHOBS_MONITORING"), "true") {
+		jobPodSpec.Containers[0].Env = []corev1.EnvVar{
+			{
+				Name:  "ENABLE_RHOBS_MONITORING",
+				Value: "1",
+			},
+		}
 	}
 
 	if len(imageStreamCMData) > 0 {

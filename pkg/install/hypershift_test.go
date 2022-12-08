@@ -972,6 +972,8 @@ func TestRunHypershiftInstallEnableRHOBS(t *testing.T) {
 				"--hypershift-image", "my-test-image",
 			}
 			assert.Equal(t, expectArgs, installJob.Spec.Template.Spec.Containers[0].Args, "mismatched container arguments")
+			assert.Equal(t, "ENABLE_RHOBS_MONITORING", installJob.Spec.Template.Spec.Containers[0].Env[0].Name, "ENABLE_RHOBS_MONITORING environment variable should exist")
+			assert.Equal(t, "1", installJob.Spec.Template.Spec.Containers[0].Env[0].Value, "ENABLE_RHOBS_MONITORING environment variable value should be 1")
 		}
 	}
 
