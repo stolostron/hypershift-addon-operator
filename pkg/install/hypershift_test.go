@@ -954,6 +954,7 @@ func TestRunHypershiftInstallEnableRHOBS(t *testing.T) {
 	defer aCtrl.hubClient.Delete(ctx, dp)
 
 	os.Setenv("ENABLE_RHOBS_MONITORING", "true")
+	defer os.Unsetenv("ENABLE_RHOBS_MONITORING")
 
 	err := installHyperShiftOperator(t, ctx, aCtrl, false)
 	defer deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
