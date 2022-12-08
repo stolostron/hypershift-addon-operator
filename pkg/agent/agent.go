@@ -305,9 +305,16 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 		return fmt.Errorf("failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
 	}
 
-	// 2. Replace the config.Clusters["cluster"].Server URL with internal kubeadpi service URL kube-apiserver.<Namespace>.svc.cluster.local
-	clusterServerURL := "https://kube-apiserver." + hc.Namespace + "-" + hc.Name + ".svc.cluster.local:6443"
+	// 2. Extract port from kubeconfig
+	portSeparatorIndex := strings.LastIndex(kubeconfig.Clusters["cluster"].Server, ":")
+	if portSeparatorIndex == -1 {
+		c.log.Info(fmt.Sprintf("failed to get the port from the server URL: %s", kubeconfig.Clusters["cluster"].Server))
+		return fmt.Errorf("failed to get the port from the server URL: %s", kubeconfig.Clusters["cluster"].Server)
+	}
+	serverPort := kubeconfig.Clusters["cluster"].Server[portSeparatorIndex:]
 
+	// 3. Replace the config.Clusters["cluster"].Server URL with internal kubeadpi service URL kube-apiserver.<Namespace>.svc.cluster.local
+	clusterServerURL := "https://kube-apiserver." + hc.Namespace + "-" + hc.Name + ".svc.cluster.local" + serverPort
 	kubeconfig.Clusters["cluster"].Server = clusterServerURL
 
 	newKubeconfig, err := clientcmd.Write(*kubeconfig)

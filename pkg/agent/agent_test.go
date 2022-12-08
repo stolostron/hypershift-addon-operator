@@ -51,8 +51,9 @@ func TestReconcile(t *testing.T) {
 		secData := map[string][]byte{}
 		secData["kubeconfig"] = []byte(`apiVersion: v1
 clusters:
-- name: cluster
-  server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:6443
+- cluster:
+    server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:7443
+  name: cluster
 contexts:
 - context:
     cluster: cluster
@@ -91,7 +92,7 @@ kind: Config`)
 
 	kubeconfig, err := clientcmd.Load(secret.Data["kubeconfig"])
 	assert.Nil(t, err, "is nil when kubeconfig data can be loaded")
-	assert.Equal(t, kubeconfig.Clusters["cluster"].Server, "https://kube-apiserver."+hc.Namespace+"-"+hc.Name+".svc.cluster.local:6443")
+	assert.Equal(t, kubeconfig.Clusters["cluster"].Server, "https://kube-apiserver."+hc.Namespace+"-"+hc.Name+".svc.cluster.local:7443")
 
 	// Delete hosted cluster and reconcile
 	aCtrl.hubClient.Delete(ctx, hc)
@@ -128,8 +129,9 @@ func TestReconcileWithAnnotation(t *testing.T) {
 		secData := map[string][]byte{}
 		secData["kubeconfig"] = []byte(`apiVersion: v1
 clusters:
-- name: cluster
-  server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:6443
+- cluster:
+    server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:6443
+  name: cluster	
 contexts:
 - context:
     cluster: cluster
