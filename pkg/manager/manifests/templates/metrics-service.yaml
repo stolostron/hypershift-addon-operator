@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: hypershift-addon-metrics
+  name: hypershift-addon-metrics
+  namespace: open-cluster-management-agent-addon
+spec:
+  ports:
+  - name: metrics
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: hypershift-addon-agent
+  sessionAffinity: None
+  type: ClusterIP
