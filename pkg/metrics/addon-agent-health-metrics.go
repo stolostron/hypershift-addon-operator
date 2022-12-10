@@ -3,12 +3,12 @@ package metrics
 import "github.com/prometheus/client_golang/prometheus"
 
 var InInstallationOrUpgradeBool = prometheus.NewGauge(prometheus.GaugeOpts{
-	Name: "hypershift_install_in_progress_bool",
+	Name: "mce_hs_addon_install_in_progress_bool",
 	Help: "Hypershift operator installation in progress true (1) or false (0)",
 })
 
 var InstallationOrUpgradeFailedCount = prometheus.NewGauge(prometheus.GaugeOpts{
-	Name: "hypershift_install_failure_gauge",
+	Name: "mce_hs_addon_install_failure_gauge",
 	Help: "Hypershift operator installation failure gauge",
 })
 
