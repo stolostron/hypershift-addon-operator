@@ -19,8 +19,13 @@ spec:
       securityContext:
         runAsNonRoot: true
       containers:
+{{- if ne .disableMetrics "true" }}
       - name: kube-rbac-proxy
+        {{- if .kubeRbacProxyImage }}
+        image: "{{ .kubeRbacProxyImage }}"
+        {{- else }}
         image: registry.redhat.io/openshift4/ose-kube-rbac-proxy:v4.10
+        {{- end }}
         imagePullPolicy: IfNotPresent
         args:
         - --upstream=http://127.0.0.1:8383/
@@ -38,6 +43,7 @@ spec:
         - mountPath: "/var/run/metrics-cert"
           name: metrics-cert
           readOnly: true
+{{- end }}
       - name: {{ .AddonName }}
         image: {{ .Image }}
         imagePullPolicy: IfNotPresent
@@ -67,10 +73,12 @@ spec:
         - name: HC_THRESHOLD_NUMBER
           value: "{{ .hcThresholdNumber }}"
 {{- end }}
+{{- if ne .disableMetrics "true" }}
         ports:
         - name: metrics
           protocol: TCP
           containerPort: 8383
+{{- end }}
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub
@@ -78,9 +86,11 @@ spec:
         - name: hub-config
           secret:
             secretName: {{ .KubeConfigSecret }}
+{{- if ne .disableMetrics "true" }}
         - name: metrics-cert
           secret:
             secretName: {{ .AddonName }}-metrics
+{{- end }}
       {{- if .MulticlusterEnginePullSecret }}
       imagePullSecrets:
       - name: "{{ .MulticlusterEnginePullSecret }}"

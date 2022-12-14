@@ -12,41 +12,38 @@ var InstallationOrUpgradeFailedCount = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Hypershift operator installation failure gauge",
 })
 
-var PlacementScoreFailureCount = prometheus.NewGauge(prometheus.GaugeOpts{
-	Name: "mce_hs_addon_placement_score_failure_gauge",
-	Help: "Hypershift addon agent placement score sync failure gauge",
+var PlacementScoreFailureCount = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "mce_hs_addon_placement_score_failure_count",
+	Help: "Hypershift addon agent placement score sync failure count",
 })
 
-var PlacementFullClusterClaimsFailureCount = prometheus.NewCounter(prometheus.CounterOpts{
-	Name: "mce_hs_addon_placement_full_cluster_claims_failure_count",
-	Help: "Hypershift addon agent placement cluster claims update failure gauge",
-})
-
-var PlacementThresholdClusterClaimsFailureCount = prometheus.NewCounter(prometheus.CounterOpts{
-	Name: "mce_hs_addon_placement_threshold_cluster_claims_failure_count",
-	Help: "Hypershift addon agent placement cluster claims update failure gauge",
-})
-
-var PlacementZeroClusterClaimsFailureCount = prometheus.NewCounter(prometheus.CounterOpts{
-	Name: "mce_hs_addon_placement_zero_cluster_claims_failure_count",
-	Help: "Hypershift addon agent placement cluster claims update failure gauge",
-})
+var PlacementClusterClaimsFailureCount = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "mce_hs_addon_cluster_claims_failure_count",
+		Help: "Hypershift addon agent cluster claims update failure count",
+	},
+	[]string{"cluster_claim_name"},
+)
 
 var KubeconfigSecretCopyFailureCount = prometheus.NewCounter(prometheus.CounterOpts{
 	Name: "mce_hs_addon_kubeconfig_secret_copy_failure_count",
-	Help: "Hypershift addon agent placement cluster claims update failure gauge",
+	Help: "Hypershift addon agent placement cluster claims update failure counter",
 })
 
-var HubSecretSyncFailureCount = prometheus.NewCounter(prometheus.CounterOpts{
-	Name: "mce_hs_addon_hub_secret_sync_failure_count",
-	Help: "Hypershift addon agent hub secret sync failure gauge",
-})
-
-var HubImageConfigMapSyncFailureCount = prometheus.NewCounter(prometheus.CounterOpts{
-	Name: "mce_hs_addon_hub_image_configmap_sync_failure_count",
-	Help: "Hypershift addon agent hub image configmap failure gauge",
-})
+var HubResourceSyncFailureCount = prometheus.NewCounterVec(
+	prometheus.CounterOpts{
+		Name: "mce_hs_addon_hub_sync_failure_count",
+		Help: "Hypershift addon agent hub resource sync failure counter",
+	},
+	[]string{"resource_kind"},
+)
 
 func init() {
-	CollectorsForRegistration = append(CollectorsForRegistration, InInstallationOrUpgradeBool, InstallationOrUpgradeFailedCount)
+	CollectorsForRegistration = append(CollectorsForRegistration,
+		InInstallationOrUpgradeBool,
+		InstallationOrUpgradeFailedCount,
+		PlacementScoreFailureCount,
+		PlacementClusterClaimsFailureCount,
+		KubeconfigSecretCopyFailureCount,
+		HubResourceSyncFailureCount)
 }

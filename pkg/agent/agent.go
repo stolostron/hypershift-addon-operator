@@ -569,19 +569,19 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		// Based on the new HC count, update the zero, threshold, full cluster claim values.
 		if err := c.createHostedClusterFullClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create or update hosted cluster full cluster claim")
-			metrics.PlacementFullClusterClaimsFailureCount.Inc()
+			metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelFullClusterClaim).Inc()
 			return err
 		}
 
 		if err = c.createHostedClusterThresholdClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create or update hosted cluster threshold cluster claim")
-			metrics.PlacementThresholdClusterClaimsFailureCount.Inc()
+			metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelThresholdClusterClaim).Inc()
 			return err
 		}
 
 		if err = c.createHostedClusterZeroClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create hosted cluster zero cluster claim")
-			metrics.PlacementZeroClusterClaimsFailureCount.Inc()
+			metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelZeroClusterClaim).Inc()
 			return err
 		}
 

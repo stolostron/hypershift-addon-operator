@@ -112,7 +112,7 @@ func (c *UpgradeController) getSecretFromHub(secretName string) corev1.Secret {
 	if err := c.hubClient.Get(context.TODO(), secretKey, newSecret); err != nil && !errors.IsNotFound(err) {
 		c.log.Error(err, "failed to get secret from the hub: ")
 		// Update hub secret sync metrics count
-		metrics.HubSecretSyncFailureCount.Inc()
+		metrics.HubResourceSyncFailureCount.WithLabelValues("secret").Inc()
 	}
 	return *newSecret
 }
@@ -145,7 +145,7 @@ func (c *UpgradeController) getImageOverrideMapFromHub() corev1.ConfigMap {
 	if err := c.hubClient.Get(context.TODO(), overrideImagesCmKey, overrideImagesCm); err != nil && !errors.IsNotFound(err) {
 		c.log.Error(err, "failed to get configmap from the hub: ")
 		// Update hub image override configmap sync metrics count
-		metrics.HubImageConfigMapSyncFailureCount.Inc()
+		metrics.HubResourceSyncFailureCount.WithLabelValues("configmap").Inc()
 	}
 	return *overrideImagesCm
 }
