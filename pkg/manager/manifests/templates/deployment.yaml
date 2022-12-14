@@ -51,6 +51,10 @@ spec:
         - name: HC_THRESHOLD_NUMBER
           value: "{{ .hcThresholdNumber }}"
 {{- end }}
+{{- if .enableRHOBSMonitoring }}
+        - name: ENABLE_RHOBS_MONITORING
+          value: "{{ .enableRHOBSMonitoring }}"
+{{- end }}
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub
