@@ -16,13 +16,28 @@ spec:
         app: {{ .AddonName }}
     spec:
       serviceAccountName: {{ .AgentServiceAccountName }}
-      volumes:
-      - name: hub-config
-        secret:
-          secretName: {{ .KubeConfigSecret }}
       securityContext:
         runAsNonRoot: true
       containers:
+      - name: kube-rbac-proxy
+        image: registry.redhat.io/openshift4/ose-kube-rbac-proxy:v4.10
+        imagePullPolicy: IfNotPresent
+        args:
+        - --upstream=http://127.0.0.1:8383/
+        - --logtostderr=true
+        - --v=6
+        - --secure-listen-address=:8443
+        - "--tls-cert-file=/var/run/metrics-cert/tls.crt"
+        - "--tls-private-key-file=/var/run/metrics-cert/tls.key"
+        - "--tls-min-version=VersionTLS13"
+        ports:
+        - name: https
+          protocol: TCP
+          containerPort: 8443
+        volumeMounts:
+        - mountPath: "/var/run/metrics-cert"
+          name: metrics-cert
+          readOnly: true
       - name: {{ .AddonName }}
         image: {{ .Image }}
         imagePullPolicy: IfNotPresent
@@ -42,6 +57,7 @@ spec:
           - "--with-image-override={{ .HyeprshiftImageOverride }}"
           - "--hypershfit-operator-image={{ .HypershiftOperatorImage }}"
           - "--multicluster-pull-secret={{ .MulticlusterEnginePullSecret }}"
+          - --metrics-bind-address=0.0.0.0:8383
         env:
 {{- if .hcMaxNumber }}
         - name: HC_MAX_NUMBER
@@ -51,9 +67,20 @@ spec:
         - name: HC_THRESHOLD_NUMBER
           value: "{{ .hcThresholdNumber }}"
 {{- end }}
+        ports:
+        - name: metrics
+          protocol: TCP
+          containerPort: 8383
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub
+      volumes:
+        - name: hub-config
+          secret:
+            secretName: {{ .KubeConfigSecret }}
+        - name: metrics-cert
+          secret:
+            secretName: {{ .AddonName }}-metrics
       {{- if .MulticlusterEnginePullSecret }}
       imagePullSecrets:
       - name: "{{ .MulticlusterEnginePullSecret }}"
@@ -76,3 +103,6 @@ spec:
         {{- end }}
       {{- end }}
       {{- end }}
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false

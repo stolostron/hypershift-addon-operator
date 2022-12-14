@@ -34,6 +34,7 @@ import (
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/install"
+	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 )
 
@@ -447,6 +448,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 				if errExt != nil {
 					lastErr = errExt
+					metrics.KubeconfigSecretCopyFailureCount.Inc()
 				} else {
 					c.log.Info("Successfully generated external-managed-kubeconfig secret")
 				}
@@ -509,6 +511,8 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 	if err != nil {
 		// just log the error. it should not stop the rest of reconcile
 		c.log.Error(err, fmt.Sprintf("failed to create or update the addOnPlacementScore resource in %s", c.clusterName))
+		// Emit metrics to return the number of placement score update failures
+		metrics.PlacementScoreFailureCount.Inc()
 		return err
 	}
 
@@ -530,6 +534,8 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		if err != nil {
 			// just log the error. it should not stop the rest of reconcile
 			c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))
+			// Emit metrics to return the number of placement score update failures
+			metrics.PlacementScoreFailureCount.Inc()
 			return err
 		}
 	} else {
@@ -553,6 +559,8 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		if err != nil {
 			// just log the error. it should not stop the rest of reconcile
 			c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))
+			// Emit metrics to return the number of placement score update failures
+			metrics.PlacementScoreFailureCount.Inc()
 			return err
 		}
 
@@ -561,16 +569,19 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		// Based on the new HC count, update the zero, threshold, full cluster claim values.
 		if err := c.createHostedClusterFullClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create or update hosted cluster full cluster claim")
+			metrics.PlacementFullClusterClaimsFailureCount.Inc()
 			return err
 		}
 
 		if err = c.createHostedClusterThresholdClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create or update hosted cluster threshold cluster claim")
+			metrics.PlacementThresholdClusterClaimsFailureCount.Inc()
 			return err
 		}
 
 		if err = c.createHostedClusterZeroClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create hosted cluster zero cluster claim")
+			metrics.PlacementZeroClusterClaimsFailureCount.Inc()
 			return err
 		}
 
