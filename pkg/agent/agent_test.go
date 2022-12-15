@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/go-logr/zapr"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -25,6 +26,8 @@ import (
 
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
+
+	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 )
 
 func TestReconcile(t *testing.T) {
@@ -94,6 +97,10 @@ kind: Config`)
 	assert.Nil(t, err, "is nil when kubeconfig data can be loaded")
 	assert.Equal(t, kubeconfig.Clusters["cluster"].Server, "https://kube-apiserver."+hc.Namespace+"-"+hc.Name+".svc.cluster.local:7443")
 
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.KubeconfigSecretCopyFailureCount))
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
+
 	// Delete hosted cluster and reconcile
 	aCtrl.hubClient.Delete(ctx, hc)
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
@@ -151,6 +158,8 @@ kind: Config`)
 	err := aCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
+
 	// Reconcile with no annotation
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
 	assert.Nil(t, err, "err nil when reconcile was successfully")
@@ -179,6 +188,11 @@ kind: Config`)
 	kubeconfig, err := clientcmd.Load(secret.Data["kubeconfig"])
 	assert.Nil(t, err, "is nil when kubeconfig data can be loaded")
 	assert.Equal(t, kubeconfig.Clusters["cluster"].Server, "https://kube-apiserver."+hc.Namespace+"-"+hc.Name+".svc.cluster.local:6443")
+
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelFullClusterClaim)))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelThresholdClusterClaim)))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelZeroClusterClaim)))
 
 	// Delete hosted cluster and reconcile
 	aCtrl.hubClient.Delete(ctx, hc)
@@ -252,6 +266,13 @@ func TestHostedClusterCount(t *testing.T) {
 	assert.Nil(t, err, "is nil when addonPlacementScore is found")
 	assert.Equal(t, int32(aCtrl.maxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
 
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelFullClusterClaim)))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelThresholdClusterClaim)))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelZeroClusterClaim)))
+	assert.Equal(t, float64(4), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
+	assert.Equal(t, float64(4), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
+
 	// Create one more hosted cluster and expect the cluserclaim to have hostedclustercount.full.hypershift.openshift.io=true
 	// indicating it reached the maximum number of hosted clusters
 	hc := getHostedCluster(hcNN)
@@ -280,6 +301,9 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
 	assert.Nil(t, err, "is nil when addonPlacementScore is found")
 	assert.Equal(t, int32(aCtrl.maxHostedClusterCount), placementScore.Status.Scores[0].Value)
+
+	assert.Equal(t, float64(5), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
+	assert.Equal(t, float64(5), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
 
 	// Delete one hosted cluster and expect the cluserclaim to have hostedclustercount.full.hypershift.openshift.io=false
 	// indicating it did not reach the maximum number of hosted clusters after removing one
@@ -369,6 +393,9 @@ func TestHostedClusterCount(t *testing.T) {
 	zeroClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountZeroClusterClaimKey, metav1.GetOptions{})
 	assert.Nil(t, err, "is nil when the hc count zero clusterclaim is found")
 	assert.Equal(t, strconv.FormatBool(true), zeroClusterClaim.Spec.Value)
+
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
 }
 
 func TestHostedClusterCountErrorCase(t *testing.T) {
@@ -436,6 +463,9 @@ func TestHostedClusterCountErrorCase(t *testing.T) {
 	zeroClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountZeroClusterClaimKey, metav1.GetOptions{})
 	assert.Nil(t, err, "is nil when the hc count zero clusterclaim is found")
 	assert.Equal(t, strconv.FormatBool(false), zeroClusterClaim.Spec.Value)
+
+	assert.Equal(t, float64(5), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
+	assert.Equal(t, float64(5), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
 }
 
 func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {

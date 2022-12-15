@@ -2,16 +2,16 @@ package metrics
 
 import "github.com/prometheus/client_golang/prometheus"
 
-var TotalHostedClusterCount = prometheus.NewGauge(prometheus.GaugeOpts{
-	Name: "mce_hs_addon_total_hcp_count",
-	Help: "Total number of hosted contol planes count",
+var TotalHostedClusterGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "mce_hs_addon_total_hcp_gauge",
+	Help: "Total number of hosted contol planes",
 })
 
-var HostedClusterReadyCount = prometheus.NewGauge(prometheus.GaugeOpts{
-	Name: "mce_hs_addon_ready_hcp_count",
-	Help: "Number of ready hosted contol planes count",
+var HostedClusterAvailableGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "mce_hs_addon_available_hcp_gauge",
+	Help: "Number of available hosted contol planes",
 })
 
 func init() {
-	CollectorsForRegistration = append(CollectorsForRegistration, TotalHostedClusterCount, HostedClusterReadyCount)
+	CollectorsForRegistration = append(CollectorsForRegistration, TotalHostedClusterGauge, HostedClusterAvailableGauge)
 }
