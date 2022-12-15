@@ -79,6 +79,10 @@ spec:
           protocol: TCP
           containerPort: 8383
 {{- end }}
+{{- if .enableRHOBSMonitoring }}
+        - name: ENABLE_RHOBS_MONITORING
+          value: "{{ .enableRHOBSMonitoring }}"
+{{- end }}
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub
