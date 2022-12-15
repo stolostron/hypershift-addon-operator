@@ -4,40 +4,20 @@ When you enable the `hypershift-addon` managed cluster addon, the metric service
 
 ## Metrics
 
-**Name:** 	_mce_hs_addon_failed_to_start_bool_  
-**Description:**  When the hypershift-addon agent controller fails to start, its value becomes 1 (true), otherwise it remains 0 (false).
-
-**Name:** 	*mce_hs_addon_install_in_progress_bool*
-**Description:**  This indicates that the hypershift operator installation or upgrade is in progress and its value becomes 1 (true). When the installation or upgrade completes successfully, its value becomes 0 (false). 
-
-**Name:** 	*mce_hs_addon_install_failure_gauge*
-**Description:**  When the hypershift operator installation or upgrade fails, its value increases. The value resets to zero upon when the installation or upgrade completes successfully.
-
-**Name:** 	*mce_hs_addon_placement_score_failure_count*
-**Description:**  When the hypershift operator fails to create or update the `hosted-clusters-score` AddOnPlacementScore in the hosting cluster's namespace on the hub cluster, its value increases by one for each failure. See [here](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/scheduling_hosted_cluster.md) for more detail.
-
-**Name:** 	*mce_hs_addon_cluster_claims_failure_count*
-**Description:**  When the hypershift operator fails to create or update a ClusterClaim on the hosting cluster, its value increases by one.
-**Label values:** *full-hc* for full.hostedclustercount.hypershift.openshift.io ClusterClaim, *threshold-hs* for above.threshold.hostedclustercount.hypershift.openshift.io ClusterClaim, *zero-hc* for zero.hostedclustercount.hypershift.openshift.io ClusterClaim. See [here](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/scheduling_hosted_cluster.md) for more detail.
-
-**Name:** 	*mce_hs_addon_kubeconfig_secret_copy_failure_count*
-**Description:**  Its value increases everytime the addon agent fails to copy a hosted cluster's kubeconfig into its klusterlet namespace.
-
-**Name:** 	*mce_hs_addon_hub_sync_failure_count*
-**Description:**  Its value increases everytime the addon agent fails to read either a secret or configmap that are necessary for the hypershift operator installation from the hub cluster.
-**Label values:** *secret*, *configmap*
-
-**Name:** 	*mce_hs_addon_total_hcp_gauge*
-**Description:**  This gauge indicates the total number of hosted control planes on the hosting cluster.
-
-**Name:** 	*mce_hs_addon_available_hcp_gauge*
-**Description:**  This gauge indicates the number of available hosted control planes on the hosting cluster. An available hosted control plane has a running kube API server.
-
-**Name:** 	*mce_hs_hypershift_operator_degraded_bool*
-**Description:**  When the hypershift-addon agent controller detects that the hypershift operator is not currently running, its value becomes 1 (true). Otherwise it remains 0 (false).
-
-**Name:** 	*mce_hs_ext_dns_operator_degraded_bool*
-**Description:**  When the hypershift-addon agent controller detects that the external DNS feature is enabled for the hypershift operator but the external DNS operator is not currently running, its value becomes 1 (true). Otherwise it remains 0 (false).
+| **Name** | **Description** | 
+| --- | --- |
+| *mce_hs_addon_failed_to_start_bool* | When the hypershift-addon agent controller fails to start, its value becomes 1 (true), otherwise it remains 0 (false). |
+| *mce_hs_addon_install_in_progress_bool* | When the hypershift-addon agent controller fails to start, its value becomes 1 (true), otherwise it remains 0 (false). |
+| *mce_hs_addon_install_failure_gauge* | When the hypershift operator installation or upgrade fails, its value increases. The value resets to zero upon when the installation or upgrade completes successfully. |
+| *mce_hs_addon_placement_score_failure_count* | When the hypershift operator fails to create or update the `hosted-clusters-score` AddOnPlacementScore in the hosting cluster's namespace on the hub cluster, its value increases by one for each failure. See [here](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/scheduling_hosted_cluster.md) for more detail.|
+| *mce_hs_addon_cluster_claims_failure_count* | When the hypershift operator fails to create or update a ClusterClaim on the hosting cluster, its value increases by one.  **Label values:** *full-hc* for full.hostedclustercount.hypershift.openshift.io ClusterClaim, *threshold-hs* for above.threshold.hostedclustercount.hypershift.openshift.io ClusterClaim, *zero-hc* for zero.hostedclustercount.hypershift.openshift.io ClusterClaim. See [here](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/scheduling_hosted_cluster.md) for more detail.|
+| *mce_hs_addon_kubeconfig_secret_copy_failure_count* | Its value increases everytime the addon agent fails to copy a hosted cluster's kubeconfig into its klusterlet namespace. |
+| *mce_hs_addon_hub_sync_failure_count* | Its value increases everytime the addon agent fails to read either a secret or configmap that are necessary for the hypershift operator installation from the hub cluster.
+**Label values:** *secret*, *configmap* |
+| *mce_hs_addon_total_hcp_gauge* | This gauge indicates the total number of hosted control planes on the hosting cluster. |
+| *mce_hs_addon_available_hcp_gauge* | This gauge indicates the number of available hosted control planes on the hosting cluster. An available hosted control plane has a running kube API server. |
+| *mce_hs_hypershift_operator_degraded_bool* | When the hypershift-addon agent controller detects that the hypershift operator is not currently running, its value becomes 1 (true). Otherwise it remains 0 (false). |
+| *mce_hs_ext_dns_operator_degraded_bool* | When the hypershift-addon agent controller detects that the external DNS feature is enabled for the hypershift operator but the external DNS operator is not currently running, its value becomes 1 (true). Otherwise it remains 0 (false). |
 
 
 ## Disabling metric service monitoring configuration
