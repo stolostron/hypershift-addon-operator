@@ -591,7 +591,7 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		}
 
 		// Total number of available hosted control plains metric
-		metrics.HostedClusterAvailableGauge.Set(float64(availableHcpNum))
+		metrics.HostedControlPlaneAvailableGauge.Set(float64(availableHcpNum))
 		// Total number of completed hosted clusters metric
 		metrics.HostedClusterAvailableGauge.Set(float64(completedHcNum))
 

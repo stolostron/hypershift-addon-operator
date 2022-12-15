@@ -173,6 +173,9 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		return nil
 	}
 
+	// Initially set this to zero to indicate that the AWS S3 bucket secret is not used for the operator installation
+	metrics.IsAWSS3BucketSecretConfigured.Set(0)
+
 	// If the hypershift operator installation already exists and it is a controller initial start up,
 	// we need to check if the operator re-installation is necessary by comparing the operator images.
 	// For now, assume that secrets did not change (MCE upgrade or pod re-cycle scenarios)
@@ -239,6 +242,9 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			"--oidc-storage-provider-s3-secret", util.HypershiftBucketSecretName,
 		}
 		args = append(args, awsArgs...)
+
+		// Set this to one to indicate that the AWS S3 bucket secret is used for the operator installation
+		metrics.IsAWSS3BucketSecretConfigured.Set(1)
 
 		//Private link creds
 		privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
