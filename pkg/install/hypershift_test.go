@@ -433,6 +433,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InInstallationOrUpgradeBool))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.IsAWSS3BucketSecretConfigured))
 
 	// Install with OIDC secret
 	bucketSecret := &corev1.Secret{
@@ -493,6 +494,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InInstallationOrUpgradeBool))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.IsAWSS3BucketSecretConfigured))
 
 	// Check hypershift deployment still exists
 	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)
@@ -531,6 +533,10 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.IsAWSS3BucketSecretConfigured))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InInstallationOrUpgradeBool))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
+
 	// Run hypershift install again with image override using image upgrade configmap
 	imageUpgradeCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -559,6 +565,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.RunHypershiftOperatorUpdate(ctx)
 	assert.NotNil(t, err, "is nil if install HyperShift is sucessful")
 	assert.Equal(t, "install HyperShift job failed", err.Error())
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
 	if err := deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace); err != nil {
 		t.Errorf("error cleaning up HyperShift install jobs: %s", err.Error())
 	}

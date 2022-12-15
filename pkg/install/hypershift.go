@@ -352,7 +352,8 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	if err != nil {
 		// Emit metrics to indicate that hypershift operator installation is over
 		metrics.InInstallationOrUpgradeBool.Set(0)
-		// Emit metrics to return the number of hypershift operator installation failures since the last successful installation
+		// Emit metrics to return the number of hypershift operator installation
+		// failures since the last successful installation
 		metrics.InstallationOrUpgradeFailedCount.Inc()
 		return err
 	}
@@ -361,14 +362,16 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		if err != nil {
 			// Emit metrics to indicate that hypershift operator installation is over
 			metrics.InInstallationOrUpgradeBool.Set(0)
-			// Emit metrics to return the number of hypershift operator installation failures since the last successful installation
+			// Emit metrics to return the number of hypershift operator installation failures
+			// since the last successful installation
 			metrics.InstallationOrUpgradeFailedCount.Inc()
 			return err
 		}
 
 		// Emit metrics to indicate that hypershift operator installation is over
 		metrics.InInstallationOrUpgradeBool.Set(0)
-		// Emit metrics to return the number of hypershift operator installation failures since the last successful installation
+		// Emit metrics to return the number of hypershift operator installation
+		// failures since the last successful installation
 		metrics.InstallationOrUpgradeFailedCount.Inc()
 		return fmt.Errorf("install HyperShift job failed")
 	}
@@ -376,7 +379,8 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 	// Emit metrics to indicate that hypershift operator installation is over
 	metrics.InInstallationOrUpgradeBool.Set(0)
-	// Reset the number of hypershift operator installation failures since the last successful installation
+	// Reset the number of hypershift operator installation failures
+	// since the last successful installation
 	metrics.InstallationOrUpgradeFailedCount.Set(0)
 
 	// Upon successful installation, save the secrets locally to check any changes on addon restart
