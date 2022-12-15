@@ -4,7 +4,7 @@ When you enable the `hypershift-addon` managed cluster addon, the metric service
 
 ## Metrics
 
-**Name:** 	*mce_hs_addon_failed_to_start_bool*
+**Name:** 	_mce_hs_addon_failed_to_start_bool_
 **Description:**  When the hypershift-addon agent controller fails to start, its value becomes 1 (true), otherwise it remains 0 (false).
 
 **Name:** 	*mce_hs_addon_install_in_progress_bool*
