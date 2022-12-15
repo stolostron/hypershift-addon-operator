@@ -492,7 +492,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	assert.True(t, errors.IsNotFound(err), "private link secret should not be found")
 
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InInstallationOrUpgradeBool))
-	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
 
 	// Check hypershift deployment still exists
 	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)

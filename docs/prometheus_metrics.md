@@ -16,9 +16,9 @@ When you enable the `hypershift-addon` managed cluster addon, the metric service
 | *mce_hs_addon_total_hcp_gauge* | This gauge indicates the total number of hosted control planes on the hosting cluster. |
 | *mce_hs_addon_available_hosted_control_planes_gauge* | This gauge indicates the number of available hosted control planes on the hosting cluster. An available hosted control plane has a running kube API server. |
 | *mce_hs_addon_available_hosted_clusters_gauge* | This gauge indicates the number of available hosted clusters on the hosting cluster. An available hosted cluster has a running kube API server as well as worker nodes. |
-| *mce_hs_hypershift_operator_degraded_bool* | When the hypershift-addon agent controller detects that the hypershift operator is not currently running, its value becomes 1 (true). Otherwise it remains 0 (false). |
-| *mce_hs_ext_dns_operator_degraded_bool* | When the hypershift-addon agent controller detects that the external DNS feature is enabled for the hypershift operator but the external DNS operator is not currently running, its value becomes 1 (true). Otherwise it remains 0 (false). |
-
+| *mce_hs_addon_hypershift_operator_degraded_bool* | When the hypershift-addon agent controller detects that the hypershift operator is not currently running, its value becomes 1 (true). Otherwise it remains 0 (false). |
+| *mce_hs_addon_ext_dns_operator_degraded_bool* | When the hypershift-addon agent controller detects that the external DNS feature is enabled for the hypershift operator but the external DNS operator is not currently running, its value becomes 1 (true). Otherwise it remains 0 (false). |
+| *mce_hs_addon_aws_s3_bucket_secret_configured_bool* | Is the hypershift operator installed with AWS S3 bucket secret?, 1 (true). 0 (false). |
 
 ## Disabling metric service monitoring configuration
 
