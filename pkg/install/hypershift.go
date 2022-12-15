@@ -367,7 +367,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		return fmt.Errorf("install HyperShift job failed")
 	}
 	c.log.Info(fmt.Sprintf("HyperShift install job: %s completed successfully", job.Name))
-	time.Sleep(time.Minute * 3)
+
 	// Emit metrics to indicate that hypershift operator installation is over
 	metrics.InInstallationOrUpgradeBool.Set(0)
 	// Reset the number of hypershift operator installation failures since the last successful installation

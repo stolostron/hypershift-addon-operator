@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -511,6 +512,15 @@ func (c *agentController) isHostedControlPlaneAvailable(status hyperv1alpha1.Hos
 	return false
 }
 
+func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1.UpdateState) bool {
+	for _, h := range history {
+		if h.State == state {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{
 		TypeMeta: metav1.TypeMeta{
@@ -566,16 +576,24 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		// Total number of hosted clusters metric
 		metrics.TotalHostedClusterGauge.Set(float64(hcCount))
 
-		readyNum := 0
+		availableHcpNum := 0
+		completedHcNum := 0
 
 		for _, hc := range hcList.Items {
 			if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || c.isHostedControlPlaneAvailable(hc.Status) {
-				readyNum++
+				availableHcpNum++
+			}
+
+			if hc.Status.Version == nil || len(hc.Status.Version.History) == 0 ||
+				isVersionHistoryStateFound(hc.Status.Version.History, configv1.CompletedUpdate) {
+				completedHcNum++
 			}
 		}
 
-		// Total number of available hosted clusters metric
-		metrics.HostedClusterAvailableGauge.Set(float64(readyNum))
+		// Total number of available hosted control plains metric
+		metrics.HostedClusterAvailableGauge.Set(float64(availableHcpNum))
+		// Total number of completed hosted clusters metric
+		metrics.HostedClusterAvailableGauge.Set(float64(completedHcNum))
 
 		meta.SetStatusCondition(&addOnPlacementScore.Status.Conditions, metav1.Condition{
 			Type:    "HostedClusterCountUpdated",

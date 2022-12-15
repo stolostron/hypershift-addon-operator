@@ -14,7 +14,8 @@ When you enable the `hypershift-addon` managed cluster addon, the metric service
 | *mce_hs_addon_kubeconfig_secret_copy_failure_count* | Its value increases everytime the addon agent fails to copy a hosted cluster's kubeconfig into its klusterlet namespace. |
 | *mce_hs_addon_hub_sync_failure_count* | Its value increases everytime the addon agent fails to read either a secret or configmap that are necessary for the hypershift operator installation from the hub cluster.   **Label values:** *secret*, *configmap* |
 | *mce_hs_addon_total_hcp_gauge* | This gauge indicates the total number of hosted control planes on the hosting cluster. |
-| *mce_hs_addon_available_hcp_gauge* | This gauge indicates the number of available hosted control planes on the hosting cluster. An available hosted control plane has a running kube API server. |
+| *mce_hs_addon_available_hosted_control_planes_gauge* | This gauge indicates the number of available hosted control planes on the hosting cluster. An available hosted control plane has a running kube API server. |
+| *mce_hs_addon_available_hosted_clusters_gauge* | This gauge indicates the number of available hosted clusters on the hosting cluster. An available hosted cluster has a running kube API server as well as worker nodes. |
 | *mce_hs_hypershift_operator_degraded_bool* | When the hypershift-addon agent controller detects that the hypershift operator is not currently running, its value becomes 1 (true). Otherwise it remains 0 (false). |
 | *mce_hs_ext_dns_operator_degraded_bool* | When the hypershift-addon agent controller detects that the external DNS feature is enabled for the hypershift operator but the external DNS operator is not currently running, its value becomes 1 (true). Otherwise it remains 0 (false). |
 
