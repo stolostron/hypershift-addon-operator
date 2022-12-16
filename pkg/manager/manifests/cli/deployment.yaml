@@ -31,6 +31,12 @@ spec:
                 - ppc64le
                 - s390x
                 - arm64
+          preferredDuringSchedulingIgnoredDuringExecution: 
+          - weight: 1
+            preference:
+              matchExpressions:
+              - key: node-role.kubernetes.io/infra
+                operator: Exists                     
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
           - podAffinityTerm:
