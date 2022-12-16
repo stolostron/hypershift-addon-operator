@@ -4,7 +4,7 @@
 
 The Hypershift Hosted Control Plane command-line interface (CLI) is an `oc` command-line [plugin](https://docs.openshift.com/container-platform/4.11/cli_reference/openshift_cli/extending-cli-plugins.html), that allows you to create OpenShift hosted control plane clusters and manage them.
 
-## Installing the Hosted Control Plane CLI
+## Installing the Hypershift Hosted Control Plane CLI
 
 1. [Enable the Hypershift hosted control plane feature](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/provision_hosted_cluster_on_mce_local_cluster.md#configuring-the-hosting-service-cluster)
 
@@ -16,19 +16,22 @@ The Hypershift Hosted Control Plane command-line interface (CLI) is an `oc` comm
     $ tar xvzf hypershift.tar.gz
 ```
 
-4. Rename `hypershift` to `oc-hcp` to make it an `oc` command-line [plugin](https://docs.openshift.com/container-platform/4.11/cli_reference/openshift_cli/extending-cli-plugins.html). `hcp` stands for `Hosted Control Plane`.
+4. Copy the `hypershift` CLI binary file to a directory in your PATH.
 
 ```
-    $ sudo mv hypershift oc-hcp
+    $ chmod +x hypershift
+    $ sudo mv hypershift /usr/local/bin/.
 ```
 
-5. Follow the [oc plugin instructions](https://docs.openshift.com/container-platform/4.11/cli_reference/openshift_cli/extending-cli-plugins.html#cli-installing-plugins_cli-extend-plugins) to bind the `oc-hcp` plugin to a directory in your PATH.
+After you install the Hypershift Hosted Control Plane CLI, you can start using the `hypershift create cluster` command to create and manage hosted clusters. For more information on the CLI usage, see [this](https://hypershift-docs.netlify.app/getting-started/#create-a-hostedcluster/)
+
 
 ```
-    $ chmod +x oc-hcp
-    $ sudo mv oc-hcp /usr/local/bin/.
+hypershift create cluster aws --name $CLUSTER_NAME --namespace $NAMESPACE --node-pool-replicas=3 --secret-creds $SECRET_CREDS --region $REGION
 ```
 
-After you install the Hypershift Hosted Control Plane CLI, you can start using the `oc hcp ...` command. For more information on the CLI usage, see [this](https://hypershift-docs.netlify.app/getting-started/)
+For all available parameters and their descriptions, run
 
-**Note: `oc hcp` is the command. For example, `oc hcp create cluster ...`
+```
+hypershift create cluster aws --help
+```
