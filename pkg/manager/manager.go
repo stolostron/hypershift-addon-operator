@@ -29,12 +29,12 @@ import (
 	consolev1 "github.com/openshift/api/console/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
-	"open-cluster-management.io/addon-framework/pkg/agent"
 	frameworkagent "open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonapiv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
@@ -55,6 +55,7 @@ func init() {
 	utilruntime.Must(consolev1.AddToScheme(genericScheme))
 	utilruntime.Must(appsv1.AddToScheme(genericScheme))
 	utilruntime.Must(rbacv1.AddToScheme(genericScheme))
+	utilruntime.Must(monitoringv1.AddToScheme(genericScheme))
 }
 
 const (
@@ -152,7 +153,7 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 	return cmd
 }
 
-func getAgentAddon(componentName string, o *override, controllerContext *controllercmd.ControllerContext, addonClient addonv1alpha1client.Interface) (agent.AgentAddon, error) {
+func getAgentAddon(componentName string, o *override, controllerContext *controllercmd.ControllerContext, addonClient addonv1alpha1client.Interface) (frameworkagent.AgentAddon, error) {
 	registrationOption := newRegistrationOption(
 		controllerContext.KubeConfig,
 		controllerContext.EventRecorder,
@@ -172,6 +173,7 @@ func getAgentAddon(componentName string, o *override, controllerContext *control
 				addonfactory.ToAddOnDeloymentConfigValues,
 			)).
 		WithAgentRegistrationOption(registrationOption).
+		WithScheme(genericScheme).
 		BuildTemplateAgentAddon()
 }
 

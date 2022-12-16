@@ -77,6 +77,13 @@ const (
 	DefaultMaxHostedClusterCount = 80
 	// Default threshold hosted cluster count on a hosting cluster
 	DefaultThresholdHostedClusterCount = 60
+
+	// Full HC cluster claim metrics label
+	MetricsLabelFullClusterClaim = "full-hc"
+	// Zero HC cluster claim metrics label
+	MetricsLabelZeroClusterClaim = "zero-hc"
+	// Threshold HC cluster claim metrics label
+	MetricsLabelThresholdClusterClaim = "threshold-hc"
 )
 
 // GenerateClientConfigFromSecret generate a client config from a given secret

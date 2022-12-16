@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
@@ -34,6 +35,7 @@ import (
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/install"
+	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 )
 
@@ -120,29 +122,36 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		LeaderElection:         false,
 	})
 
+	metrics.AddonAgentFailedToStartBool.Set(0)
+
 	if err != nil {
 		log.Error(err, "unable to start manager")
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to create manager, err: %w", err)
 	}
 
 	// build kubeinformerfactory of hub cluster
 	hubConfig, err := clientcmd.BuildConfigFromFlags("" /* leave masterurl as empty */, o.HubKubeconfigFile)
 	if err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("failed to create hubConfig from flag, err: %w", err)
 	}
 
 	hubClient, err := client.New(hubConfig, client.Options{Scheme: scheme})
 	if err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("failed to create hubClient, err: %w", err)
 	}
 
 	spokeKubeClient, err := client.New(spokeConfig, client.Options{Scheme: scheme})
 	if err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("failed to create spoke client, err: %w", err)
 	}
 
 	spokeClusterClient, err := clusterclientset.NewForConfig(spokeConfig)
 	if err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("failed to create spoke clusters client, err: %w", err)
 	}
 
@@ -163,11 +172,14 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	// retry 3 times, in case something wrong with creating the hypershift install job
 	if err := uCtrl.RunHypershiftOperatorInstallOnAgentStartup(ctx); err != nil {
 		log.Error(err, "failed to install hypershift Operator")
+		// merics for the hypershift operator installation is in its own function
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return err
 	}
 
 	leaseClient, err := kubernetes.NewForConfig(spokeConfig)
 	if err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("failed to create lease client, err: %w", err)
 	}
 
@@ -181,6 +193,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	go leaseUpdater.Start(ctx)
 
 	if err := aCtrl.createManagementClusterClaim(ctx); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to create management cluster claim, err: %w", err)
 	}
 
@@ -193,6 +206,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	err = aCtrl.SyncAddOnPlacementScore(ctx)
 	if err != nil {
 		// AddOnPlacementScore must be created initially
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("failed to create AddOnPlacementScore, err: %w", err)
 	}
 
@@ -200,6 +214,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 
 	//+kubebuilder:scaffold:builder
 	if err = aCtrl.SetupWithManager(mgr); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to create agent controller: %s, err: %w", util.AddonControllerName, err)
 	}
 
@@ -212,13 +227,16 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	if err = addonStatusController.SetupWithManager(mgr); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to create agent status controller: %s, err: %w", util.AddonStatusControllerName, err)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to set up health check, err: %w", err)
 	}
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to set up ready check, err: %w", err)
 	}
 
@@ -447,6 +465,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 				if errExt != nil {
 					lastErr = errExt
+					metrics.KubeconfigSecretCopyFailureCount.Inc()
 				} else {
 					c.log.Info("Successfully generated external-managed-kubeconfig secret")
 				}
@@ -493,6 +512,15 @@ func (c *agentController) isHostedControlPlaneAvailable(status hyperv1alpha1.Hos
 	return false
 }
 
+func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1.UpdateState) bool {
+	for _, h := range history {
+		if h.State == state {
+			return true
+		}
+	}
+	return false
+}
+
 func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{
 		TypeMeta: metav1.TypeMeta{
@@ -509,6 +537,8 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 	if err != nil {
 		// just log the error. it should not stop the rest of reconcile
 		c.log.Error(err, fmt.Sprintf("failed to create or update the addOnPlacementScore resource in %s", c.clusterName))
+		// Emit metrics to return the number of placement score update failures
+		metrics.PlacementScoreFailureCount.Inc()
 		return err
 	}
 
@@ -530,6 +560,8 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		if err != nil {
 			// just log the error. it should not stop the rest of reconcile
 			c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))
+			// Emit metrics to return the number of placement score update failures
+			metrics.PlacementScoreFailureCount.Inc()
 			return err
 		}
 	} else {
@@ -540,6 +572,28 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 				Value: int32(hcCount),
 			},
 		}
+
+		// Total number of hosted clusters metric
+		metrics.TotalHostedClusterGauge.Set(float64(hcCount))
+
+		availableHcpNum := 0
+		completedHcNum := 0
+
+		for _, hc := range hcList.Items {
+			if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || c.isHostedControlPlaneAvailable(hc.Status) {
+				availableHcpNum++
+			}
+
+			if hc.Status.Version == nil || len(hc.Status.Version.History) == 0 ||
+				isVersionHistoryStateFound(hc.Status.Version.History, configv1.CompletedUpdate) {
+				completedHcNum++
+			}
+		}
+
+		// Total number of available hosted control plains metric
+		metrics.HostedControlPlaneAvailableGauge.Set(float64(availableHcpNum))
+		// Total number of completed hosted clusters metric
+		metrics.HostedClusterAvailableGauge.Set(float64(completedHcNum))
 
 		meta.SetStatusCondition(&addOnPlacementScore.Status.Conditions, metav1.Condition{
 			Type:    "HostedClusterCountUpdated",
@@ -553,6 +607,8 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		if err != nil {
 			// just log the error. it should not stop the rest of reconcile
 			c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))
+			// Emit metrics to return the number of placement score update failures
+			metrics.PlacementScoreFailureCount.Inc()
 			return err
 		}
 
@@ -561,16 +617,19 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		// Based on the new HC count, update the zero, threshold, full cluster claim values.
 		if err := c.createHostedClusterFullClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create or update hosted cluster full cluster claim")
+			metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelFullClusterClaim).Inc()
 			return err
 		}
 
 		if err = c.createHostedClusterThresholdClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create or update hosted cluster threshold cluster claim")
+			metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelThresholdClusterClaim).Inc()
 			return err
 		}
 
 		if err = c.createHostedClusterZeroClusterClaim(ctx, hcCount); err != nil {
 			c.log.Error(err, "failed to create hosted cluster zero cluster claim")
+			metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelZeroClusterClaim).Inc()
 			return err
 		}
 

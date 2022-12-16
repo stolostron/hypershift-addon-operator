@@ -16,13 +16,34 @@ spec:
         app: {{ .AddonName }}
     spec:
       serviceAccountName: {{ .AgentServiceAccountName }}
-      volumes:
-      - name: hub-config
-        secret:
-          secretName: {{ .KubeConfigSecret }}
       securityContext:
         runAsNonRoot: true
       containers:
+{{- if ne .disableMetrics "true" }}
+      - name: kube-rbac-proxy
+        {{- if .kubeRbacProxyImage }}
+        image: "{{ .kubeRbacProxyImage }}"
+        {{- else }}
+        image: registry.redhat.io/openshift4/ose-kube-rbac-proxy:v4.10
+        {{- end }}
+        imagePullPolicy: IfNotPresent
+        args:
+        - --upstream=http://127.0.0.1:8383/
+        - --logtostderr=true
+        - --v=6
+        - --secure-listen-address=:8443
+        - "--tls-cert-file=/var/run/metrics-cert/tls.crt"
+        - "--tls-private-key-file=/var/run/metrics-cert/tls.key"
+        - "--tls-min-version=VersionTLS13"
+        ports:
+        - name: https
+          protocol: TCP
+          containerPort: 8443
+        volumeMounts:
+        - mountPath: "/var/run/metrics-cert"
+          name: metrics-cert
+          readOnly: true
+{{- end }}
       - name: {{ .AddonName }}
         image: {{ .Image }}
         imagePullPolicy: IfNotPresent
@@ -42,6 +63,7 @@ spec:
           - "--with-image-override={{ .HyeprshiftImageOverride }}"
           - "--hypershfit-operator-image={{ .HypershiftOperatorImage }}"
           - "--multicluster-pull-secret={{ .MulticlusterEnginePullSecret }}"
+          - --metrics-bind-address=0.0.0.0:8383
         env:
 {{- if .hcMaxNumber }}
         - name: HC_MAX_NUMBER
@@ -51,6 +73,12 @@ spec:
         - name: HC_THRESHOLD_NUMBER
           value: "{{ .hcThresholdNumber }}"
 {{- end }}
+{{- if ne .disableMetrics "true" }}
+        ports:
+        - name: metrics
+          protocol: TCP
+          containerPort: 8383
+{{- end }}
 {{- if .enableRHOBSMonitoring }}
         - name: ENABLE_RHOBS_MONITORING
           value: "{{ .enableRHOBSMonitoring }}"
@@ -58,6 +86,15 @@ spec:
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub
+      volumes:
+        - name: hub-config
+          secret:
+            secretName: {{ .KubeConfigSecret }}
+{{- if ne .disableMetrics "true" }}
+        - name: metrics-cert
+          secret:
+            secretName: {{ .AddonName }}-metrics
+{{- end }}
       {{- if .MulticlusterEnginePullSecret }}
       imagePullSecrets:
       - name: "{{ .MulticlusterEnginePullSecret }}"
@@ -80,3 +117,6 @@ spec:
         {{- end }}
       {{- end }}
       {{- end }}
+      hostNetwork: false
+      hostPID: false
+      hostIPC: false

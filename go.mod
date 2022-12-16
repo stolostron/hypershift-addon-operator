@@ -12,6 +12,8 @@ require (
 	github.com/openshift/hypershift v0.0.0-20220810221813-2b7ac5268ac7
 	github.com/openshift/library-go v0.0.0-20220525173854-9b950a41acdc
 	github.com/operator-framework/api v0.10.7
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.57.0
+	github.com/prometheus/client_golang v1.12.1
 	github.com/spf13/cobra v1.4.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.7.2
@@ -21,7 +23,6 @@ require (
 	k8s.io/apimachinery v0.25.0
 	k8s.io/client-go v0.25.0
 	k8s.io/component-base v0.25.0
-	k8s.io/kubernetes v1.13.0
 	open-cluster-management.io/addon-framework v0.5.0
 	open-cluster-management.io/api v0.9.0
 	sigs.k8s.io/controller-runtime v0.12.2
@@ -97,8 +98,6 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/profile v1.3.0 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.57.0 // indirect
-	github.com/prometheus/client_golang v1.12.1 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.32.1 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect

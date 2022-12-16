@@ -27,6 +27,7 @@ import (
 	imageapi "github.com/openshift/api/image/v1"
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
 
+	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 )
 
@@ -172,6 +173,9 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		return nil
 	}
 
+	// Initially set this to zero to indicate that the AWS S3 bucket secret is not used for the operator installation
+	metrics.IsAWSS3BucketSecretConfigured.Set(0)
+
 	// If the hypershift operator installation already exists and it is a controller initial start up,
 	// we need to check if the operator re-installation is necessary by comparing the operator images.
 	// For now, assume that secrets did not change (MCE upgrade or pod re-cycle scenarios)
@@ -238,6 +242,9 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			"--oidc-storage-provider-s3-secret", util.HypershiftBucketSecretName,
 		}
 		args = append(args, awsArgs...)
+
+		// Set this to one to indicate that the AWS S3 bucket secret is used for the operator installation
+		metrics.IsAWSS3BucketSecretConfigured.Set(1)
 
 		//Private link creds
 		privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
@@ -338,19 +345,43 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		args = append(args, "--hypershift-image", hypershiftImage)
 	}
 
+	// Emit metrics to indicate that hypershift operator installation is in progress
+	metrics.InInstallationOrUpgradeBool.Set(1)
+
 	job, err := c.runHyperShiftInstallJob(ctx, hypershiftImage, os.TempDir(), imageStreamCMData, args)
 	if err != nil {
+		// Emit metrics to indicate that hypershift operator installation is over
+		metrics.InInstallationOrUpgradeBool.Set(0)
+		// Emit metrics to return the number of hypershift operator installation
+		// failures since the last successful installation
+		metrics.InstallationOrUpgradeFailedCount.Inc()
 		return err
 	}
 
 	if jobSucceeded, err := c.isInstallJobSuccessful(ctx, job.Name); !jobSucceeded || err != nil {
 		if err != nil {
+			// Emit metrics to indicate that hypershift operator installation is over
+			metrics.InInstallationOrUpgradeBool.Set(0)
+			// Emit metrics to return the number of hypershift operator installation failures
+			// since the last successful installation
+			metrics.InstallationOrUpgradeFailedCount.Inc()
 			return err
 		}
 
+		// Emit metrics to indicate that hypershift operator installation is over
+		metrics.InInstallationOrUpgradeBool.Set(0)
+		// Emit metrics to return the number of hypershift operator installation
+		// failures since the last successful installation
+		metrics.InstallationOrUpgradeFailedCount.Inc()
 		return fmt.Errorf("install HyperShift job failed")
 	}
 	c.log.Info(fmt.Sprintf("HyperShift install job: %s completed successfully", job.Name))
+
+	// Emit metrics to indicate that hypershift operator installation is over
+	metrics.InInstallationOrUpgradeBool.Set(0)
+	// Reset the number of hypershift operator installation failures
+	// since the last successful installation
+	metrics.InstallationOrUpgradeFailedCount.Set(0)
 
 	// Upon successful installation, save the secrets locally to check any changes on addon restart
 	if err := c.saveSecretLocally(ctx, se); err != nil { // S3 bucket secret

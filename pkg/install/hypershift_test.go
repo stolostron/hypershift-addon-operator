@@ -13,6 +13,8 @@ import (
 	"github.com/ghodss/yaml"
 	"github.com/go-logr/zapr"
 	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -429,6 +431,10 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: "hypershift"}, hypershiftNs)
 	assert.Nil(t, err, "is nil if the hypershift namespace was created")
 
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InInstallationOrUpgradeBool))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.IsAWSS3BucketSecretConfigured))
+
 	// Install with OIDC secret
 	bucketSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -486,6 +492,10 @@ func TestRunHypershiftInstall(t *testing.T) {
 	assert.NotNil(t, err, "is not nil when private link secret is not provided")
 	assert.True(t, errors.IsNotFound(err), "private link secret should not be found")
 
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InInstallationOrUpgradeBool))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.IsAWSS3BucketSecretConfigured))
+
 	// Check hypershift deployment still exists
 	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)
 	assert.Nil(t, err, "is nil if the hypershift deployment is found")
@@ -523,6 +533,10 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.IsAWSS3BucketSecretConfigured))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InInstallationOrUpgradeBool))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
+
 	// Run hypershift install again with image override using image upgrade configmap
 	imageUpgradeCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -551,6 +565,7 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.RunHypershiftOperatorUpdate(ctx)
 	assert.NotNil(t, err, "is nil if install HyperShift is sucessful")
 	assert.Equal(t, "install HyperShift job failed", err.Error())
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
 	if err := deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace); err != nil {
 		t.Errorf("error cleaning up HyperShift install jobs: %s", err.Error())
 	}
@@ -1078,6 +1093,9 @@ func TestRunHypershiftInstallExternalDNSDifferentSecret(t *testing.T) {
 	err := installHyperShiftOperator(t, ctx, aCtrl, false)
 	defer deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
+
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InInstallationOrUpgradeBool))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
 
 	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
 	oidcSecret := &corev1.Secret{

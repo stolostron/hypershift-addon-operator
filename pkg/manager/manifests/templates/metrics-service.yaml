@@ -1,0 +1,21 @@
+{{- if ne .disableMetrics "true" }}
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: {{ .AddonName }}-metrics
+  labels:
+    app: {{ .AddonName }}
+  name: {{ .AddonName }}-metrics
+  namespace: {{ .AddonInstallNamespace }}
+spec:
+  ports:
+  - name: metrics
+    port: 8443
+    protocol: TCP
+    targetPort: https
+  selector:
+    app: {{ .AddonName }}
+  sessionAffinity: None
+  type: ClusterIP
+{{- end }}
