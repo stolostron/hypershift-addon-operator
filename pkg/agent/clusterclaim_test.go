@@ -20,7 +20,7 @@ import (
 	ctrlclient "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
 	clustercsfake "open-cluster-management.io/api/client/cluster/clientset/versioned/fake"
 )
@@ -31,7 +31,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(testscheme))
-	utilruntime.Must(hyperv1alpha1.AddToScheme(testscheme))
+	utilruntime.Must(hyperv1beta1.AddToScheme(testscheme))
 }
 
 func TestCreateManagementClusterClaim(t *testing.T) {

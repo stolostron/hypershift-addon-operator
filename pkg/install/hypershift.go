@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	imageapi "github.com/openshift/api/image/v1"
-	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
@@ -508,7 +508,7 @@ func (c *UpgradeController) isDeploymentMarked(ctx context.Context) bool {
 
 func (c *UpgradeController) hasHostedClusters(ctx context.Context) (bool, error) {
 	listopts := &client.ListOptions{}
-	hcList := &hyperv1alpha1.HostedClusterList{}
+	hcList := &hyperv1beta1.HostedClusterList{}
 	if err := c.spokeUncachedClient.List(ctx, hcList, listopts); err != nil {
 		return false, err
 	}
