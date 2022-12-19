@@ -28,7 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
-	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"open-cluster-management.io/addon-framework/pkg/lease"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
@@ -45,7 +45,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
-	utilruntime.Must(hyperv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(hyperv1beta1.AddToScheme(scheme))
 	utilruntime.Must(addonv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(clusterv1alpha1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
@@ -291,7 +291,7 @@ func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedNam
 	}
 }
 
-func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context, secretData map[string][]byte, hc hyperv1alpha1.HostedCluster) error {
+func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context, secretData map[string][]byte, hc hyperv1beta1.HostedCluster) error {
 	// 1. Get hosted cluster's admin kubeconfig secret
 	secret := &corev1.Secret{}
 	secret.SetName("external-managed-kubeconfig")
@@ -405,7 +405,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return lastErr
 	}
 
-	hc := &hyperv1alpha1.HostedCluster{}
+	hc := &hyperv1beta1.HostedCluster{}
 	if err := c.spokeClient.Get(ctx, req.NamespacedName, hc); err != nil {
 		if apierrors.IsNotFound(err) {
 			c.log.Info(fmt.Sprintf("remove hostedcluster(%s) secrets on hub, since hostedcluster is gone", req.NamespacedName))
@@ -503,9 +503,9 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return ctrl.Result{}, nil
 }
 
-func (c *agentController) isHostedControlPlaneAvailable(status hyperv1alpha1.HostedClusterStatus) bool {
+func (c *agentController) isHostedControlPlaneAvailable(status hyperv1beta1.HostedClusterStatus) bool {
 	for _, condition := range status.Conditions {
-		if condition.Reason == hyperv1alpha1.HostedClusterAsExpectedReason && condition.Status == metav1.ConditionTrue && condition.Type == string(hyperv1alpha1.HostedClusterAvailable) {
+		if condition.Reason == hyperv1beta1.AsExpectedReason && condition.Status == metav1.ConditionTrue && condition.Type == string(hyperv1beta1.HostedClusterAvailable) {
 			return true
 		}
 	}
@@ -543,7 +543,7 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 	}
 
 	listopts := &client.ListOptions{}
-	hcList := &hyperv1alpha1.HostedClusterList{}
+	hcList := &hyperv1beta1.HostedClusterList{}
 	err = c.spokeUncachedClient.List(context.TODO(), hcList, listopts)
 	if err != nil {
 		// just log the error. it should not stop the rest of reconcile
@@ -641,7 +641,7 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&hyperv1alpha1.HostedCluster{}).
+		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		Complete(c)
 }
@@ -679,7 +679,7 @@ func (o *AgentOptions) runCleanup(ctx context.Context, uCtrl *install.UpgradeCon
 			return fmt.Errorf("failed to create spokeUncacheClient, err: %w", err)
 		}
 
-		if err := hyperv1alpha1.AddToScheme(scheme); err != nil {
+		if err := hyperv1beta1.AddToScheme(scheme); err != nil {
 			log.Error(err, "unable add HyperShift APIs to scheme")
 			return fmt.Errorf("unable add HyperShift APIs to scheme, err: %w", err)
 		}

@@ -12,7 +12,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/go-logr/zapr"
-	hyperv1alpha1 "github.com/openshift/hypershift/api/v1alpha1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
@@ -42,7 +42,7 @@ func initClient() ctrlClient.Client {
 	appsv1.AddToScheme(scheme)
 	corev1.AddToScheme(scheme)
 	metav1.AddMetaToScheme(scheme)
-	hyperv1alpha1.AddToScheme(scheme)
+	hyperv1beta1.AddToScheme(scheme)
 	kbatch.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
@@ -1475,8 +1475,8 @@ func TestSpokeCredentialUpdated(t *testing.T) {
 	assert.Equal(t, "February", string(spokeSecret.Data["credentials"]))
 }
 
-func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
-	hc := &hyperv1alpha1.HostedCluster{
+func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
+	hc := &hyperv1beta1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "HostedCluster",
 			APIVersion: "hypershift.openshift.io/v1alpha1",
@@ -1486,26 +1486,26 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1alpha1.HostedCluster {
 			Namespace:   hcNN.Namespace,
 			Annotations: map[string]string{util.ManagedClusterAnnoKey: "infra-abcdef"},
 		},
-		Spec: hyperv1alpha1.HostedClusterSpec{
-			Platform: hyperv1alpha1.PlatformSpec{
-				Type: hyperv1alpha1.AWSPlatform,
+		Spec: hyperv1beta1.HostedClusterSpec{
+			Platform: hyperv1beta1.PlatformSpec{
+				Type: hyperv1beta1.AWSPlatform,
 			},
-			Networking: hyperv1alpha1.ClusterNetworking{
-				NetworkType: hyperv1alpha1.OpenShiftSDN,
+			Networking: hyperv1beta1.ClusterNetworking{
+				NetworkType: hyperv1beta1.OpenShiftSDN,
 			},
-			Services: []hyperv1alpha1.ServicePublishingStrategyMapping{},
-			Release: hyperv1alpha1.Release{
+			Services: []hyperv1beta1.ServicePublishingStrategyMapping{},
+			Release: hyperv1beta1.Release{
 				Image: "test-image",
 			},
-			Etcd: hyperv1alpha1.EtcdSpec{
-				ManagementType: hyperv1alpha1.Managed,
+			Etcd: hyperv1beta1.EtcdSpec{
+				ManagementType: hyperv1beta1.Managed,
 			},
 			InfraID: "infra-abcdef",
 		},
-		Status: hyperv1alpha1.HostedClusterStatus{
+		Status: hyperv1beta1.HostedClusterStatus{
 			KubeConfig:        &corev1.LocalObjectReference{Name: "kubeconfig"},
 			KubeadminPassword: &corev1.LocalObjectReference{Name: "kubeadmin"},
-			Conditions:        []metav1.Condition{{Type: string(hyperv1alpha1.HostedClusterAvailable), Status: metav1.ConditionTrue}},
+			Conditions:        []metav1.Condition{{Type: string(hyperv1beta1.HostedClusterAvailable), Status: metav1.ConditionTrue}},
 		},
 	}
 	return hc
