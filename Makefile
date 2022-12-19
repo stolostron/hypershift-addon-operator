@@ -142,3 +142,7 @@ else
 	CLUSTERADM=$(shell which clusteradm)
 endif
 	$(@info CLUSTERADM="$(CLUSTERADM)")
+
+.PHONY: quickstart
+quickstart:
+	./quickstart/start.sh
