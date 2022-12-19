@@ -68,45 +68,36 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-if [ "${CLUSTER}" == "" ]; then
-  printf "\n**WARNING** No CLUSTER found, export it to avoid manual entry\n"
-  printf "Enter the CLUSTER name to deploy the addon\n"
-  read CLUSTER
-  if [ ${CLUSTER} == "" ]; then
-    echo "No CLUSTER provided"
-    exit 1
-  fi
+mce_name="multiclusterengine-sample"
+oc get mch -n open-cluster-management multiclusterhub
+if [ $? -eq 0 ]; then
+  echo "multiclusterhub installed, set mce name to multiclusterengine"
+  mce_name="multiclusterengine"
 fi
+echo "mce name: ${mce_name}"
 
-oc project ${CLUSTER}
+oc get mce ${mce_name}
 if [ $? -ne 0 ]; then
-  echo "${CLUSTER} is not valid, please provide a valid cluster name"
+  echo "${mce_name} is not available, please install the multi-cluster engine"
   exit 1
 fi
 
 oc create secret generic hypershift-operator-oidc-provider-s3-credentials --from-file=credentials=${S3_CREDS} --from-literal=bucket=${BUCKET_NAME} --from-literal=region=${BUCKET_REGION} -n local-cluster
+oc patch multiclusterengine ${mce_name} --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
 
-# install hypershift addon if it's not there
-oc get managedclusteraddon hypershift-addon -n local-cluster
+echo "Waiting for the local-cluster managed cluster to be available ..."
+oc wait --for=condition=ManagedClusterConditionAvailable managedcluster/local-cluster --timeout=600s
 if [ $? -ne 0 ]; then
-  echo "hypershift-addon is not installed on the hub, try to install it"
-  oc apply -f - <<EOF
-apiVersion: addon.open-cluster-management.io/v1alpha1
-kind: ManagedClusterAddOn
-metadata:
-  name: hypershift-addon
-  namespace: ${CLUSTER}
-spec:
-  installNamespace: open-cluster-management-agent-addon
-EOF
+  printf "ERROR: Timeout waiting local cluster to be available"
+  exit 1
 fi
 
-echo "wait for managed cluster addon hypershift addon to be available ..."
+echo "Waiting for the HyperShift addon on local-cluster to be available ..."
 oc wait --for=condition=Available managedclusteraddon/hypershift-addon -n local-cluster --timeout=600s
 if [ $? -ne 0 ]
 then
-  echo "hypershift addon installation failed"
+  echo "ERROR: Timeout waiting for the HyperShift addon to be available"
   exit 1
 else
-  echo "hypershift addon installed successfully, now you can provision a hosted control plane cluster by HypershiftDeployment"
+  echo "HyperShift addon installed successfully, you can now provision a hosted control plane cluster."
 fi
