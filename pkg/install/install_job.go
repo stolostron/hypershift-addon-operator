@@ -34,10 +34,10 @@ func (c *UpgradeController) runHyperShiftInstallJob(ctx context.Context, image, 
 	}
 
 	// Enable RHOBS
-	if strings.EqualFold(os.Getenv("ENABLE_RHOBS_MONITORING"), "true") {
+	if strings.EqualFold(os.Getenv("RHOBS_MONITORING"), "true") {
 		jobPodSpec.Containers[0].Env = []corev1.EnvVar{
 			{
-				Name:  "ENABLE_RHOBS_MONITORING",
+				Name:  "RHOBS_MONITORING",
 				Value: "1",
 			},
 		}
