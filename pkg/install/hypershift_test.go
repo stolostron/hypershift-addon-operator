@@ -968,8 +968,8 @@ func TestRunHypershiftInstallEnableRHOBS(t *testing.T) {
 	aCtrl.hubClient.Create(ctx, dp)
 	defer aCtrl.hubClient.Delete(ctx, dp)
 
-	os.Setenv("ENABLE_RHOBS_MONITORING", "true")
-	defer os.Unsetenv("ENABLE_RHOBS_MONITORING")
+	os.Setenv("RHOBS_MONITORING", "true")
+	defer os.Unsetenv("RHOBS_MONITORING")
 
 	err := installHyperShiftOperator(t, ctx, aCtrl, false)
 	defer deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
@@ -988,8 +988,8 @@ func TestRunHypershiftInstallEnableRHOBS(t *testing.T) {
 				"--hypershift-image", "my-test-image",
 			}
 			assert.Equal(t, expectArgs, installJob.Spec.Template.Spec.Containers[0].Args, "mismatched container arguments")
-			assert.Equal(t, "ENABLE_RHOBS_MONITORING", installJob.Spec.Template.Spec.Containers[0].Env[0].Name, "ENABLE_RHOBS_MONITORING environment variable should exist")
-			assert.Equal(t, "1", installJob.Spec.Template.Spec.Containers[0].Env[0].Value, "ENABLE_RHOBS_MONITORING environment variable value should be 1")
+			assert.Equal(t, "RHOBS_MONITORING", installJob.Spec.Template.Spec.Containers[0].Env[0].Name, "RHOBS_MONITORING environment variable should exist")
+			assert.Equal(t, "1", installJob.Spec.Template.Spec.Containers[0].Env[0].Value, "RHOBS_MONITORING environment variable value should be 1")
 		}
 	}
 

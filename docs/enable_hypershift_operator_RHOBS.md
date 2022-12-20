@@ -53,10 +53,10 @@ In the hub cluster, the status section of the hypershift-addon `ManagedClusterAd
     resource: addondeploymentconfigs
 ```
 
-In the hosting cluster, check the `hypershift-addon-agent` deployment in `open-cluster-management-agent-addon` namespace to ensure that the environment variable `ENABLE_RHOBS_MONITORING` is set to true.
+In the hosting cluster, check the `hypershift-addon-agent` deployment in `open-cluster-management-agent-addon` namespace to ensure that the environment variable `RHOBS_MONITORING` is set to true.
 
 ```
         env:
-        - name: ENABLE_RHOBS_MONITORING
+        - name: RHOBS_MONITORING
           value: "true"
 ```

@@ -80,7 +80,7 @@ spec:
           containerPort: 8383
 {{- end }}
 {{- if .enableRHOBSMonitoring }}
-        - name: ENABLE_RHOBS_MONITORING
+        - name: RHOBS_MONITORING
           value: "{{ .enableRHOBSMonitoring }}"
 {{- end }}
         volumeMounts:
