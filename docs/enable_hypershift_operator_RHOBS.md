@@ -4,6 +4,14 @@ When RHOBS monitoring is enabled for HyperShift, any ServiceMonitor or PodMonito
 
 When the hypershift-addon managed cluster addon is enabled, it installs the hypershift operator with the RHOBS monitoring disabled by default. 
 
+## Pre-requisite
+
+You need to install the RHOBS CRDs on the hosting clusters.
+
+```
+  oc apply -f https://raw.githubusercontent.com/rhobs/obo-prometheus-operator/rhobs-rel-0.60.1-rhobs1/example/stripped-down-crds/all.yaml
+```
+
 ## Enabling RHOBS Monitoring
 
 RHOBS monitoring for HyperShift operator can be enabled before or after you enable the hypershift-addon managed cluster addon.

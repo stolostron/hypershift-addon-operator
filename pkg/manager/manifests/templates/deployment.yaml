@@ -73,15 +73,15 @@ spec:
         - name: HC_THRESHOLD_NUMBER
           value: "{{ .hcThresholdNumber }}"
 {{- end }}
+{{- if eq .enableRHOBSMonitoring "true" }}
+        - name: RHOBS_MONITORING
+          value: "{{ .enableRHOBSMonitoring }}"
+{{- end }}
 {{- if ne .disableMetrics "true" }}
         ports:
         - name: metrics
           protocol: TCP
           containerPort: 8383
-{{- end }}
-{{- if .enableRHOBSMonitoring }}
-        - name: RHOBS_MONITORING
-          value: "{{ .enableRHOBSMonitoring }}"
 {{- end }}
         volumeMounts:
           - name: hub-config
@@ -95,17 +95,17 @@ spec:
           secret:
             secretName: {{ .AddonName }}-metrics
 {{- end }}
-      {{- if .MulticlusterEnginePullSecret }}
+{{- if .MulticlusterEnginePullSecret }}
       imagePullSecrets:
       - name: "{{ .MulticlusterEnginePullSecret }}"
-      {{- end }}
-      {{- if .NodeSelector }}
+{{- end }}
+{{- if .NodeSelector }}
       nodeSelector:
       {{- range $key, $value := .NodeSelector }}
         "{{ $key }}": "{{ $value }}"
       {{- end }}
-      {{- end }}
-      {{- if .Tolerations }}
+{{- end }}
+{{- if .Tolerations }}
       tolerations:
       {{- range $toleration := .Tolerations }}
       - key: "{{ $toleration.Key }}"
@@ -116,7 +116,7 @@ spec:
         tolerationSeconds: {{ $toleration.TolerationSeconds }}
         {{- end }}
       {{- end }}
-      {{- end }}
+{{- end }}
       hostNetwork: false
       hostPID: false
       hostIPC: false
