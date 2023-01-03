@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"testing"
+	"time"
 
 	"github.com/go-logr/zapr"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -75,6 +76,16 @@ kind: Config`)
 	err := aCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
+	// Create klusterlet namespace
+	klusterletNamespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "klusterlet-" + hc.Name,
+		},
+	}
+	err = aCtrl.hubClient.Create(ctx, klusterletNamespace)
+	assert.Nil(t, err, "err nil when klusterletNamespace was created successfully")
+	defer aCtrl.hubClient.Delete(ctx, klusterletNamespace)
+
 	// Reconcile with annotation
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
 	assert.Nil(t, err, "err nil when reconcile was successfully")
@@ -110,6 +121,64 @@ kind: Config`)
 	assert.True(t, err != nil && errors.IsNotFound(err), "is true when the admin kubeconfig secret is deleted")
 	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
 	assert.True(t, err != nil && errors.IsNotFound(err), "is nil when the kubeadmin password secret is deleted")
+}
+
+func TestReconcileRequeue(t *testing.T) {
+	ctx := context.Background()
+	client := initClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
+	aCtrl := &agentController{
+		spokeClustersClient: fakeClusterCS,
+		spokeUncachedClient: client,
+		spokeClient:         client,
+		hubClient:           client,
+		log:                 zapr.NewLogger(zapLog),
+	}
+
+	// Create secrets
+	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
+	secrets := aCtrl.scaffoldHostedclusterSecrets(hcNN)
+
+	for _, sec := range secrets {
+		sec.SetName(fmt.Sprintf("%s-%s", hcNN.Name, sec.Name))
+		secData := map[string][]byte{}
+		secData["kubeconfig"] = []byte(`apiVersion: v1
+clusters:
+- cluster:
+    server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:7443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    namespace: default
+    user: admin
+  name: admin
+current-context: admin
+kind: Config`)
+		sec.Data = secData
+		aCtrl.hubClient.Create(ctx, sec)
+		defer aCtrl.hubClient.Delete(ctx, sec)
+	}
+
+	// Create hosted cluster
+	hc := getHostedCluster(hcNN)
+	err := aCtrl.hubClient.Create(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
+
+	// Reconcile with annotation
+	res, err := aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
+	assert.Nil(t, err, "err nil when reconcile was successfully")
+
+	// external-managed-kubeconfig could not be created because there is no klusterlet namespace
+	secret := &corev1.Secret{}
+	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-" + hc.Name}
+	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
+	assert.NotNil(t, err, "external-managed-kubeconfig secret not found")
+	assert.Equal(t, true, res.Requeue)
+	assert.Equal(t, 30*time.Second, res.RequeueAfter)
 }
 
 func TestReconcileWithAnnotation(t *testing.T) {
@@ -159,6 +228,16 @@ kind: Config`)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
+
+	// Create klusterlet namespace
+	klusterletNamespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "klusterlet-" + hc.Spec.InfraID,
+		},
+	}
+	err = aCtrl.hubClient.Create(ctx, klusterletNamespace)
+	assert.Nil(t, err, "err nil when klusterletNamespace was created successfully")
+	defer aCtrl.hubClient.Delete(ctx, klusterletNamespace)
 
 	// Reconcile with no annotation
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
