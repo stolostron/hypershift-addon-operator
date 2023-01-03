@@ -307,8 +307,8 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 
 	err := c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace)
 	if err != nil {
-		c.log.Error(err, "failed to find the klusterlet namespace: %s", klusterletNamespaceNsn.Name)
-		return err
+		c.log.Error(err, fmt.Sprintf("failed to find the klusterlet namespace: %s ", klusterletNamespaceNsn.Name))
+		return fmt.Errorf("failed to find the klusterlet namespace: %s", klusterletNamespaceNsn.Name)
 	}
 
 	if kubeconfigData == nil {
@@ -318,17 +318,17 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	kubeconfig, err := clientcmd.Load(kubeconfigData)
 
 	if err != nil {
-		c.log.Error(err, "failed to load kubeconfig from secret: %s", secret.GetName())
+		c.log.Error(err, fmt.Sprintf("failed to load kubeconfig from secret: %s", secret.GetName()))
 		return fmt.Errorf("failed to load kubeconfig from secret: %s", secret.GetName())
 	}
 
 	if len(kubeconfig.Clusters) == 0 {
-		c.log.Error(err, "there is no cluster in kubeconfig from secret: %s", secret.GetName())
+		c.log.Error(err, fmt.Sprintf("there is no cluster in kubeconfig from secret: %s", secret.GetName()))
 		return fmt.Errorf("there is no cluster in kubeconfig from secret: %s", secret.GetName())
 	}
 
 	if kubeconfig.Clusters["cluster"] == nil {
-		c.log.Error(err, "failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
+		c.log.Error(err, fmt.Sprintf("failed to get a cluster from kubeconfig in secret: %s", secret.GetName()))
 		return fmt.Errorf("failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
 	}
 
@@ -347,7 +347,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	newKubeconfig, err := clientcmd.Write(*kubeconfig)
 
 	if err != nil {
-		c.log.Error(err, "failed to write new kubeconfig to secret: %s", secret.GetName())
+		c.log.Error(err, fmt.Sprintf("failed to write new kubeconfig to secret: %s", secret.GetName()))
 		return fmt.Errorf("failed to write new kubeconfig to secret: %s", secret.GetName())
 	}
 
@@ -387,7 +387,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			},
 		})
 		if err != nil {
-			c.log.Error(err, "failed to convert label to get secrets on hub for hostedCluster: %s", req)
+			c.log.Error(err, fmt.Sprintf("failed to convert label to get secrets on hub for hostedCluster: %s", req))
 			return err
 		}
 
@@ -397,7 +397,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		hcHubSecretList := &corev1.SecretList{}
 		err = c.hubClient.List(ctx, hcHubSecretList, listopts)
 		if err != nil {
-			c.log.Error(err, "failed to get secrets on hub for hostedCluster: %s", req)
+			c.log.Error(err, fmt.Sprintf("failed to get secrets on hub for hostedCluster: %s", req))
 			return err
 		}
 
