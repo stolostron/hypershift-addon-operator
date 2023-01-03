@@ -303,11 +303,12 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	kubeconfigData := secretData["kubeconfig"]
 
 	klusterletNamespace := &corev1.Namespace{}
-	klusterletNamespaceNN := types.NamespacedName{Name: "klusterlet-" + managedClusterAnnoValue}
+	klusterletNamespaceNsn := types.NamespacedName{Name: "klusterlet-" + managedClusterAnnoValue}
 
-	err := c.spokeClient.Get(context.TODO(), klusterletNamespaceNN, klusterletNamespace)
+	err := c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace)
 	if err != nil {
-		return fmt.Errorf("failed to find the klusterlet namespace: %s", klusterletNamespaceNN.Name)
+		c.log.Error(err, "failed to find the klusterlet namespace: %s", klusterletNamespaceNsn.Name)
+		return err
 	}
 
 	if kubeconfigData == nil {
@@ -425,7 +426,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if !hc.GetDeletionTimestamp().IsZero() {
-		c.log.Info(fmt.Sprintf("hostedcluster %s has deletionTimestamp %s. Skip reconciling klusterlet secrets", hc.Name, hc.GetDeletionTimestamp()))
+		c.log.Info(fmt.Sprintf("hostedcluster %s has deletionTimestamp %s. Skip reconciling klusterlet secrets", hc.Name, hc.GetDeletionTimestamp().String()))
 		return ctrl.Result{}, nil
 	}
 
