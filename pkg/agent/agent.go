@@ -302,6 +302,15 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	secret.SetNamespace("klusterlet-" + managedClusterAnnoValue)
 	kubeconfigData := secretData["kubeconfig"]
 
+	klusterletNamespace := &corev1.Namespace{}
+	klusterletNamespaceNsn := types.NamespacedName{Name: "klusterlet-" + managedClusterAnnoValue}
+
+	err := c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace)
+	if err != nil {
+		c.log.Error(err, fmt.Sprintf("failed to find the klusterlet namespace: %s ", klusterletNamespaceNsn.Name))
+		return fmt.Errorf("failed to find the klusterlet namespace: %s", klusterletNamespaceNsn.Name)
+	}
+
 	if kubeconfigData == nil {
 		return fmt.Errorf("failed to get kubeconfig from secret: %s", secret.GetName())
 	}
@@ -309,17 +318,17 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	kubeconfig, err := clientcmd.Load(kubeconfigData)
 
 	if err != nil {
-		c.log.Error(err, "failed to load kubeconfig from secret: %s", secret.GetName())
+		c.log.Error(err, fmt.Sprintf("failed to load kubeconfig from secret: %s", secret.GetName()))
 		return fmt.Errorf("failed to load kubeconfig from secret: %s", secret.GetName())
 	}
 
 	if len(kubeconfig.Clusters) == 0 {
-		c.log.Error(err, "there is no cluster in kubeconfig from secret: %s", secret.GetName())
+		c.log.Error(err, fmt.Sprintf("there is no cluster in kubeconfig from secret: %s", secret.GetName()))
 		return fmt.Errorf("there is no cluster in kubeconfig from secret: %s", secret.GetName())
 	}
 
 	if kubeconfig.Clusters["cluster"] == nil {
-		c.log.Error(err, "failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
+		c.log.Error(err, fmt.Sprintf("failed to get a cluster from kubeconfig in secret: %s", secret.GetName()))
 		return fmt.Errorf("failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
 	}
 
@@ -338,7 +347,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	newKubeconfig, err := clientcmd.Write(*kubeconfig)
 
 	if err != nil {
-		c.log.Error(err, "failed to write new kubeconfig to secret: %s", secret.GetName())
+		c.log.Error(err, fmt.Sprintf("failed to write new kubeconfig to secret: %s", secret.GetName()))
 		return fmt.Errorf("failed to write new kubeconfig to secret: %s", secret.GetName())
 	}
 
@@ -378,7 +387,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			},
 		})
 		if err != nil {
-			c.log.Error(err, "failed to convert label to get secrets on hub for hostedCluster: %s", req)
+			c.log.Error(err, fmt.Sprintf("failed to convert label to get secrets on hub for hostedCluster: %s", req))
 			return err
 		}
 
@@ -388,7 +397,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		hcHubSecretList := &corev1.SecretList{}
 		err = c.hubClient.List(ctx, hcHubSecretList, listopts)
 		if err != nil {
-			c.log.Error(err, "failed to get secrets on hub for hostedCluster: %s", req)
+			c.log.Error(err, fmt.Sprintf("failed to get secrets on hub for hostedCluster: %s", req))
 			return err
 		}
 
@@ -417,12 +426,14 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if !hc.GetDeletionTimestamp().IsZero() {
+		c.log.Info(fmt.Sprintf("hostedcluster %s has deletionTimestamp %s. Skip reconciling klusterlet secrets", hc.Name, hc.GetDeletionTimestamp().String()))
 		return ctrl.Result{}, nil
 	}
 
 	if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 ||
 		!c.isHostedControlPlaneAvailable(hc.Status) {
 		// Wait for secrets to exist
+		c.log.Info(fmt.Sprintf("hostedcluster %s's control plane is not ready yet.", hc.Name))
 		return ctrl.Result{}, nil
 	}
 
@@ -487,7 +498,8 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if err := createOrUpdateMirrorSecrets(); err != nil {
-		return ctrl.Result{}, err
+		c.log.Info(fmt.Sprintf("failed to create external-managed-kubeconfig and mirror secrets for hostedcluster %s, error: %s. Will try again in 30 seconds", hc.Name, err.Error()))
+		return ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}, nil
 	}
 
 	if err := c.createHostedClusterClaim(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Status.KubeConfig.Name},
