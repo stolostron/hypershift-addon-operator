@@ -650,7 +650,7 @@ func (c *UpgradeController) operatorImagesUpdated(im []byte, operatorDeployment 
 
 	imObj := &imageapi.ImageStream{}
 	if err := yaml.Unmarshal(im, imObj); err != nil {
-		c.log.Error(err, "failed to get image stream content: ", err.Error())
+		c.log.Error(err, "failed to get image stream content")
 		return false
 	}
 
@@ -717,7 +717,7 @@ func (c *UpgradeController) secretDataUpdated(secretName string, secret corev1.S
 	secretKey := types.NamespacedName{Name: secretName, Namespace: c.addonNamespace}
 	localSecret := &corev1.Secret{}
 	if err := c.spokeUncachedClient.Get(context.TODO(), secretKey, localSecret); err != nil && !apierrors.IsNotFound(err) {
-		c.log.Error(err, "failed to find secret: ", err.Error()) // just log and continue
+		c.log.Error(err, "failed to find secret:") // just log and continue
 	}
 
 	if !reflect.DeepEqual(localSecret.Data, secret.Data) { // compare only the secret data
