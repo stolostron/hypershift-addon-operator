@@ -309,10 +309,12 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 	// Enable RHOBS
 	if strings.EqualFold(os.Getenv("RHOBS_MONITORING"), "true") {
-		c.log.Info("RHOBS_MONITORING=true, adding --rhobs-monitoring=true")
+		c.log.Info("RHOBS_MONITORING=true, adding --rhobs-monitoring true --metrics-set SRE")
 		rhobsArgs := []string{
 			"--rhobs-monitoring",
 			"true",
+			"--metrics-set",
+			"SRE",
 		}
 		args = append(args, rhobsArgs...)
 	}
