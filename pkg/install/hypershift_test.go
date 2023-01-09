@@ -985,6 +985,7 @@ func TestRunHypershiftInstallEnableRHOBS(t *testing.T) {
 				"--enable-uwm-telemetry-remote-write",
 				"--platform-monitoring", "OperatorOnly",
 				"--rhobs-monitoring", "true",
+				"--metrics-set", "SRE",
 				"--hypershift-image", "my-test-image",
 			}
 			assert.Equal(t, expectArgs, installJob.Spec.Template.Spec.Containers[0].Args, "mismatched container arguments")
