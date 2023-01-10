@@ -77,7 +77,7 @@ func (c *UpgradeController) runHyperShiftInstallJob(ctx context.Context, image, 
 
 	backoffLimit := int32(3)
 	activeDeadlineSeconds := int64(600)
-	ttlSecondsAfterFinished := int32(300)
+	ttlSecondsAfterFinished := int32(172800) // 48 hrs
 	job := &kbatch.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: util.HypershiftInstallJobName,
