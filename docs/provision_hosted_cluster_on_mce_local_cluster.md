@@ -444,3 +444,12 @@ Check the status of your hosted cluster via:
     ```bash
     $ oc get hostedclusters -n local-cluster
     ```
+### How do I recreate a managed cluster resource if it's deleted by accident?
+If a managed cluster resource is deleted by accident, it is possible to create it again to re-import the managed cluster into MCE, as long as the hosted cluster still exists. When a managed cluster resource is deleted, the credentials for the hosted cluster are removed from the hub cluster as well. These credentials need to be recreated before the managed cluster resource could be created.
+
+To recreate the credentials for the hosted cluster, add an annotation to the hosted cluster:
+    ```bash
+    $ oc annotate hostedcluster $CLUSTER_NAME recreate=true 
+    ```
+
+The hosted cluster could now be imported into MCE again, either using the CLI or the console.
