@@ -144,6 +144,8 @@ You run the following wait commands to wait for the addon to reach this state wi
     ```
 Once complete, the `hypershift-addon` and the hypershift operator are installed and `local-cluster` is available to host and manage hosted clusters.
 
+See [Hypershift addon status](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift_addon_status.md) for more details on checking the status of `hypershift-addon managed` cluster addon.
+
 ## Provision a hosted cluster on AWS
 
 After setting up the hypershift command line and enabling `local-cluster` cluster as the hosting cluster, you can provision a hosted cluster via `hypershift` command line.
