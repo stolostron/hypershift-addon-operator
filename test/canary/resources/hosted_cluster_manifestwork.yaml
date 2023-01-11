@@ -1,0 +1,466 @@
+apiVersion: work.open-cluster-management.io/v1
+kind: ManifestWork
+metadata:
+  annotations:
+    hypershift-deployment.open-cluster-management.io/created-by: ignore/ignore
+  name: __INFRA_ID__
+  namespace: __HOSTING_CLUSTER_NAME__
+spec:
+  deleteOption:
+    propagationPolicy: Foreground
+  manifestConfigs:
+  - feedbackRules:
+    - jsonPaths:
+      - name: Available-Reason
+        path: .status.conditions[?(@.type=="Available")].reason
+      - name: Available-Status
+        path: .status.conditions[?(@.type=="Available")].status
+      - name: Available-Message
+        path: .status.conditions[?(@.type=="Available")].message
+      - name: Available-LastTransitionTime
+        path: .status.conditions[?(@.type=="Available")].lastTransitionTime
+      - name: Progressing-Reason
+        path: .status.conditions[?(@.type=="Progressing")].reason
+      - name: Progressing-Status
+        path: .status.conditions[?(@.type=="Progressing")].status
+      - name: Progressing-Message
+        path: .status.conditions[?(@.type=="Progressing")].message
+      - name: Progressing-LastTransitionTime
+        path: .status.conditions[?(@.type=="Progressing")].lastTransitionTime
+      - name: Degraded-Reason
+        path: .status.conditions[?(@.type=="Degraded")].reason
+      - name: Degraded-Status
+        path: .status.conditions[?(@.type=="Degraded")].status
+      - name: Degraded-Message
+        path: .status.conditions[?(@.type=="Degraded")].message
+      - name: Degraded-LastTransitionTime
+        path: .status.conditions[?(@.type=="Degraded")].lastTransitionTime
+      - name: IgnitionEndpointAvailable-Reason
+        path: .status.conditions[?(@.type=="IgnitionEndpointAvailable")].reason
+      - name: IgnitionEndpointAvailable-Status
+        path: .status.conditions[?(@.type=="IgnitionEndpointAvailable")].status
+      - name: IgnitionEndpointAvailable-Message
+        path: .status.conditions[?(@.type=="IgnitionEndpointAvailable")].message
+      - name: IgnitionEndpointAvailable-LastTransitionTime
+        path: .status.conditions[?(@.type=="IgnitionEndpointAvailable")].lastTransitionTime
+      - name: UnmanagedEtcdAvailable-Reason
+        path: .status.conditions[?(@.type=="UnmanagedEtcdAvailable")].reason
+      - name: UnmanagedEtcdAvailable-Status
+        path: .status.conditions[?(@.type=="UnmanagedEtcdAvailable")].status
+      - name: UnmanagedEtcdAvailable-Message
+        path: .status.conditions[?(@.type=="UnmanagedEtcdAvailable")].message
+      - name: UnmanagedEtcdAvailable-LastTransitionTime
+        path: .status.conditions[?(@.type=="UnmanagedEtcdAvailable")].lastTransitionTime
+      - name: ValidConfiguration-Reason
+        path: .status.conditions[?(@.type=="ValidConfiguration")].reason
+      - name: ValidConfiguration-Status
+        path: .status.conditions[?(@.type=="ValidConfiguration")].status
+      - name: ValidConfiguration-Message
+        path: .status.conditions[?(@.type=="ValidConfiguration")].message
+      - name: ValidConfiguration-LastTransitionTime
+        path: .status.conditions[?(@.type=="ValidConfiguration")].lastTransitionTime
+      - name: SupportedHostedCluster-Reason
+        path: .status.conditions[?(@.type=="SupportedHostedCluster")].reason
+      - name: SupportedHostedCluster-Status
+        path: .status.conditions[?(@.type=="SupportedHostedCluster")].status
+      - name: SupportedHostedCluster-Message
+        path: .status.conditions[?(@.type=="SupportedHostedCluster")].message
+      - name: SupportedHostedCluster-LastTransitionTime
+        path: .status.conditions[?(@.type=="SupportedHostedCluster")].lastTransitionTime
+      - name: ClusterVersionSucceeding-Reason
+        path: .status.conditions[?(@.type=="ClusterVersionSucceeding")].reason
+      - name: ClusterVersionSucceeding-Status
+        path: .status.conditions[?(@.type=="ClusterVersionSucceeding")].status
+      - name: ClusterVersionSucceeding-Message
+        path: .status.conditions[?(@.type=="ClusterVersionSucceeding")].message
+      - name: ClusterVersionSucceeding-LastTransitionTime
+        path: .status.conditions[?(@.type=="ClusterVersionSucceeding")].lastTransitionTime
+      - name: ClusterVersionUpgradeable-Reason
+        path: .status.conditions[?(@.type=="ClusterVersionUpgradeable")].reason
+      - name: ClusterVersionUpgradeable-Status
+        path: .status.conditions[?(@.type=="ClusterVersionUpgradeable")].status
+      - name: ClusterVersionUpgradeable-Message
+        path: .status.conditions[?(@.type=="ClusterVersionUpgradeable")].message
+      - name: ClusterVersionUpgradeable-LastTransitionTime
+        path: .status.conditions[?(@.type=="ClusterVersionUpgradeable")].lastTransitionTime
+      - name: ReconciliationActive-Reason
+        path: .status.conditions[?(@.type=="ReconciliationActive")].reason
+      - name: ReconciliationActive-Status
+        path: .status.conditions[?(@.type=="ReconciliationActive")].status
+      - name: ReconciliationActive-Message
+        path: .status.conditions[?(@.type=="ReconciliationActive")].message
+      - name: ReconciliationActive-LastTransitionTime
+        path: .status.conditions[?(@.type=="ReconciliationActive")].lastTransitionTime
+      - name: ReconciliationSucceeded-Reason
+        path: .status.conditions[?(@.type=="ReconciliationSucceeded")].reason
+      - name: ReconciliationSucceeded-Status
+        path: .status.conditions[?(@.type=="ReconciliationSucceeded")].status
+      - name: ReconciliationSucceeded-Message
+        path: .status.conditions[?(@.type=="ReconciliationSucceeded")].message
+      - name: ReconciliationSucceeded-LastTransitionTime
+        path: .status.conditions[?(@.type=="ReconciliationSucceeded")].lastTransitionTime
+      - name: ValidOIDCConfiguration-Reason
+        path: .status.conditions[?(@.type=="ValidOIDCConfiguration")].reason
+      - name: ValidOIDCConfiguration-Status
+        path: .status.conditions[?(@.type=="ValidOIDCConfiguration")].status
+      - name: ValidOIDCConfiguration-Message
+        path: .status.conditions[?(@.type=="ValidOIDCConfiguration")].message
+      - name: ValidOIDCConfiguration-LastTransitionTime
+        path: .status.conditions[?(@.type=="ValidOIDCConfiguration")].lastTransitionTime
+      - name: ValidReleaseImage-Reason
+        path: .status.conditions[?(@.type=="ValidReleaseImage")].reason
+      - name: ValidReleaseImage-Status
+        path: .status.conditions[?(@.type=="ValidReleaseImage")].status
+      - name: ValidReleaseImage-Message
+        path: .status.conditions[?(@.type=="ValidReleaseImage")].message
+      - name: ValidReleaseImage-LastTransitionTime
+        path: .status.conditions[?(@.type=="ValidReleaseImage")].lastTransitionTime
+      - name: PlatformCredentialsFound-Reason
+        path: .status.conditions[?(@.type=="PlatformCredentialsFound")].reason
+      - name: PlatformCredentialsFound-Status
+        path: .status.conditions[?(@.type=="PlatformCredentialsFound")].status
+      - name: PlatformCredentialsFound-Message
+        path: .status.conditions[?(@.type=="PlatformCredentialsFound")].message
+      - name: PlatformCredentialsFound-LastTransitionTime
+        path: .status.conditions[?(@.type=="PlatformCredentialsFound")].lastTransitionTime
+      - name: InfrastructureReady-Reason
+        path: .status.conditions[?(@.type=="InfrastructureReady")].reason
+      - name: InfrastructureReady-Status
+        path: .status.conditions[?(@.type=="InfrastructureReady")].status
+      - name: InfrastructureReady-Message
+        path: .status.conditions[?(@.type=="InfrastructureReady")].message
+      - name: InfrastructureReady-LastTransitionTime
+        path: .status.conditions[?(@.type=="InfrastructureReady")].lastTransitionTime
+      - name: KubeAPIServerAvailable-Reason
+        path: .status.conditions[?(@.type=="KubeAPIServerAvailable")].reason
+      - name: KubeAPIServerAvailable-Status
+        path: .status.conditions[?(@.type=="KubeAPIServerAvailable")].status
+      - name: KubeAPIServerAvailable-Message
+        path: .status.conditions[?(@.type=="KubeAPIServerAvailable")].message
+      - name: KubeAPIServerAvailable-LastTransitionTime
+        path: .status.conditions[?(@.type=="KubeAPIServerAvailable")].lastTransitionTime
+      - name: EtcdAvailable-Reason
+        path: .status.conditions[?(@.type=="EtcdAvailable")].reason
+      - name: EtcdAvailable-Status
+        path: .status.conditions[?(@.type=="EtcdAvailable")].status
+      - name: EtcdAvailable-Message
+        path: .status.conditions[?(@.type=="EtcdAvailable")].message
+      - name: EtcdAvailable-LastTransitionTime
+        path: .status.conditions[?(@.type=="EtcdAvailable")].lastTransitionTime
+      - name: progress
+        path: .status.version.history[?(@.state!="")].state
+      type: JSONPaths
+    resourceIdentifier:
+      group: hypershift.openshift.io
+      name: __CLUSTER_NAME__
+      namespace: ocm-staging-__INFRA_ID__
+      resource: hostedclusters
+    updateStrategy:
+      type: ServerSideApply
+  - feedbackRules:
+    - jsonPaths:
+      - name: ValidPlatformImage-Reason
+        path: .status.conditions[?(@.type=="ValidPlatformImage")].reason
+      - name: ValidPlatformImage-Status
+        path: .status.conditions[?(@.type=="ValidPlatformImage")].status
+      - name: ValidPlatformImage-Message
+        path: .status.conditions[?(@.type=="ValidPlatformImage")].message
+      - name: ValidPlatformImage-LastTransitionTime
+        path: .status.conditions[?(@.type=="ValidPlatformImage")].lastTransitionTime
+      - name: ValidHostedCluster-Reason
+        path: .status.conditions[?(@.type=="ValidHostedCluster")].reason
+      - name: ValidHostedCluster-Status
+        path: .status.conditions[?(@.type=="ValidHostedCluster")].status
+      - name: ValidHostedCluster-Message
+        path: .status.conditions[?(@.type=="ValidHostedCluster")].message
+      - name: ValidHostedCluster-LastTransitionTime
+        path: .status.conditions[?(@.type=="ValidHostedCluster")].lastTransitionTime
+      - name: ValidReleaseImage-Reason
+        path: .status.conditions[?(@.type=="ValidReleaseImage")].reason
+      - name: ValidReleaseImage-Status
+        path: .status.conditions[?(@.type=="ValidReleaseImage")].status
+      - name: ValidReleaseImage-Message
+        path: .status.conditions[?(@.type=="ValidReleaseImage")].message
+      - name: ValidReleaseImage-LastTransitionTime
+        path: .status.conditions[?(@.type=="ValidReleaseImage")].lastTransitionTime
+      - name: ValidMachineConfig-Reason
+        path: .status.conditions[?(@.type=="ValidMachineConfig")].reason
+      - name: ValidMachineConfig-Status
+        path: .status.conditions[?(@.type=="ValidMachineConfig")].status
+      - name: ValidMachineConfig-Message
+        path: .status.conditions[?(@.type=="ValidMachineConfig")].message
+      - name: ValidMachineConfig-LastTransitionTime
+        path: .status.conditions[?(@.type=="ValidMachineConfig")].lastTransitionTime
+      - name: ValidTuningConfig-Reason
+        path: .status.conditions[?(@.type=="ValidTuningConfig")].reason
+      - name: ValidTuningConfig-Status
+        path: .status.conditions[?(@.type=="ValidTuningConfig")].status
+      - name: ValidTuningConfig-Message
+        path: .status.conditions[?(@.type=="ValidTuningConfig")].message
+      - name: ValidTuningConfig-LastTransitionTime
+        path: .status.conditions[?(@.type=="ValidTuningConfig")].lastTransitionTime
+      - name: UpdateManagementEnabled-Reason
+        path: .status.conditions[?(@.type=="UpdateManagementEnabled")].reason
+      - name: UpdateManagementEnabled-Status
+        path: .status.conditions[?(@.type=="UpdateManagementEnabled")].status
+      - name: UpdateManagementEnabled-Message
+        path: .status.conditions[?(@.type=="UpdateManagementEnabled")].message
+      - name: UpdateManagementEnabled-LastTransitionTime
+        path: .status.conditions[?(@.type=="UpdateManagementEnabled")].lastTransitionTime
+      - name: AutoscalingEnabled-Reason
+        path: .status.conditions[?(@.type=="AutoscalingEnabled")].reason
+      - name: AutoscalingEnabled-Status
+        path: .status.conditions[?(@.type=="AutoscalingEnabled")].status
+      - name: AutoscalingEnabled-Message
+        path: .status.conditions[?(@.type=="AutoscalingEnabled")].message
+      - name: AutoscalingEnabled-LastTransitionTime
+        path: .status.conditions[?(@.type=="AutoscalingEnabled")].lastTransitionTime
+      - name: Ready-Reason
+        path: .status.conditions[?(@.type=="Ready")].reason
+      - name: Ready-Status
+        path: .status.conditions[?(@.type=="Ready")].status
+      - name: Ready-Message
+        path: .status.conditions[?(@.type=="Ready")].message
+      - name: Ready-LastTransitionTime
+        path: .status.conditions[?(@.type=="Ready")].lastTransitionTime
+      - name: ReconciliationActive-Reason
+        path: .status.conditions[?(@.type=="ReconciliationActive")].reason
+      - name: ReconciliationActive-Status
+        path: .status.conditions[?(@.type=="ReconciliationActive")].status
+      - name: ReconciliationActive-Message
+        path: .status.conditions[?(@.type=="ReconciliationActive")].message
+      - name: ReconciliationActive-LastTransitionTime
+        path: .status.conditions[?(@.type=="ReconciliationActive")].lastTransitionTime
+      - name: AutorepairEnabled-Reason
+        path: .status.conditions[?(@.type=="AutorepairEnabled")].reason
+      - name: AutorepairEnabled-Status
+        path: .status.conditions[?(@.type=="AutorepairEnabled")].status
+      - name: AutorepairEnabled-Message
+        path: .status.conditions[?(@.type=="AutorepairEnabled")].message
+      - name: AutorepairEnabled-LastTransitionTime
+        path: .status.conditions[?(@.type=="AutorepairEnabled")].lastTransitionTime
+      - name: UpdatingVersion-Reason
+        path: .status.conditions[?(@.type=="UpdatingVersion")].reason
+      - name: UpdatingVersion-Status
+        path: .status.conditions[?(@.type=="UpdatingVersion")].status
+      - name: UpdatingVersion-Message
+        path: .status.conditions[?(@.type=="UpdatingVersion")].message
+      - name: UpdatingVersion-LastTransitionTime
+        path: .status.conditions[?(@.type=="UpdatingVersion")].lastTransitionTime
+      - name: UpdatingConfig-Reason
+        path: .status.conditions[?(@.type=="UpdatingConfig")].reason
+      - name: UpdatingConfig-Status
+        path: .status.conditions[?(@.type=="UpdatingConfig")].status
+      - name: UpdatingConfig-Message
+        path: .status.conditions[?(@.type=="UpdatingConfig")].message
+      - name: UpdatingConfig-LastTransitionTime
+        path: .status.conditions[?(@.type=="UpdatingConfig")].lastTransitionTime
+      - name: AsExpected-Reason
+        path: .status.conditions[?(@.type=="AsExpected")].reason
+      - name: AsExpected-Status
+        path: .status.conditions[?(@.type=="AsExpected")].status
+      - name: AsExpected-Message
+        path: .status.conditions[?(@.type=="AsExpected")].message
+      - name: AsExpected-LastTransitionTime
+        path: .status.conditions[?(@.type=="AsExpected")].lastTransitionTime
+      - name: ValidationFailed-Reason
+        path: .status.conditions[?(@.type=="ValidationFailed")].reason
+      - name: ValidationFailed-Status
+        path: .status.conditions[?(@.type=="ValidationFailed")].status
+      - name: ValidationFailed-Message
+        path: .status.conditions[?(@.type=="ValidationFailed")].message
+      - name: ValidationFailed-LastTransitionTime
+        path: .status.conditions[?(@.type=="ValidationFailed")].lastTransitionTime
+      - name: InplaceUpgradeFailed-Reason
+        path: .status.conditions[?(@.type=="InplaceUpgradeFailed")].reason
+      - name: InplaceUpgradeFailed-Status
+        path: .status.conditions[?(@.type=="InplaceUpgradeFailed")].status
+      - name: InplaceUpgradeFailed-Message
+        path: .status.conditions[?(@.type=="InplaceUpgradeFailed")].message
+      - name: InplaceUpgradeFailed-LastTransitionTime
+        path: .status.conditions[?(@.type=="InplaceUpgradeFailed")].lastTransitionTime
+      type: JSONPaths
+    resourceIdentifier:
+      group: hypershift.openshift.io
+      name: __CLUSTER_NAME__-workers
+      namespace: ocm-staging-__INFRA_ID__
+      resource: nodepools
+    updateStrategy:
+      type: ServerSideApply
+  workload:
+    manifests:
+    - apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: ocm-staging-__INFRA_ID__
+      spec: {}
+      status: {}
+    - apiVersion: v1
+      data:
+        .dockerconfigjson: __OCP_PULL_SECRET__
+      kind: Secret
+      metadata:
+        name: __CLUSTER_NAME__-pull
+        namespace: ocm-staging-__INFRA_ID__
+    - apiVersion: v1
+      data:
+        id_rsa: __PRIVATE_KEY__
+        id_rsa.pub: __PUBLIC_KEY__
+      kind: Secret
+      metadata:
+        name: __CLUSTER_NAME__-ssh
+        namespace: ocm-staging-__INFRA_ID__
+    - apiVersion: v1
+      data:
+        key: 1ob6uAy0DAlTmRZREk0fQyJO/H0kEBFsU+wwOcLgZQI=
+      kind: Secret
+      metadata:
+        name: __CLUSTER_NAME__-encryption
+        namespace: ocm-staging-__INFRA_ID__
+    - apiVersion: hypershift.openshift.io/v1beta1
+      kind: HostedCluster
+      metadata:
+        annotations:
+          cluster.open-cluster-management.io/hypershiftdeployment: ignore/ignore
+          cluster.open-cluster-management.io/managedcluster-name: __INFRA_ID__
+          hypershift.openshift.io/cleanup-cloud-resources: "true"
+        name: __CLUSTER_NAME__
+        namespace: ocm-staging-__INFRA_ID__
+      spec:
+        autoscaling: {}
+        clusterID: __CLUSTER_UUID__
+        configuration:
+          oauth:
+            identityProviders:
+            - htpasswd:
+                fileData:
+                  name: htpasswd-secret
+              mappingMethod: claim
+              name: htpasswd
+              type: HTPasswd
+            templates:
+              error:
+                name: ""
+              login:
+                name: ""
+              providerSelection:
+                name: ""
+            tokenConfig: {}
+        controllerAvailabilityPolicy: SingleReplica
+        dns:
+          baseDomain: __BASE_DOMAIN__
+          privateZoneID: __PRIVATE_ZONE_ID__
+          publicZoneID: __PUBLIC_ZONE_ID__
+        etcd:
+          managed:
+            storage:
+              persistentVolume:
+                size: 4Gi
+                storageClassName: gp3-csi
+              type: PersistentVolume
+          managementType: Managed
+        fips: false
+        infraID: __INFRA_ID__
+        infrastructureAvailabilityPolicy: SingleReplica
+        issuerURL: __ISSUER_URL__
+        networking:
+          apiServer:
+            port: 443
+          clusterNetwork:
+          - cidr: 10.132.0.0/14
+          machineNetwork:
+          - cidr: 10.0.0.0/16
+          networkType: OVNKubernetes
+          serviceNetwork:
+          - cidr: 172.31.0.0/16
+        olmCatalogPlacement: management
+        platform:
+          aws:
+            cloudProviderConfig:
+              subnet:
+                id: __ZONE_SUBNET_ID__
+              vpc: __VPC_ID__
+              zone: __ZONE_NAME__
+            endpointAccess: Public
+            region: __REGION__
+            resourceTags:
+            - key: kubernetes.io/cluster/__INFRA_ID__
+              value: owned
+            rolesRef:
+              controlPlaneOperatorARN: __ROLES_CPO_ARN__
+              imageRegistryARN: __ROLES_IMG_REGISTRY_ARN__
+              ingressARN: __ROLES_INGRESS_ARN__
+              kubeCloudControllerARN: __ROLES_KUBE_CLOUD_CONTROLLER_ARN__
+              networkARN: __ROLES_NETWORK_ARN__
+              nodePoolManagementARN: __ROLES_NODEPOOL_MGMT_ARN__
+              storageARN: __ROLES_STORAGE_ARN__
+          type: AWS
+        pullSecret:
+          name: __CLUSTER_NAME__-pull
+        release:
+          image: __OCP_RELEASE_IMAGE__
+        secretEncryption:
+          aescbc:
+            activeKey:
+              name: __CLUSTER_NAME__-encryption
+          type: aescbc
+        services:
+        - service: OVNSbDb
+          servicePublishingStrategy:
+            route:
+              hostname: ovn-sbdb-__CLUSTER_NAME__.__EXT_DNS_DOMAIN__
+            type: Route
+        - service: APIServer
+          servicePublishingStrategy:
+            route:
+              hostname: api-__CLUSTER_NAME__.__EXT_DNS_DOMAIN__
+            type: Route
+        - service: OAuthServer
+          servicePublishingStrategy:
+            route:
+              hostname: oauth-__CLUSTER_NAME__.__EXT_DNS_DOMAIN__
+            type: Route
+        - service: Konnectivity
+          servicePublishingStrategy:
+            route:
+              hostname: konnectivity-__CLUSTER_NAME__.__EXT_DNS_DOMAIN__
+            type: Route
+        - service: Ignition
+          servicePublishingStrategy:
+            route:
+              hostname: ignition-__CLUSTER_NAME__.__EXT_DNS_DOMAIN__
+            type: Route
+        sshKey:
+          name: __CLUSTER_NAME__-ssh
+      status: {}
+    - apiVersion: hypershift.openshift.io/v1beta1
+      kind: NodePool
+      metadata:
+        name: __CLUSTER_NAME__-workers
+        namespace: ocm-staging-__INFRA_ID__
+      spec:
+        clusterName: __CLUSTER_NAME__
+        management:
+          autoRepair: true
+          replace:
+            rollingUpdate:
+              maxSurge: 1
+              maxUnavailable: 0
+            strategy: RollingUpdate
+          upgradeType: Replace
+        platform:
+          aws:
+            instanceProfile: __INFRA_ID__-worker
+            instanceType: m5.large
+            rootVolume:
+              size: 120
+              type: gp3
+            securityGroups:
+            - id: __SECURITY_GROUP_ID__
+            subnet:
+              id: __ZONE_SUBNET_ID__
+          type: AWS
+        release:
+          image: __OCP_RELEASE_IMAGE__
+        replicas: 2
+      status: {}
