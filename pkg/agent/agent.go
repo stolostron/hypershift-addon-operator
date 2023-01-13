@@ -332,17 +332,16 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 		return fmt.Errorf("failed to get a cluster from kubeconfig in secret: %s", secret.GetName())
 	}
 
-	// 2. Extract port from kubeconfig
-	portSeparatorIndex := strings.LastIndex(kubeconfig.Clusters["cluster"].Server, ":")
-	if portSeparatorIndex == -1 {
-		c.log.Info(fmt.Sprintf("failed to get the port from the server URL: %s", kubeconfig.Clusters["cluster"].Server))
-		return fmt.Errorf("failed to get the port from the server URL: %s", kubeconfig.Clusters["cluster"].Server)
+	// 2. Get the kube-apiserver service port
+	apiServicePort, err := c.getAPIServicePort(hc)
+	if err != nil {
+		c.log.Error(err, "failed to get the kube api service port")
+		return err
 	}
-	serverPort := kubeconfig.Clusters["cluster"].Server[portSeparatorIndex:]
 
 	// 3. Replace the config.Clusters["cluster"].Server URL with internal kubeadpi service URL kube-apiserver.<Namespace>.svc.cluster.local
-	clusterServerURL := "https://kube-apiserver." + hc.Namespace + "-" + hc.Name + ".svc.cluster.local" + serverPort
-	kubeconfig.Clusters["cluster"].Server = clusterServerURL
+	apiServerURL := "https://kube-apiserver." + hc.Namespace + "-" + hc.Name + ".svc.cluster.local:" + apiServicePort
+	kubeconfig.Clusters["cluster"].Server = apiServerURL
 
 	newKubeconfig, err := clientcmd.Write(*kubeconfig)
 
@@ -355,7 +354,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 
 	secret.Data = secretData
 
-	c.log.Info("Set the cluster server URL in external-managed-kubeconfig secret", "clusterServerURL", clusterServerURL)
+	c.log.Info("Set the cluster server URL in external-managed-kubeconfig secret", "apiServerURL", apiServerURL)
 
 	nilFunc := func() error { return nil }
 
@@ -369,6 +368,20 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	c.log.Info("createOrUpdate external-managed-kubeconfig secret", "secret", client.ObjectKeyFromObject(secret))
 
 	return nil
+}
+
+func (c *agentController) getAPIServicePort(hc hyperv1beta1.HostedCluster) (string, error) {
+	apiService := &corev1.Service{}
+	apiServiceNsn := types.NamespacedName{Namespace: hc.Namespace + "-" + hc.Name, Name: "kube-apiserver"}
+	err := c.spokeClient.Get(context.TODO(), apiServiceNsn, apiService)
+	if err != nil {
+		c.log.Error(err, "failed to find kube-apiserver service for the hosted cluster")
+		return "", err
+	}
+
+	apiServicePort := apiService.Spec.Ports[0].Port
+
+	return strconv.FormatInt(int64(apiServicePort), 10), nil
 }
 
 func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
