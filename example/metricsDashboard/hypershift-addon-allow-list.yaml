@@ -1,0 +1,17 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: observability-metrics-custom-allowlist
+  namespace: open-cluster-management-observability
+data:
+  metrics_list.yaml: |
+    names:
+      - mce_hs_addon_available_hosted_clusters_gauge
+      - mce_hs_addon_ext_dns_operator_degraded_bool
+      - mce_hs_addon_failed_to_start_bool
+      - mce_hs_addon_hypershift_operator_degraded_bool
+      - mce_hs_addon_install_failure_gauge
+      - mce_hs_addon_install_in_progress_bool
+      - mce_hs_addon_kubeconfig_secret_copy_failure_count
+      - mce_hs_addon_placement_score_failure_count
+      - mce_hs_addon_total_hosted_control_planes_gauge
