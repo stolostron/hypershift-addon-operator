@@ -101,6 +101,8 @@ func checkDeployments(checkExtDNSDeploy bool,
 			// Emit metrics to indicate that external DNS operator is degraded
 			metrics.IsExtDNSOperatorDegraded.Set(1)
 		}
+	} else {
+		metrics.IsExtDNSOperatorDegraded.Set(-1)
 	}
 
 	if len(reason) != 0 {
