@@ -96,6 +96,7 @@ kind: Config`)
 	}
 	err := aCtrl.hubClient.Create(ctx, apiService)
 	assert.Nil(t, err, "err nil when kube-apiserver service is created successfully")
+	defer aCtrl.hubClient.Delete(ctx, apiService)
 
 	// Create hosted cluster
 	hc := getHostedCluster(hcNN)
@@ -189,9 +190,35 @@ kind: Config`)
 		defer aCtrl.hubClient.Delete(ctx, sec)
 	}
 
+	apiService := &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: "clusters-hd-1",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Name:     "https",
+					Port:     443,
+					Protocol: "TCP",
+					TargetPort: intstr.IntOrString{
+						IntVal: 6443,
+					},
+				},
+			},
+		},
+	}
+	err := aCtrl.hubClient.Create(ctx, apiService)
+	assert.Nil(t, err, "err nil when kube-apiserver service is created successfully")
+	defer aCtrl.hubClient.Delete(ctx, apiService)
+
 	// Create hosted cluster
 	hc := getHostedCluster(hcNN)
-	err := aCtrl.hubClient.Create(ctx, hc)
+	err = aCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
 	// Reconcile with annotation
@@ -247,10 +274,36 @@ kind: Config`)
 		defer aCtrl.hubClient.Delete(ctx, sec)
 	}
 
+	apiService := &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: "clusters-hd-1",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Name:     "https",
+					Port:     443,
+					Protocol: "TCP",
+					TargetPort: intstr.IntOrString{
+						IntVal: 6443,
+					},
+				},
+			},
+		},
+	}
+	err := aCtrl.hubClient.Create(ctx, apiService)
+	assert.Nil(t, err, "err nil when kube-apiserver service is created successfully")
+	defer aCtrl.hubClient.Delete(ctx, apiService)
+
 	// Create hosted cluster
 	hc := getHostedCluster(hcNN)
 	hc.Annotations = map[string]string{util.ManagedClusterAnnoKey: "infra-abcdef"}
-	err := aCtrl.hubClient.Create(ctx, hc)
+	err = aCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
@@ -292,7 +345,7 @@ kind: Config`)
 
 	kubeconfig, err := clientcmd.Load(secret.Data["kubeconfig"])
 	assert.Nil(t, err, "is nil when kubeconfig data can be loaded")
-	assert.Equal(t, kubeconfig.Clusters["cluster"].Server, "https://kube-apiserver."+hc.Namespace+"-"+hc.Name+".svc.cluster.local:6443")
+	assert.Equal(t, kubeconfig.Clusters["cluster"].Server, "https://kube-apiserver."+hc.Namespace+"-"+hc.Name+".svc.cluster.local:443")
 
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelFullClusterClaim)))
