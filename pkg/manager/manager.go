@@ -28,6 +28,7 @@ import (
 
 	consolev1 "github.com/openshift/api/console/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
@@ -56,6 +57,7 @@ func init() {
 	utilruntime.Must(appsv1.AddToScheme(genericScheme))
 	utilruntime.Must(rbacv1.AddToScheme(genericScheme))
 	utilruntime.Must(monitoringv1.AddToScheme(genericScheme))
+	utilruntime.Must(rhobsmonitoring.AddToScheme(genericScheme))
 }
 
 const (
