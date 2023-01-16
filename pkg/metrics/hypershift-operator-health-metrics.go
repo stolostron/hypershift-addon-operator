@@ -9,7 +9,7 @@ var IsHypershiftOperatorDegraded = prometheus.NewGauge(prometheus.GaugeOpts{
 
 var IsExtDNSOperatorDegraded = prometheus.NewGauge(prometheus.GaugeOpts{
 	Name: "mce_hs_addon_ext_dns_operator_degraded_bool",
-	Help: "External DNS operator degraded true (1) or false (0)",
+	Help: "External DNS operator degraded true (1) or false (0), not present (-1)",
 })
 
 var IsAWSS3BucketSecretConfigured = prometheus.NewGauge(prometheus.GaugeOpts{

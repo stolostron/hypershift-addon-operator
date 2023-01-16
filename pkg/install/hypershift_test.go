@@ -599,6 +599,10 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is sucessful")
 
+	// Run a second time to check the upgrade and make sure only one ImagePullSecret is present
+	err = installHyperShiftOperator(t, ctx, aCtrl, true)
+	assert.Nil(t, err, "is nil if install TWO of HyperShift is sucessful")
+
 	// Create hosted cluster
 	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
 	hc := getHostedCluster(hcNN)
@@ -613,6 +617,10 @@ func TestRunHypershiftInstall(t *testing.T) {
 	// Check hypershift deployment is not deleted
 	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)
 	assert.Nil(t, err, "is nil if the hypershift deployment exists")
+
+	// Check for ImagePullSecret name duplicates
+	assert.Equal(t, 1, len(dp.Spec.Template.Spec.ImagePullSecrets),
+		"is 1, when ImagePullSecret array does not contain duplicates")
 
 	// Delete HC
 	err = aCtrl.spokeUncachedClient.Delete(ctx, hc)

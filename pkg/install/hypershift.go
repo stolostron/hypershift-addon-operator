@@ -555,8 +555,17 @@ func (c *UpgradeController) updateHyperShiftDeployment(ctx context.Context) erro
 			if obj.Spec.Template.Spec.ImagePullSecrets == nil {
 				obj.Spec.Template.Spec.ImagePullSecrets = make([]corev1.LocalObjectReference, 0)
 			}
-			obj.Spec.Template.Spec.ImagePullSecrets = append(obj.Spec.Template.Spec.ImagePullSecrets,
+			//Make sure we do not duplicate the ImagePullSecret name
+			newImagePullSecrets := append(obj.Spec.Template.Spec.ImagePullSecrets,
 				corev1.LocalObjectReference{Name: c.pullSecret})
+			for _, secret := range obj.Spec.Template.Spec.ImagePullSecrets {
+				if secret.Name == addonPullSecret.Name {
+					// Secret name reference already found, revert the ImagePullSecrets
+					newImagePullSecrets = obj.Spec.Template.Spec.ImagePullSecrets
+					break
+				}
+			}
+			obj.Spec.Template.Spec.ImagePullSecrets = newImagePullSecrets
 		} else {
 			c.log.Info("mce pull secret not found, skip update HyperShift operator to use the pull secret")
 		}
