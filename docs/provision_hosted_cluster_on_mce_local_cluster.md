@@ -144,6 +144,8 @@ You run the following wait commands to wait for the addon to reach this state wi
     ```
 Once complete, the `hypershift-addon` and the hypershift operator are installed and `local-cluster` is available to host and manage hosted clusters.
 
+By default, no node placement preference is specified for the `hypershift-addon` managed cluster addons. It may be desirable to have the addons run on the infrastructure nodes. The benefits to isolate infrastructure workloads include the prevention of incurring billing costs against subscription counts, and to separate maintenance and management. See [Troubleshooting](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/provision_hosted_cluster_on_mce_local_cluster.md#troubleshooting) for details on how to configure the `hypershift-addon` managed cluster addon to run on the infrastructure nodes.
+
 See [Hypershift addon status](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift_addon_status.md) for more details on checking the status of `hypershift-addon managed` cluster addon.
 
 ## Provision a hosted cluster on AWS
@@ -453,3 +455,32 @@ To recreate the credentials for the hosted cluster, add an annotation to the hos
     ```
 
 The hosted cluster could now be imported into MCE again, either using the CLI or the console.
+
+### How do I configure the `hypershift-addon` managed cluster addon to run in an infrastructure node?
+
+1. Log into the hub cluster.
+
+2. Edit `hypershift-addon-deploy-config` AddOnDeploymentConfig.
+
+```bash
+$ oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
+```
+
+3. Add `nodePlacement` to the spec as shown in the example below and save the changes. This will automatically deploy the hypershift-addon managed cluster addons on an infrastructure node for new and existing managed clusters.
+
+```yaml
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: AddOnDeploymentConfig
+metadata:
+  name: hypershift-addon-deploy-config
+  namespace: multicluster-engine
+spec:
+  nodePlacement:
+    nodeSelector:
+      node-role.kubernetes.io/infra: ""
+    tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/infra
+      operator: Exists 
+```
+
