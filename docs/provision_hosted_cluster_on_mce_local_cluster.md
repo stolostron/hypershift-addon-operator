@@ -253,7 +253,35 @@ You can also import the hosted cluster into MCE using custom resources in comman
     EOF
     ```
 
-3. After the hosted cluster is created, it will be imported into MCE. You can check the status by running
+3. Create the `KlusterletAddonConfig` resource to enable all ACM addons. This is applicable only in ACM hub. If you have installed MCE only, this is not applicable.
+
+    ```bash
+    $ cat <<EOF | oc apply -f -
+    apiVersion: agent.open-cluster-management.io/v1
+    kind: KlusterletAddonConfig
+    metadata:
+      name: $CLUSTER_NAME
+      namespace: $CLUSTER_NAME
+    spec:
+      clusterName: $CLUSTER_NAME
+      clusterNamespace: $CLUSTER_NAME
+      clusterLabels:
+        cloud: auto-detect
+        vendor: auto-detect
+      applicationManager:
+        enabled: true
+      certPolicyController:
+        enabled: true
+      iamPolicyController:
+        enabled: true
+      policyController:
+        enabled: true
+      searchCollector:
+        enabled: false
+    EOF
+    ```
+
+4. After the hosted cluster is created, it will be imported into MCE. You can check the status by running
   
     ```bash
      $ oc get managedcluster $CLUSTER_NAME
@@ -262,6 +290,21 @@ You can also import the hosted cluster into MCE using custom resources in comman
     ```
     NAME                               HUB ACCEPTED   MANAGED CLUSTER URLS                                                  JOINED   AVAILABLE   AGE
     $CLUSTER_NAME                      true           https://api.app-aws-411ga-hub-bhbj8.dev06.red-chesterfield.com:6443   True     True        25h
+    ```
+
+    ```bash
+     $ oc get managedclusteraddon -n $CLUSTER_NAME
+     ```
+    
+    ```
+    NAME                          AVAILABLE   DEGRADED   PROGRESSING
+    application-manager           True                   
+    cert-policy-controller        True                   
+    cluster-proxy                 True                   
+    config-policy-controller      True                   
+    governance-policy-framework   True                   
+    iam-policy-controller         True                   
+    work-manager                  True                   
     ```
 
 Your hosted cluster is now created and imported to MCE/ACM, which should also be visible from the MCE console.
