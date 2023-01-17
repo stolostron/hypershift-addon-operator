@@ -1,0 +1,19 @@
+FROM ubuntu:latest
+
+# Install utils
+RUN apt update \
+        && apt install -y uuid-runtime \
+        && apt install -y curl \
+        && apt install -y openssh-client \
+        && apt install -y jq
+
+# Install the kubectl binary
+RUN curl -LO https://dl.k8s.io/release/v1.26.0/bin/linux/amd64/kubectl \
+        && chmod +x kubectl \
+        && mv kubectl /bin
+
+COPY ./test/canary/run_canary_test.sh .
+RUN mkdir -p /resources
+COPY ./test/canary/resources /resources
+
+ENTRYPOINT ["./run_canary_test.sh"]

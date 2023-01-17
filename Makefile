@@ -4,6 +4,8 @@ REPO ?= "quay.io/stolostron/"
 # Image URL to use all building/pushing image targets
 IMG ?= $(REPO)hypershift-addon-operator:latest
 
+IMG_CANARY ?= $(REPO)hypershift-addon-operator-canary-test:latest
+
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
 ENVTEST_K8S_VERSION = 1.22
 
@@ -146,3 +148,7 @@ endif
 .PHONY: quickstart
 quickstart:
 	./quickstart/start.sh
+
+.PHONY: docker-build-canary
+docker-build-canary:   # Build docker image with the manager.
+	docker build -t ${IMG_CANARY} -f Dockerfile.canary .
