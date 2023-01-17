@@ -232,6 +232,9 @@ kind: Config`)
 	assert.NotNil(t, err, "external-managed-kubeconfig secret not found")
 	assert.Equal(t, true, res.Requeue)
 	assert.Equal(t, 30*time.Second, res.RequeueAfter)
+	// Test that we do not count the klusterlet namespace missing as an error, this just means import has not been
+	// triggered
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.KubeconfigSecretCopyFailureCount))
 }
 
 func TestReconcileWithAnnotation(t *testing.T) {

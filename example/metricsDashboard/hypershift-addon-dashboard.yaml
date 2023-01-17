@@ -32,8 +32,8 @@ data:
       "editable": true,
       "gnetId": null,
       "graphTooltip": 0,
-      "id": 34,
-      "iteration": 1673649204995,
+      "id": 26,
+      "iteration": 1673965279591,
       "links": [],
       "panels": [
         {
@@ -89,6 +89,7 @@ data:
             "y": 1
           },
           "id": 21,
+          "interval": "60s",
           "options": {
             "reduceOptions": {
               "calcs": [
@@ -112,7 +113,9 @@ data:
               "refId": "A"
             }
           ],
-          "title": "Available Hosting Cluster Capacity",
+          "timeFrom": null,
+          "timeShift": null,
+          "title": "Available Hosted Control Planes",
           "type": "gauge"
         },
         {
@@ -154,6 +157,7 @@ data:
             "y": 1
           },
           "id": 6,
+          "interval": "60s",
           "options": {
             "reduceOptions": {
               "calcs": [
@@ -177,7 +181,8 @@ data:
               "refId": "A"
             }
           ],
-          "title": "Total Hosting Cluster Capacity",
+          "timeFrom": null,
+          "title": "Total Hosted Control Planes",
           "type": "gauge"
         },
         {
@@ -199,21 +204,17 @@ data:
                       "color": "red",
                       "index": 1,
                       "text": "Degraded"
-                    },
-                    "null": {
-                      "color": "yellow",
-                      "index": 2,
-                      "text": "N/A"
                     }
                   },
                   "type": "value"
                 }
               ],
+              "noValue": "N/A",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
+                    "color": "yellow",
                     "value": null
                   }
                 ]
@@ -256,7 +257,7 @@ data:
           ],
           "timeFrom": null,
           "timeShift": null,
-          "title": "Hypershift Operator",
+          "title": "HyperShift Operator",
           "type": "stat"
         },
         {
@@ -283,12 +284,12 @@ data:
                   "type": "value"
                 }
               ],
-              "noValue": "N/A",
+              "noValue": "Unknown",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
+                    "color": "yellow",
                     "value": null
                   }
                 ]
@@ -331,7 +332,7 @@ data:
           ],
           "timeFrom": null,
           "timeShift": null,
-          "title": "Addon Status",
+          "title": "HyperShift Addon Status",
           "type": "stat"
         },
         {
@@ -356,23 +357,19 @@ data:
                     },
                     "-1": {
                       "color": "blue",
-                      "index": 3,
-                      "text": "N/A"
-                    },
-                    "null": {
-                      "color": "yellow",
                       "index": 2,
-                      "text": "N/A"
+                      "text": "Disabled"
                     }
                   },
                   "type": "value"
                 }
               ],
+              "noValue": "N/A",
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
                   {
-                    "color": "green",
+                    "color": "yellow",
                     "value": null
                   }
                 ]
@@ -424,6 +421,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": null,
+          "description": "Zero - Normal\nOne  - The Deployment is degraded",
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
@@ -472,7 +470,7 @@ data:
           "timeFrom": null,
           "timeRegions": [],
           "timeShift": null,
-          "title": "Hypershift Operator degraded",
+          "title": "HyperShift Operator degraded",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -555,6 +553,7 @@ data:
             "y": 9
           },
           "id": 25,
+          "interval": null,
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -577,7 +576,7 @@ data:
               "expr": "mce_hs_addon_install_in_progress_bool{cluster=\"$cluster\"}",
               "instant": true,
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "{{cluster}}",
               "refId": "A"
             }
           ],
@@ -586,6 +585,7 @@ data:
         },
         {
           "datasource": null,
+          "description": "The number of failed Hypershift-addon-operator installs per Hosting Cluster",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -645,6 +645,7 @@ data:
             "y": 9
           },
           "id": 27,
+          "interval": "300s",
           "options": {
             "legend": {
               "calcs": [],
@@ -661,15 +662,17 @@ data:
               "exemplar": true,
               "expr": "mce_hs_addon_kubeconfig_secret_copy_failure_count{cluster=\"$cluster\"}",
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "{{cluster}}",
               "refId": "A"
             }
           ],
+          "timeFrom": null,
           "title": "Kubeconfig Copy Failures",
           "type": "timeseries"
         },
         {
           "datasource": null,
+          "description": "The number of failed attempts to generate a Placement score on a given Hosting Cluster",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -745,7 +748,7 @@ data:
               "exemplar": true,
               "expr": "mce_hs_addon_placement_score_failure_count{cluster=\"$cluster\"}",
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "{{cluster}}",
               "refId": "A"
             }
           ],
@@ -805,7 +808,7 @@ data:
               "expr": "mce_hs_addon_install_failure_gauge{cluster=\"$cluster\"}",
               "instant": true,
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "{{cluster}}",
               "refId": "A"
             }
           ],
@@ -853,6 +856,7 @@ data:
             "y": 16
           },
           "id": 24,
+          "interval": "60s",
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -872,7 +876,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(mce_hs_addon_total_hosted_control_planes_gauge)",
+              "expr": "sum(mce_hs_addon_available_hosted_clusters_gauge)",
               "instant": true,
               "interval": "",
               "legendFormat": "",
@@ -909,6 +913,7 @@ data:
             "y": 16
           },
           "id": 10,
+          "interval": "60s",
           "options": {
             "colorMode": "value",
             "graphMode": "area",
@@ -944,6 +949,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": null,
+          "description": "Zero - Normal\nOne  - The Deployment is degraded",
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
@@ -966,7 +972,7 @@ data:
           },
           "lines": true,
           "linewidth": 1,
-          "nullPointMode": "null",
+          "nullPointMode": "null as zero",
           "options": {
             "alertThreshold": true
           },
@@ -977,7 +983,7 @@ data:
           "renderer": "flot",
           "seriesOverrides": [],
           "spaceLength": 10,
-          "stack": false,
+          "stack": true,
           "steppedLine": false,
           "targets": [
             {
@@ -992,7 +998,7 @@ data:
           "timeFrom": null,
           "timeRegions": [],
           "timeShift": null,
-          "title": "Hypershift Operator Degraded",
+          "title": "HyperShift Operator Degraded",
           "tooltip": {
             "shared": true,
             "sort": 0,
@@ -1038,7 +1044,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": null,
-          "description": "The number of failed Hypershift-addon-operator installs on Hosting Clusters",
+          "description": "The number of failed Hypershift-addon-operator installs per Hosting Cluster",
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
@@ -1052,6 +1058,8 @@ data:
           "legend": {
             "avg": false,
             "current": false,
+            "hideEmpty": true,
+            "hideZero": true,
             "max": false,
             "min": false,
             "show": true,
@@ -1105,7 +1113,7 @@ data:
               "$$hashKey": "object:70",
               "decimals": 0,
               "format": "short",
-              "label": "Failed Installs",
+              "label": "Failures",
               "logBase": 1,
               "max": null,
               "min": "0",
@@ -1132,6 +1140,7 @@ data:
           "dashLength": 10,
           "dashes": false,
           "datasource": null,
+          "description": "Zero - Normal\nOne  - The Deployment is degraded\nNeg. One - The External DNS Operator is not deployed",
           "fill": 1,
           "fillGradient": 0,
           "gridPos": {
@@ -1145,17 +1154,17 @@ data:
           "legend": {
             "avg": false,
             "current": false,
-            "hideEmpty": false,
+            "hideEmpty": true,
             "hideZero": true,
             "max": false,
             "min": false,
-            "show": true,
+            "show": false,
             "total": false,
             "values": false
           },
           "lines": true,
           "linewidth": 1,
-          "nullPointMode": "null",
+          "nullPointMode": "null as zero",
           "options": {
             "alertThreshold": true
           },
@@ -1166,7 +1175,7 @@ data:
           "renderer": "flot",
           "seriesOverrides": [],
           "spaceLength": 10,
-          "stack": false,
+          "stack": true,
           "steppedLine": false,
           "targets": [
             {
@@ -1202,8 +1211,8 @@ data:
               "format": "short",
               "label": "Degraded",
               "logBase": 1,
-              "max": null,
-              "min": "0",
+              "max": "1",
+              "min": "-1",
               "show": true
             },
             {
@@ -1223,6 +1232,7 @@ data:
         },
         {
           "datasource": null,
+          "description": "The number of failed attempts to copy a Hosted Cluster's kubeconfig on a given Hosting Cluster",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1250,7 +1260,7 @@ data:
                 "spanNulls": false,
                 "stacking": {
                   "group": "A",
-                  "mode": "none"
+                  "mode": "normal"
                 },
                 "thresholdsStyle": {
                   "mode": "off"
@@ -1296,9 +1306,9 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(mce_hs_addon_kubeconfig_secret_copy_failure_count)",
+              "expr": "mce_hs_addon_kubeconfig_secret_copy_failure_count",
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "{{cluster}}",
               "refId": "A"
             }
           ],
@@ -1307,6 +1317,7 @@ data:
         },
         {
           "datasource": null,
+          "description": "The number of failed attempts to generate a Placement score on a given Hosting Cluster",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1334,7 +1345,7 @@ data:
                 "spanNulls": false,
                 "stacking": {
                   "group": "A",
-                  "mode": "none"
+                  "mode": "normal"
                 },
                 "thresholdsStyle": {
                   "mode": "off"
@@ -1376,10 +1387,10 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(mce_hs_addon_placement_score_failure_count)",
+              "expr": "mce_hs_addon_placement_score_failure_count",
               "instant": true,
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "{{cluster}}",
               "refId": "A"
             }
           ],
@@ -1387,7 +1398,7 @@ data:
           "type": "timeseries"
         }
       ],
-      "refresh": "5m",
+      "refresh": "1m",
       "schemaVersion": 30,
       "style": "dark",
       "tags": [
@@ -1399,9 +1410,9 @@ data:
           {
             "allValue": null,
             "current": {
-              "selected": true,
-              "text": "jnp-sno01",
-              "value": "jnp-sno01"
+              "selected": false,
+              "text": "local-cluster",
+              "value": "local-cluster"
             },
             "datasource": null,
             "definition": "label_values(mce_hs_addon_hypershift_operator_degraded_bool,cluster)",
@@ -1426,11 +1437,12 @@ data:
         ]
       },
       "time": {
-        "from": "now-6h",
+        "from": "now-24h",
         "to": "now"
       },
       "timepicker": {
         "refresh_intervals": [
+          "30s",
           "1m",
           "5m",
           "15m",
@@ -1446,5 +1458,5 @@ data:
       "timezone": "",
       "title": "ACM - HyperShift Addon",
       "uid": "87f7f256a3506f65da8694b290e8d8e4",
-      "version": 6
+      "version": 4
     }

@@ -489,7 +489,12 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 				if errExt != nil {
 					lastErr = errExt
-					metrics.KubeconfigSecretCopyFailureCount.Inc()
+					// This is where we avoid counting metrics for certain error conditions
+					// Klusterlet namespace will not exist until import is done
+					if !strings.Contains(errExt.Error(), "failed to find the klusterlet namespace") {
+						metrics.KubeconfigSecretCopyFailureCount.Inc()
+					}
+
 				} else {
 					c.log.Info("Successfully generated external-managed-kubeconfig secret")
 				}
