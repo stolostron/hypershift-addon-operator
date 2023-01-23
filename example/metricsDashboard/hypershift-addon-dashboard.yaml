@@ -5,9 +5,10 @@ metadata:
   namespace: open-cluster-management-observability
   labels:
     grafana-custom-dashboard: "true"
+    grafana_dashboard: "true"
   annotations:
     observability.open-cluster-management.io/dashboard-folder: ACM
-data:
+    grafana-folder: /grafana-dashboard-definitions/ACM
   hypershift.json: |
     {
       "annotations": {
@@ -32,8 +33,8 @@ data:
       "editable": true,
       "gnetId": null,
       "graphTooltip": 0,
-      "id": 26,
-      "iteration": 1674142221045,
+      "id": 2,
+      "iteration": 1674484185722,
       "links": [],
       "panels": [
         {
@@ -519,7 +520,7 @@ data:
           ],
           "timeFrom": null,
           "timeShift": null,
-          "title": "HyperShift Operator degraded",
+          "title": "HyperShift Operator",
           "type": "timeseries"
         },
         {
@@ -852,6 +853,7 @@ data:
                 "mode": "thresholds"
               },
               "mappings": [],
+              "min": 0,
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -865,18 +867,16 @@ data:
             "overrides": []
           },
           "gridPos": {
-            "h": 8,
-            "w": 6,
+            "h": 3,
+            "w": 12,
             "x": 0,
             "y": 16
           },
           "id": 24,
           "interval": "60s",
           "options": {
-            "colorMode": "value",
-            "graphMode": "area",
-            "justifyMode": "auto",
-            "orientation": "auto",
+            "displayMode": "gradient",
+            "orientation": "horizontal",
             "reduceOptions": {
               "calcs": [
                 "lastNotNull"
@@ -884,8 +884,8 @@ data:
               "fields": "",
               "values": false
             },
-            "text": {},
-            "textMode": "auto"
+            "showUnfilled": true,
+            "text": {}
           },
           "pluginVersion": "8.1.3",
           "targets": [
@@ -894,69 +894,21 @@ data:
               "expr": "sum(mce_hs_addon_available_hosted_clusters_gauge)",
               "instant": true,
               "interval": "",
-              "legendFormat": "",
+              "legendFormat": "Available",
               "refId": "A"
-            }
-          ],
-          "title": "Available Hosted Control Planes",
-          "type": "stat"
-        },
-        {
-          "datasource": null,
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  }
-                ]
-              }
             },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 6,
-            "x": 6,
-            "y": 16
-          },
-          "id": 10,
-          "interval": "60s",
-          "options": {
-            "colorMode": "value",
-            "graphMode": "area",
-            "justifyMode": "auto",
-            "orientation": "auto",
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "text": {},
-            "textMode": "auto"
-          },
-          "pluginVersion": "8.1.3",
-          "targets": [
             {
               "exemplar": true,
               "expr": "sum(mce_hs_addon_total_hosted_control_planes_gauge)",
+              "hide": false,
               "instant": true,
               "interval": "",
-              "legendFormat": "",
-              "refId": "A"
+              "legendFormat": "Total",
+              "refId": "B"
             }
           ],
-          "title": "Total Hosted Control Planes",
-          "type": "stat"
+          "title": "Hosted Control Planes",
+          "type": "bargauge"
         },
         {
           "datasource": null,
@@ -1074,7 +1026,91 @@ data:
           ],
           "timeFrom": null,
           "timeShift": null,
-          "title": "HyperShift Operator Degraded",
+          "title": "HyperShift Operator",
+          "type": "timeseries"
+        },
+        {
+          "datasource": null,
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "bars",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 10,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 5,
+            "w": 12,
+            "x": 0,
+            "y": 19
+          },
+          "id": 33,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "hidden",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "pluginVersion": "8.1.3",
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "count(mce_hs_addon_hypershift_operator_degraded_bool)",
+              "instant": false,
+              "interval": "",
+              "legendFormat": "clusters",
+              "refId": "A"
+            }
+          ],
+          "title": "Total Hosting Clusters (Management Clusters)",
           "type": "timeseries"
         },
         {
@@ -1112,7 +1148,7 @@ data:
           },
           "lines": true,
           "linewidth": 1,
-          "nullPointMode": "null as zero",
+          "nullPointMode": "null",
           "options": {
             "alertThreshold": false
           },
@@ -1290,7 +1326,7 @@ data:
           ],
           "timeFrom": null,
           "timeShift": null,
-          "title": "External DNS Degraded",
+          "title": "External DNS",
           "type": "timeseries"
         },
         {
@@ -1322,7 +1358,7 @@ data:
           },
           "lines": true,
           "linewidth": 1,
-          "nullPointMode": "null as zero",
+          "nullPointMode": "null",
           "options": {
             "alertThreshold": false
           },
@@ -1417,7 +1453,7 @@ data:
           },
           "lines": true,
           "linewidth": 1,
-          "nullPointMode": "null as zero",
+          "nullPointMode": "null",
           "options": {
             "alertThreshold": true
           },
@@ -1485,7 +1521,7 @@ data:
           }
         }
       ],
-      "refresh": "1m",
+      "refresh": "30s",
       "schemaVersion": 30,
       "style": "dark",
       "tags": [
@@ -1545,5 +1581,5 @@ data:
       "timezone": "",
       "title": "ACM - HyperShift Addon",
       "uid": "87f7f256a3506f65da8694b290e8d8e4",
-      "version": 6
+      "version": 1
     }
