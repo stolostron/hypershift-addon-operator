@@ -115,6 +115,16 @@ CLUSTER_UUID_2=$(uuidgen)
 INFRA_OUTPUT_FILE_2=${CLUSTER_NAME_2}-infraout
 IAM_OUTPUT_FILE_2=${CLUSTER_NAME_2}-iam
 
+cleanupAWSResources() {
+    ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${INFRA_ID_1}
+    ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${INFRA_ID_1} --base-domain ${BASE_DOMAIN} --name ${CLUSTER_NAME_1} --region ${REGION}
+    ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${INFRA_ID_2}
+    ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${INFRA_ID_2} --base-domain ${BASE_DOMAIN} --name ${CLUSTER_NAME_2} --region ${REGION}
+}
+
+# Delete all AWS resources on any exit
+trap cleanupAWSResources EXIT
+
 createHostedCluster() {
     clusterName=$1
     infraID=$2
@@ -165,7 +175,6 @@ createHostedCluster() {
     if [ $? -ne 0 ]; then
         echo "$(date) Failed to create IAM"
         echo "$(date) Destroying the AWS infrastructure"
-        ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
         exit 1
     fi
 
@@ -185,8 +194,6 @@ createHostedCluster() {
     if [ $? -ne 0 ]; then
         echo "$(date) failed to copy hosted_cluster_manifestwork.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
-        ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-        ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
         exit 1
     fi
 
@@ -195,8 +202,6 @@ createHostedCluster() {
     if [ $? -ne 0 ]; then
         echo "$(date) failed to copy htpasswd.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
-        ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-        ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
         exit 1
     fi
 
@@ -205,8 +210,6 @@ createHostedCluster() {
     if [ $? -ne 0 ]; then
         echo "$(date) failed to copy managedcluster.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
-        ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-        ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
         exit 1
     fi
 
@@ -218,8 +221,6 @@ createHostedCluster() {
             if [ $? -ne 0 ]; then
                 echo "$(date) failed to substitue __${key}__ in ${vars[CLUSTER_NAME]}.yaml"
                 echo "$(date) Destroying the AWS infrastructure and IAM"
-                ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-                ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
                 exit 1
             fi
 
@@ -227,8 +228,6 @@ createHostedCluster() {
             if [ $? -ne 0 ]; then
                 echo "$(date) failed to substitue __${key}__ in ${vars[CLUSTER_NAME]}-htpasswd.yaml"
                 echo "$(date) Destroying the AWS infrastructure and IAM"
-                ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-                ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
                 exit 1
             fi
 
@@ -236,8 +235,6 @@ createHostedCluster() {
             if [ $? -ne 0 ]; then
                 echo "$(date) failed to substitue __${key}__ in ${vars[CLUSTER_NAME]}-managedcluster.yaml"
                 echo "$(date) Destroying the AWS infrastructure and IAM"
-                ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-                ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
                 exit 1
             fi
         done
@@ -247,8 +244,6 @@ createHostedCluster() {
     if [ $? -ne 0 ]; then
         echo "$(date) failed to apply ${vars[CLUSTER_NAME]}-managedcluster.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
-        ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-        ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
         exit 1
     fi
 
@@ -256,8 +251,6 @@ createHostedCluster() {
     if [ $? -ne 0 ]; then
         echo "$(date) failed to apply ${vars[CLUSTER_NAME]}.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
-        ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-        ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
         exit 1
     fi
 
@@ -265,8 +258,6 @@ createHostedCluster() {
     if [ $? -ne 0 ]; then
         echo "$(date) failed to apply ${vars[CLUSTER_NAME]}-htpasswd.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
-        ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-        ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
         exit 1
     fi
 }
@@ -279,9 +270,7 @@ deleteHostedCluster() {
     if [ $? -ne 0 ]; then
         echo "$(date) failed to delete -f ${clusterName}-managedcluster.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
-        ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${infraID}
-        ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain ${BASE_DOMAIN} --infra-id ${infraID}
-        #exit 1 Don't exit so we can continue cleaning up as much as we can
+        exit 1
     fi
 
     # Verify that the managed cluster is deleted
@@ -292,18 +281,14 @@ deleteHostedCluster() {
     if [ $? -ne 0 ]; then
         echo "$(date) failed to delete -f ${clusterName}-htpasswd.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
-        ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${infraID}
-        ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain ${BASE_DOMAIN} --infra-id ${infraID}
-        #exit 1 Don't exit so we can continue cleaning up as much as we can
+        exit 1
     fi
 
     ${KUBECTL_COMMAND} delete -f ${clusterName}.yaml
     if [ $? -ne 0 ]; then
         echo "$(date) failed to delete -f ${clusterName}.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
-        ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${infraID}
-        ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain ${BASE_DOMAIN} --infra-id ${infraID}
-        #exit 1 Don't exit so we can continue cleaning up as much as we can
+        exit 1
     fi
 
     # Verify that the manifestwork with hostedcluster and nodepool payload is deleted
@@ -315,17 +300,6 @@ cleaup() {
     infraID=$2
     infraFile=$3
     iamFile=$4
-
-    echo "$(date) ==== Destroying AWS IAM ===="
-    echo "$(date) ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${infraID}"
-
-    ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${infraID}
-
-
-    echo "$(date) ==== Destroying AWS infrastructure ===="
-    echo "$(date) ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain ${BASE_DOMAIN} --infra-id ${infraID}"
-
-    ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain ${BASE_DOMAIN} --infra-id ${infraID}
 
     # Remove the files
     rm ${infraFile}
@@ -353,8 +327,6 @@ verifyHostedCluster() {
             echo "$(date) Timeout waiting for a successful provisioning of hosted cluster."
             ${KUBECTL_COMMAND} get managedcluster ${infraId} -o yaml
             echo "$(date) Destroying the AWS infrastructure and IAM"
-            #${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${infraId}
-            #${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain ${BASE_DOMAIN} --infra-id ${infraId}
             exit 1
         fi
 
@@ -426,8 +398,6 @@ waitForManagedClusterDelete() {
         if [ $SECONDS -gt 1800 ]; then
             echo "$(date) Timed out waiting for managed cluster ${resName} to be deleted."
             ${KUBECTL_COMMAND} get managedcluster ${resName} -o yaml
-            ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-            ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
             exit 1
         fi
 
@@ -456,8 +426,6 @@ waitForManifestworkDelete() {
         if [ $SECONDS -gt 1800 ]; then
             echo "$(date) Timed out waiting for manifestwork ${resNamespace}/${resName} to be deleted."
             ${KUBECTL_COMMAND} get manifestwork ${resName} -n ${resNamespace} -o yaml
-            ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]}
-            ${HYPERSHIFT_COMMAND} destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain $vars[BASE_DOMAIN] --infra-id ${vars[INFRA_ID]}
             exit 1
         fi
 
