@@ -15,3 +15,4 @@ data:
       - mce_hs_addon_kubeconfig_secret_copy_failure_count
       - mce_hs_addon_placement_score_failure_count
       - mce_hs_addon_total_hosted_control_planes_gauge
+      - acm_managed_cluster_addon_status_condition

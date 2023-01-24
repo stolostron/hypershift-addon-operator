@@ -34,7 +34,7 @@ metadata:
       "gnetId": null,
       "graphTooltip": 0,
       "id": 2,
-      "iteration": 1674484185722,
+      "iteration": 1674579048651,
       "links": [],
       "panels": [
         {
@@ -48,7 +48,7 @@ metadata:
           },
           "id": 12,
           "panels": [],
-          "title": "Individual",
+          "title": "Hosting Cluster (Management Cluster)",
           "type": "row"
         },
         {
@@ -783,6 +783,145 @@ metadata:
                 "mode": "absolute",
                 "steps": [
                   {
+                    "color": "yellow",
+                    "value": null
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "false"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "False"
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "transparent",
+                          "value": null
+                        },
+                        {
+                          "color": "red",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "true"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "True"
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "transparent",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "unknown"
+                },
+                "properties": [
+                  {
+                    "id": "displayName",
+                    "value": "Unkown"
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "transparent",
+                          "value": null
+                        },
+                        {
+                          "color": "yellow",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 5,
+            "x": 18,
+            "y": 9
+          },
+          "id": 35,
+          "options": {
+            "displayMode": "basic",
+            "orientation": "horizontal",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "showUnfilled": true,
+            "text": {}
+          },
+          "pluginVersion": "8.1.3",
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\", managed_cluster_name=\"$cluster\", condition=\"Available\"}",
+              "instant": true,
+              "interval": "",
+              "legendFormat": "{{status}}",
+              "refId": "Available"
+            }
+          ],
+          "title": "HyperShift Addon Available",
+          "type": "bargauge"
+        },
+        {
+          "datasource": null,
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
                     "color": "green",
                     "value": null
                   },
@@ -832,13 +971,316 @@ metadata:
           "type": "stat"
         },
         {
+          "datasource": null,
+          "description": "Service Level Objective:  (> 95% Availability in a 10min window)",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "fixedColor": "#ffffff",
+                "mode": "fixed"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 2,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "area"
+                }
+              },
+              "mappings": [
+                {
+                  "options": {
+                    "from": 1,
+                    "result": {
+                      "color": "green",
+                      "index": 0
+                    },
+                    "to": 0.95
+                  },
+                  "type": "range"
+                },
+                {
+                  "options": {
+                    "from": 0.7999,
+                    "result": {
+                      "color": "red",
+                      "index": 1
+                    },
+                    "to": 0
+                  },
+                  "type": "range"
+                },
+                {
+                  "options": {
+                    "from": 0.9499,
+                    "result": {
+                      "color": "yellow",
+                      "index": 2
+                    },
+                    "to": 0.8
+                  },
+                  "type": "range"
+                }
+              ],
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "percentage",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "#EAB839",
+                    "value": 80
+                  },
+                  {
+                    "color": "green",
+                    "value": 95
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 11,
+            "x": 0,
+            "y": 15
+          },
+          "id": 38,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "hidden",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
+          },
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m])/ count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m])  ",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "Addon Availability",
+              "refId": "B"
+            }
+          ],
+          "title": "SLO - HyperShift Addon Availability",
+          "type": "timeseries"
+        },
+        {
+          "datasource": null,
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "fixedColor": "#ffffff",
+                "mode": "fixed"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "#EAB839",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 11,
+            "y": 15
+          },
+          "id": 40,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "hidden",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\", cluster=\"$cluster\"}[$__rate_interval]))",
+              "interval": "",
+              "legendFormat": "CPU",
+              "refId": "A"
+            }
+          ],
+          "title": "CPU Utilisation",
+          "type": "timeseries"
+        },
+        {
+          "datasource": null,
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "fixedColor": "#ffffff",
+                "mode": "fixed"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "#EAB839",
+                    "value": 70
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 17,
+            "y": 15
+          },
+          "id": 42,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "hidden",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "1 - sum(:node_memory_MemAvailable_bytes:sum{cluster=\"$cluster\"}) / sum(kube_node_status_allocatable{cluster=\"$cluster\", resource=\"memory\"})",
+              "interval": "",
+              "legendFormat": "MEM",
+              "refId": "A"
+            }
+          ],
+          "title": "Memory Utilisation",
+          "type": "timeseries"
+        },
+        {
           "collapsed": false,
           "datasource": null,
           "gridPos": {
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 15
+            "y": 19
           },
           "id": 8,
           "panels": [],
@@ -870,7 +1312,7 @@ metadata:
             "h": 3,
             "w": 12,
             "x": 0,
-            "y": 16
+            "y": 20
           },
           "id": 24,
           "interval": "60s",
@@ -912,11 +1354,12 @@ metadata:
         },
         {
           "datasource": null,
-          "description": "",
+          "description": "Service Level Objective:  (> 95% Availability in a 10min window) For all HyperShift Addons",
           "fieldConfig": {
             "defaults": {
               "color": {
-                "mode": "palette-classic"
+                "fixedColor": "#ffffff",
+                "mode": "fixed"
               },
               "custom": {
                 "axisLabel": "",
@@ -931,68 +1374,77 @@ metadata:
                   "viz": false
                 },
                 "lineInterpolation": "linear",
-                "lineWidth": 1,
+                "lineWidth": 2,
                 "pointSize": 5,
                 "scaleDistribution": {
                   "type": "linear"
                 },
-                "showPoints": "never",
+                "showPoints": "auto",
                 "spanNulls": false,
                 "stacking": {
                   "group": "A",
                   "mode": "none"
                 },
                 "thresholdsStyle": {
-                  "mode": "off"
+                  "mode": "area"
                 }
               },
               "decimals": 0,
               "mappings": [
                 {
                   "options": {
-                    "0": {
+                    "from": 1,
+                    "result": {
                       "color": "green",
-                      "index": 1,
-                      "text": "OK"
+                      "index": 0
                     },
-                    "1": {
-                      "color": "red",
-                      "index": 0,
-                      "text": "Degraded"
-                    },
-                    "0.2": {
-                      "index": 2,
-                      "text": "-"
-                    },
-                    "0.4": {
-                      "index": 3,
-                      "text": "-"
-                    },
-                    "0.6": {
-                      "index": 4,
-                      "text": "-"
-                    },
-                    "0.8": {
-                      "index": 5,
-                      "text": "-"
-                    }
+                    "to": 0.95
                   },
-                  "type": "value"
+                  "type": "range"
+                },
+                {
+                  "options": {
+                    "from": 0.9499,
+                    "result": {
+                      "color": "yellow",
+                      "index": 1
+                    },
+                    "to": 0.8
+                  },
+                  "type": "range"
+                },
+                {
+                  "options": {
+                    "from": 0.799,
+                    "result": {
+                      "color": "red",
+                      "index": 2
+                    },
+                    "to": 0
+                  },
+                  "type": "range"
                 }
               ],
               "max": 1,
               "min": 0,
-              "noValue": "N/A",
               "thresholds": {
-                "mode": "absolute",
+                "mode": "percentage",
                 "steps": [
                   {
-                    "color": "yellow",
+                    "color": "red",
                     "value": null
+                  },
+                  {
+                    "color": "#EAB839",
+                    "value": 80
+                  },
+                  {
+                    "color": "green",
+                    "value": 95
                   }
                 ]
               },
-              "unit": "string"
+              "unit": "percentunit"
             },
             "overrides": []
           },
@@ -1000,33 +1452,30 @@ metadata:
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 16
+            "y": 20
           },
-          "id": 16,
+          "id": 37,
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "list",
+              "displayMode": "hidden",
               "placement": "bottom"
             },
             "tooltip": {
               "mode": "multi"
             }
           },
-          "pluginVersion": "8.1.3",
           "targets": [
             {
               "exemplar": true,
-              "expr": "mce_hs_addon_hypershift_operator_degraded_bool",
-              "instant": false,
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))",
+              "hide": false,
               "interval": "",
-              "legendFormat": "{{cluster}}",
-              "refId": "A"
+              "legendFormat": "Addon Availability",
+              "refId": "B"
             }
           ],
-          "timeFrom": null,
-          "timeShift": null,
-          "title": "HyperShift Operator",
+          "title": "SLO - HyperShift Addon Availability",
           "type": "timeseries"
         },
         {
@@ -1086,7 +1535,7 @@ metadata:
             "h": 5,
             "w": 12,
             "x": 0,
-            "y": 19
+            "y": 23
           },
           "id": 33,
           "options": {
@@ -1132,7 +1581,7 @@ metadata:
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 24
+            "y": 28
           },
           "hiddenSeries": false,
           "id": 4,
@@ -1240,7 +1689,7 @@ metadata:
                 "scaleDistribution": {
                   "type": "linear"
                 },
-                "showPoints": "auto",
+                "showPoints": "never",
                 "spanNulls": false,
                 "stacking": {
                   "group": "A",
@@ -1250,7 +1699,7 @@ metadata:
                   "mode": "off"
                 }
               },
-              "decimals": 1,
+              "decimals": 0,
               "mappings": [
                 {
                   "options": {
@@ -1261,20 +1710,23 @@ metadata:
                     },
                     "1": {
                       "color": "red",
-                      "index": 2,
+                      "index": 0,
                       "text": "Degraded"
                     },
-                    "-0.5": {
+                    "0.2": {
+                      "index": 2,
+                      "text": "-"
+                    },
+                    "0.4": {
+                      "index": 3,
+                      "text": "-"
+                    },
+                    "0.6": {
                       "index": 4,
                       "text": "-"
                     },
-                    "-1": {
-                      "color": "blue",
-                      "index": 0,
-                      "text": "Disabled"
-                    },
-                    "0.5": {
-                      "index": 3,
+                    "0.8": {
+                      "index": 5,
                       "text": "-"
                     }
                   },
@@ -1282,7 +1734,7 @@ metadata:
                 }
               ],
               "max": 1,
-              "min": -1,
+              "min": 0,
               "noValue": "N/A",
               "thresholds": {
                 "mode": "absolute",
@@ -1301,9 +1753,9 @@ metadata:
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 24
+            "y": 28
           },
-          "id": 14,
+          "id": 16,
           "options": {
             "legend": {
               "calcs": [],
@@ -1318,7 +1770,8 @@ metadata:
           "targets": [
             {
               "exemplar": true,
-              "expr": "mce_hs_addon_ext_dns_operator_degraded_bool",
+              "expr": "mce_hs_addon_hypershift_operator_degraded_bool",
+              "instant": false,
               "interval": "",
               "legendFormat": "{{cluster}}",
               "refId": "A"
@@ -1326,8 +1779,104 @@ metadata:
           ],
           "timeFrom": null,
           "timeShift": null,
-          "title": "External DNS",
+          "title": "HyperShift Operator",
           "type": "timeseries"
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": null,
+          "description": "The number of failed attempts to generate a Placement score on a given Hosting Cluster",
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 0,
+            "y": 36
+          },
+          "hiddenSeries": false,
+          "id": 30,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "hideZero": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": true
+          },
+          "percentage": false,
+          "pluginVersion": "8.1.3",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "mce_hs_addon_placement_score_failure_count",
+              "instant": false,
+              "interval": "",
+              "legendFormat": "{{cluster}}",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Placement Score Failures",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:148",
+              "decimals": 0,
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:149",
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": null,
+              "show": true
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
         },
         {
           "aliasColors": {},
@@ -1341,8 +1890,8 @@ metadata:
           "gridPos": {
             "h": 7,
             "w": 12,
-            "x": 0,
-            "y": 32
+            "x": 12,
+            "y": 36
           },
           "hiddenSeries": false,
           "id": 29,
@@ -1425,100 +1974,119 @@ metadata:
           }
         },
         {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
           "datasource": null,
-          "description": "The number of failed attempts to generate a Placement score on a given Hosting Cluster",
-          "fill": 1,
-          "fillGradient": 0,
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "decimals": 1,
+              "mappings": [
+                {
+                  "options": {
+                    "0": {
+                      "color": "green",
+                      "index": 1,
+                      "text": "OK"
+                    },
+                    "1": {
+                      "color": "red",
+                      "index": 2,
+                      "text": "Degraded"
+                    },
+                    "-0.5": {
+                      "index": 4,
+                      "text": "-"
+                    },
+                    "-1": {
+                      "color": "blue",
+                      "index": 0,
+                      "text": "Disabled"
+                    },
+                    "0.5": {
+                      "index": 3,
+                      "text": "-"
+                    }
+                  },
+                  "type": "value"
+                }
+              ],
+              "max": 1,
+              "min": -1,
+              "noValue": "N/A",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "yellow",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "string"
+            },
+            "overrides": []
+          },
           "gridPos": {
             "h": 7,
             "w": 12,
-            "x": 12,
-            "y": 32
+            "x": 0,
+            "y": 43
           },
-          "hiddenSeries": false,
-          "id": 30,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "hideZero": true,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
+          "id": 14,
           "options": {
-            "alertThreshold": true
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
           },
-          "percentage": false,
           "pluginVersion": "8.1.3",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
           "targets": [
             {
               "exemplar": true,
-              "expr": "mce_hs_addon_placement_score_failure_count",
-              "instant": false,
+              "expr": "mce_hs_addon_ext_dns_operator_degraded_bool",
               "interval": "",
               "legendFormat": "{{cluster}}",
               "refId": "A"
             }
           ],
-          "thresholds": [],
           "timeFrom": null,
-          "timeRegions": [],
           "timeShift": null,
-          "title": "Placement Score Failures",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:148",
-              "decimals": 0,
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": "0",
-              "show": true
-            },
-            {
-              "$$hashKey": "object:149",
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": null,
-              "show": true
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
+          "title": "External DNS",
+          "type": "timeseries"
         }
       ],
       "refresh": "30s",
@@ -1533,7 +2101,7 @@ metadata:
           {
             "allValue": null,
             "current": {
-              "selected": false,
+              "selected": true,
               "text": "local-cluster",
               "value": "local-cluster"
             },
@@ -1581,5 +2149,5 @@ metadata:
       "timezone": "",
       "title": "ACM - HyperShift Addon",
       "uid": "87f7f256a3506f65da8694b290e8d8e4",
-      "version": 1
+      "version": 5
     }
