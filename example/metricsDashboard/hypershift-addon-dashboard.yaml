@@ -35,8 +35,8 @@ data:
       "editable": true,
       "gnetId": null,
       "graphTooltip": 0,
-      "id": 35,
-      "iteration": 1674659313274,
+      "id": 5,
+      "iteration": 1674667592425,
       "links": [],
       "panels": [
         {
@@ -979,72 +979,11 @@ data:
             "defaults": {
               "color": {
                 "fixedColor": "#ffffff",
-                "mode": "fixed"
+                "mode": "thresholds"
               },
-              "custom": {
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 2,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "area"
-                }
-              },
-              "mappings": [
-                {
-                  "options": {
-                    "from": 1,
-                    "result": {
-                      "color": "green",
-                      "index": 0
-                    },
-                    "to": 0.95
-                  },
-                  "type": "range"
-                },
-                {
-                  "options": {
-                    "from": 0.7999,
-                    "result": {
-                      "color": "red",
-                      "index": 1
-                    },
-                    "to": 0
-                  },
-                  "type": "range"
-                },
-                {
-                  "options": {
-                    "from": 0.9499,
-                    "result": {
-                      "color": "yellow",
-                      "index": 2
-                    },
-                    "to": 0.8
-                  },
-                  "type": "range"
-                }
-              ],
+              "mappings": [],
               "max": 1,
+              "min": 0,
               "thresholds": {
                 "mode": "percentage",
                 "steps": [
@@ -1068,33 +1007,105 @@ data:
           },
           "gridPos": {
             "h": 4,
-            "w": 11,
+            "w": 5,
             "x": 0,
             "y": 15
           },
           "id": 38,
           "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
             },
-            "tooltip": {
-              "mode": "multi"
-            }
+            "text": {},
+            "textMode": "auto"
           },
+          "pluginVersion": "8.1.3",
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m])/ count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m])  ",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m]))/ sum( count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m])) ",
               "hide": false,
               "interval": "",
               "legendFormat": "Addon Availability",
               "refId": "B"
             }
           ],
-          "title": "SLO - HyperShift Addon Availability (10m)",
-          "type": "timeseries"
+          "title": "SLO - Addon (10m)",
+          "type": "stat"
+        },
+        {
+          "datasource": null,
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "percentage",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "#EAB839",
+                    "value": 80
+                  },
+                  {
+                    "color": "green",
+                    "value": 95
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 5,
+            "x": 5,
+            "y": 15
+          },
+          "id": 47,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "text": {},
+            "textMode": "auto"
+          },
+          "pluginVersion": "8.1.3",
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m]))",
+              "interval": "",
+              "legendFormat": "Addon Availability",
+              "refId": "A"
+            }
+          ],
+          "title": "SLO - Addon (Range)",
+          "type": "stat"
         },
         {
           "datasource": null,
@@ -1355,78 +1366,16 @@ data:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective:  (> 95% Availability in a 10min window) For all HyperShift Addons",
+          "description": "Service Level Objective:  (> 95% Availability in a 10min window)",
           "fieldConfig": {
             "defaults": {
               "color": {
                 "fixedColor": "#ffffff",
-                "mode": "fixed"
+                "mode": "thresholds"
               },
-              "custom": {
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 2,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "area"
-                }
-              },
-              "decimals": 0,
-              "mappings": [
-                {
-                  "options": {
-                    "from": 1,
-                    "result": {
-                      "color": "green",
-                      "index": 0
-                    },
-                    "to": 0.95
-                  },
-                  "type": "range"
-                },
-                {
-                  "options": {
-                    "from": 0.9499,
-                    "result": {
-                      "color": "yellow",
-                      "index": 1
-                    },
-                    "to": 0.8
-                  },
-                  "type": "range"
-                },
-                {
-                  "options": {
-                    "from": 0.799,
-                    "result": {
-                      "color": "red",
-                      "index": 2
-                    },
-                    "to": 0
-                  },
-                  "type": "range"
-                }
-              ],
+              "mappings": [],
               "max": 1,
+              "min": 0,
               "thresholds": {
                 "mode": "percentage",
                 "steps": [
@@ -1450,33 +1399,105 @@ data:
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 6,
             "x": 12,
             "y": 20
           },
-          "id": 37,
+          "id": 46,
           "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
             },
-            "tooltip": {
-              "mode": "multi"
-            }
+            "text": {},
+            "textMode": "auto"
           },
+          "pluginVersion": "8.1.3",
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m]))",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m]))/ sum( count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m])) ",
               "hide": false,
               "interval": "",
               "legendFormat": "Addon Availability",
               "refId": "B"
             }
           ],
-          "title": "SLO - HyperShift Addon Availability (10m)",
-          "type": "timeseries"
+          "title": "SLO - Addon (10m)",
+          "type": "stat"
+        },
+        {
+          "datasource": null,
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "percentage",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "#EAB839",
+                    "value": 80
+                  },
+                  {
+                    "color": "green",
+                    "value": 95
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 18,
+            "y": 20
+          },
+          "id": 44,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "text": {},
+            "textMode": "auto"
+          },
+          "pluginVersion": "8.1.3",
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))",
+              "interval": "",
+              "legendFormat": "Addon Availability",
+              "refId": "A"
+            }
+          ],
+          "title": "SLO - Addon (Range)",
+          "type": "stat"
         },
         {
           "datasource": null,
@@ -2102,8 +2123,8 @@ data:
             "allValue": null,
             "current": {
               "selected": false,
-              "text": "jnp-hyp02",
-              "value": "jnp-hyp02"
+              "text": "jnp-hyp03",
+              "value": "jnp-hyp03"
             },
             "datasource": null,
             "definition": "label_values(mce_hs_addon_hypershift_operator_degraded_bool,cluster)",
@@ -2128,7 +2149,7 @@ data:
         ]
       },
       "time": {
-        "from": "now-24h",
+        "from": "now-6h",
         "to": "now"
       },
       "timepicker": {
@@ -2149,5 +2170,5 @@ data:
       "timezone": "",
       "title": "ACM - HyperShift Addon",
       "uid": "87f7f256a3506f65da8694b290e8d8e4",
-      "version": 3
+      "version": 2
     }
