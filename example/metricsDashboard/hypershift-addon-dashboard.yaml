@@ -1,7 +1,8 @@
+---
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: acm---hypershift-addon
+  name: grafana-dashboard-acm-hypershift-addon
   namespace: open-cluster-management-observability
   labels:
     grafana-custom-dashboard: "true"
@@ -9,6 +10,7 @@ metadata:
   annotations:
     observability.open-cluster-management.io/dashboard-folder: ACM
     grafana-folder: /grafana-dashboard-definitions/ACM
+data:
   hypershift.json: |
     {
       "annotations": {
@@ -33,8 +35,8 @@ metadata:
       "editable": true,
       "gnetId": null,
       "graphTooltip": 0,
-      "id": 2,
-      "iteration": 1674579048651,
+      "id": 5,
+      "iteration": 1674668249231,
       "links": [],
       "panels": [
         {
@@ -972,76 +974,14 @@ metadata:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective:  (> 95% Availability in a 10min window)",
+          "description": "Service Level Objective: This is measured in 10m intervals, and is scored independent from each reading",
           "fieldConfig": {
             "defaults": {
               "color": {
                 "fixedColor": "#ffffff",
-                "mode": "fixed"
+                "mode": "thresholds"
               },
-              "custom": {
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 2,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "area"
-                }
-              },
-              "mappings": [
-                {
-                  "options": {
-                    "from": 1,
-                    "result": {
-                      "color": "green",
-                      "index": 0
-                    },
-                    "to": 0.95
-                  },
-                  "type": "range"
-                },
-                {
-                  "options": {
-                    "from": 0.7999,
-                    "result": {
-                      "color": "red",
-                      "index": 1
-                    },
-                    "to": 0
-                  },
-                  "type": "range"
-                },
-                {
-                  "options": {
-                    "from": 0.9499,
-                    "result": {
-                      "color": "yellow",
-                      "index": 2
-                    },
-                    "to": 0.8
-                  },
-                  "type": "range"
-                }
-              ],
+              "mappings": [],
               "max": 1,
               "min": 0,
               "thresholds": {
@@ -1067,33 +1007,106 @@ metadata:
           },
           "gridPos": {
             "h": 4,
-            "w": 11,
+            "w": 5,
             "x": 0,
             "y": 15
           },
           "id": 38,
           "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
             },
-            "tooltip": {
-              "mode": "multi"
-            }
+            "text": {},
+            "textMode": "auto"
           },
+          "pluginVersion": "8.1.3",
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m])/ count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m])  ",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m]))/ sum( count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m])) ",
               "hide": false,
               "interval": "",
               "legendFormat": "Addon Availability",
               "refId": "B"
             }
           ],
-          "title": "SLO - HyperShift Addon Availability",
-          "type": "timeseries"
+          "title": "SLO - Addon (10m)",
+          "type": "stat"
+        },
+        {
+          "datasource": null,
+          "description": "Service Level Objective: Measures the addon availability in a 10min period, and then averaged across the time window chosen for the dashboard",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "percentage",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "#EAB839",
+                    "value": 80
+                  },
+                  {
+                    "color": "green",
+                    "value": 95
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 4,
+            "w": 5,
+            "x": 5,
+            "y": 15
+          },
+          "id": 47,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "text": {},
+            "textMode": "auto"
+          },
+          "pluginVersion": "8.1.3",
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m]))",
+              "interval": "",
+              "legendFormat": "Addon Availability",
+              "refId": "A"
+            }
+          ],
+          "title": "SLO - Addon (Range)",
+          "type": "stat"
         },
         {
           "datasource": null,
@@ -1354,77 +1367,14 @@ metadata:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective:  (> 95% Availability in a 10min window) For all HyperShift Addons",
+          "description": "Service Level Objective: This is measured in 10m intervals, and is scored independent from each reading",
           "fieldConfig": {
             "defaults": {
               "color": {
                 "fixedColor": "#ffffff",
-                "mode": "fixed"
+                "mode": "thresholds"
               },
-              "custom": {
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 10,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "lineInterpolation": "linear",
-                "lineWidth": 2,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "area"
-                }
-              },
-              "decimals": 0,
-              "mappings": [
-                {
-                  "options": {
-                    "from": 1,
-                    "result": {
-                      "color": "green",
-                      "index": 0
-                    },
-                    "to": 0.95
-                  },
-                  "type": "range"
-                },
-                {
-                  "options": {
-                    "from": 0.9499,
-                    "result": {
-                      "color": "yellow",
-                      "index": 1
-                    },
-                    "to": 0.8
-                  },
-                  "type": "range"
-                },
-                {
-                  "options": {
-                    "from": 0.799,
-                    "result": {
-                      "color": "red",
-                      "index": 2
-                    },
-                    "to": 0
-                  },
-                  "type": "range"
-                }
-              ],
+              "mappings": [],
               "max": 1,
               "min": 0,
               "thresholds": {
@@ -1450,33 +1400,106 @@ metadata:
           },
           "gridPos": {
             "h": 8,
-            "w": 12,
+            "w": 6,
             "x": 12,
             "y": 20
           },
-          "id": 37,
+          "id": 46,
           "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "hidden",
-              "placement": "bottom"
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
             },
-            "tooltip": {
-              "mode": "multi"
-            }
+            "text": {},
+            "textMode": "auto"
           },
+          "pluginVersion": "8.1.3",
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m]))/ sum( count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m])) ",
               "hide": false,
               "interval": "",
               "legendFormat": "Addon Availability",
               "refId": "B"
             }
           ],
-          "title": "SLO - HyperShift Addon Availability",
-          "type": "timeseries"
+          "title": "SLO - Addon (10m)",
+          "type": "stat"
+        },
+        {
+          "datasource": null,
+          "description": "Service Level Objective: Measures the addon availability in a 10min period, and then averaged across the time window chosen for the dashboard",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "thresholds"
+              },
+              "mappings": [],
+              "max": 1,
+              "min": 0,
+              "thresholds": {
+                "mode": "percentage",
+                "steps": [
+                  {
+                    "color": "red",
+                    "value": null
+                  },
+                  {
+                    "color": "#EAB839",
+                    "value": 80
+                  },
+                  {
+                    "color": "green",
+                    "value": 95
+                  }
+                ]
+              },
+              "unit": "percentunit"
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 8,
+            "w": 6,
+            "x": 18,
+            "y": 20
+          },
+          "id": 44,
+          "options": {
+            "colorMode": "value",
+            "graphMode": "area",
+            "justifyMode": "auto",
+            "orientation": "auto",
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "text": {},
+            "textMode": "auto"
+          },
+          "pluginVersion": "8.1.3",
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))",
+              "interval": "",
+              "legendFormat": "Addon Availability",
+              "refId": "A"
+            }
+          ],
+          "title": "SLO - Addon (Range)",
+          "type": "stat"
         },
         {
           "datasource": null,
@@ -1552,7 +1575,7 @@ metadata:
           "targets": [
             {
               "exemplar": true,
-              "expr": "count(mce_hs_addon_hypershift_operator_degraded_bool)",
+              "expr": "count(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"})",
               "instant": false,
               "interval": "",
               "legendFormat": "clusters",
@@ -2101,9 +2124,9 @@ metadata:
           {
             "allValue": null,
             "current": {
-              "selected": true,
-              "text": "local-cluster",
-              "value": "local-cluster"
+              "selected": false,
+              "text": "jnp-hyp03",
+              "value": "jnp-hyp03"
             },
             "datasource": null,
             "definition": "label_values(mce_hs_addon_hypershift_operator_degraded_bool,cluster)",
@@ -2128,7 +2151,7 @@ metadata:
         ]
       },
       "time": {
-        "from": "now-24h",
+        "from": "now-6h",
         "to": "now"
       },
       "timepicker": {
@@ -2149,5 +2172,5 @@ metadata:
       "timezone": "",
       "title": "ACM - HyperShift Addon",
       "uid": "87f7f256a3506f65da8694b290e8d8e4",
-      "version": 5
+      "version": 3
     }

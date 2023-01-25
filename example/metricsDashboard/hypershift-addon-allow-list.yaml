@@ -7,6 +7,7 @@ data:
   metrics_list.yaml: |
     names:
       - mce_hs_addon_available_hosted_clusters_gauge
+      - mce_hs_addon_available_hosted_control_planes_gauge
       - mce_hs_addon_ext_dns_operator_degraded_bool
       - mce_hs_addon_failed_to_start_bool
       - mce_hs_addon_hypershift_operator_degraded_bool
