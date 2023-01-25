@@ -18,5 +18,5 @@ var HostedClusterAvailableGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 })
 
 func init() {
-	CollectorsForRegistration = append(CollectorsForRegistration, TotalHostedClusterGauge, HostedClusterAvailableGauge)
+	CollectorsForRegistration = append(CollectorsForRegistration, TotalHostedClusterGauge, HostedControlPlaneAvailableGauge, HostedClusterAvailableGauge)
 }
