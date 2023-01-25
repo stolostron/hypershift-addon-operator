@@ -36,7 +36,7 @@ data:
       "gnetId": null,
       "graphTooltip": 0,
       "id": 35,
-      "iteration": 1674658137592,
+      "iteration": 1674659313274,
       "links": [],
       "panels": [
         {
@@ -1093,7 +1093,7 @@ data:
               "refId": "B"
             }
           ],
-          "title": "SLO - HyperShift Addon Availability",
+          "title": "SLO - HyperShift Addon Availability (10m)",
           "type": "timeseries"
         },
         {
@@ -1475,7 +1475,7 @@ data:
               "refId": "B"
             }
           ],
-          "title": "SLO - HyperShift Addon Availability",
+          "title": "SLO - HyperShift Addon Availability (10m)",
           "type": "timeseries"
         },
         {
@@ -1552,7 +1552,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "count(mce_hs_addon_hypershift_operator_degraded_bool)",
+              "expr": "count(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"})",
               "instant": false,
               "interval": "",
               "legendFormat": "clusters",
@@ -2101,7 +2101,7 @@ data:
           {
             "allValue": null,
             "current": {
-              "selected": true,
+              "selected": false,
               "text": "jnp-hyp02",
               "value": "jnp-hyp02"
             },
@@ -2149,5 +2149,5 @@ data:
       "timezone": "",
       "title": "ACM - HyperShift Addon",
       "uid": "87f7f256a3506f65da8694b290e8d8e4",
-      "version": 2
+      "version": 3
     }
