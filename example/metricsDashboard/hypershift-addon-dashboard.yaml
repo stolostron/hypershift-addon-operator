@@ -36,7 +36,7 @@ data:
       "gnetId": null,
       "graphTooltip": 0,
       "id": 5,
-      "iteration": 1674667592425,
+      "iteration": 1674668249231,
       "links": [],
       "panels": [
         {
@@ -974,7 +974,7 @@ data:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective:  (> 95% Availability in a 10min window)",
+          "description": "Service Level Objective: This is measured in 10m intervals, and is scored independent from each reading",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1043,6 +1043,7 @@ data:
         },
         {
           "datasource": null,
+          "description": "Service Level Objective: Measures the addon availability in a 10min period, and then averaged across the time window chosen for the dashboard",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1366,7 +1367,7 @@ data:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective:  (> 95% Availability in a 10min window)",
+          "description": "Service Level Objective: This is measured in 10m intervals, and is scored independent from each reading",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1435,6 +1436,7 @@ data:
         },
         {
           "datasource": null,
+          "description": "Service Level Objective: Measures the addon availability in a 10min period, and then averaged across the time window chosen for the dashboard",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -2170,5 +2172,5 @@ data:
       "timezone": "",
       "title": "ACM - HyperShift Addon",
       "uid": "87f7f256a3506f65da8694b290e8d8e4",
-      "version": 2
+      "version": 3
     }
