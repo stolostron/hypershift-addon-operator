@@ -1,7 +1,7 @@
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: acm---hypershift-addon
+  name: grafana-dashboard-acm-hypershift-addon
   namespace: open-cluster-management-observability
   labels:
     grafana-custom-dashboard: "true"
@@ -9,6 +9,7 @@ metadata:
   annotations:
     observability.open-cluster-management.io/dashboard-folder: ACM
     grafana-folder: /grafana-dashboard-definitions/ACM
+data:
   hypershift.json: |
     {
       "annotations": {
