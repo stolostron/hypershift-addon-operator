@@ -1,3 +1,4 @@
+---
 kind: ConfigMap
 apiVersion: v1
 metadata:
@@ -34,8 +35,8 @@ data:
       "editable": true,
       "gnetId": null,
       "graphTooltip": 0,
-      "id": 2,
-      "iteration": 1674579048651,
+      "id": 35,
+      "iteration": 1674658137592,
       "links": [],
       "panels": [
         {
@@ -1044,7 +1045,6 @@ data:
                 }
               ],
               "max": 1,
-              "min": 0,
               "thresholds": {
                 "mode": "percentage",
                 "steps": [
@@ -1086,7 +1086,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m])/ count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m])  ",
+              "expr": "sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m])/ count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m])  ",
               "hide": false,
               "interval": "",
               "legendFormat": "Addon Availability",
@@ -1427,7 +1427,6 @@ data:
                 }
               ],
               "max": 1,
-              "min": 0,
               "thresholds": {
                 "mode": "percentage",
                 "steps": [
@@ -1469,7 +1468,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m]))",
               "hide": false,
               "interval": "",
               "legendFormat": "Addon Availability",
@@ -2103,8 +2102,8 @@ data:
             "allValue": null,
             "current": {
               "selected": true,
-              "text": "local-cluster",
-              "value": "local-cluster"
+              "text": "jnp-hyp02",
+              "value": "jnp-hyp02"
             },
             "datasource": null,
             "definition": "label_values(mce_hs_addon_hypershift_operator_degraded_bool,cluster)",
@@ -2150,5 +2149,5 @@ data:
       "timezone": "",
       "title": "ACM - HyperShift Addon",
       "uid": "87f7f256a3506f65da8694b290e8d8e4",
-      "version": 5
+      "version": 2
     }
