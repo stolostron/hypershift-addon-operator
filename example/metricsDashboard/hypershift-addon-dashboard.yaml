@@ -36,7 +36,7 @@ data:
       "gnetId": null,
       "graphTooltip": 0,
       "id": 5,
-      "iteration": 1674743091155,
+      "iteration": 1674747179744,
       "links": [],
       "panels": [
         {
@@ -974,7 +974,7 @@ data:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective:  > 95% Availability in a 10min interval",
+          "description": "Service Level Objective:  > 99% Availability in a 60m interval",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1031,19 +1031,19 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m]))/ sum( count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m])) ",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[60m]))/ sum( count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[60m])) ",
               "hide": false,
               "interval": "",
               "legendFormat": "Addon Availability",
               "refId": "B"
             }
           ],
-          "title": "SLO - Availability (10m)",
+          "title": "SLO - Availability (60m)",
           "type": "stat"
         },
         {
           "datasource": null,
-          "description": "Service Level Objective:  > 95% Availability in a 10min interval over the dashboard range",
+          "description": "Service Level Objective:  > 99% Availability in a 1d interval",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1099,13 +1099,13 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[$__range:10m]))",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[1d]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[1d]))",
               "interval": "",
               "legendFormat": "Addon Availability",
               "refId": "A"
             }
           ],
-          "title": "SLO - Availability (Range)",
+          "title": "SLO - Availability (1d)",
           "type": "stat"
         },
         {
@@ -1359,7 +1359,7 @@ data:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective:  > 95% Availability in a 10min interval",
+          "description": "Service Level Objective:  > 99% Availability in a 60min interval",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1378,11 +1378,11 @@ data:
                   },
                   {
                     "color": "#EAB839",
-                    "value": 80
+                    "value": 85
                   },
                   {
                     "color": "green",
-                    "value": 95
+                    "value": 99
                   }
                 ]
               },
@@ -1416,19 +1416,19 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m]))/ sum( count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m])) ",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[60m]))/ sum( count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[60m])) ",
               "hide": false,
               "interval": "",
               "legendFormat": "Addon Availability",
               "refId": "B"
             }
           ],
-          "title": "SLO - Availability (10m)",
+          "title": "SLO - Availability (60m)",
           "type": "stat"
         },
         {
           "datasource": null,
-          "description": "Service Level Objective:  Minimum value in the dashboard range. Expected > 95% Availability in a 10min interval over the dashboard range",
+          "description": "Service Level Objective:  > 99% Availability in a 60min interval over the dashboard range",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1446,11 +1446,11 @@ data:
                   },
                   {
                     "color": "#EAB839",
-                    "value": 80
+                    "value": 85
                   },
                   {
                     "color": "green",
-                    "value": 95
+                    "value": 99
                   }
                 ]
               },
@@ -1472,7 +1472,7 @@ data:
             "orientation": "auto",
             "reduceOptions": {
               "calcs": [
-                "min"
+                "last"
               ],
               "fields": "",
               "values": false
@@ -1484,18 +1484,18 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[1d]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[1d]))",
               "interval": "",
               "legendFormat": "Addon Availability",
               "refId": "A"
             }
           ],
-          "title": "SLO - Min. Availability (Range)",
+          "title": "SLO - Availability (1d)",
           "type": "stat"
         },
         {
           "datasource": null,
-          "description": "Service Level Objective: This is the HyperShift add-on availability over the dashboard range. It is measured in 10min intervals",
+          "description": "Service Level Objective: This is the HyperShift add-on availability over the dashboard range. It is measured in 60m intervals",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1542,11 +1542,11 @@ data:
                   },
                   {
                     "color": "yellow",
-                    "value": 80
+                    "value": 85
                   },
                   {
                     "color": "green",
-                    "value": 95
+                    "value": 99
                   }
                 ]
               },
@@ -1574,13 +1574,13 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:10m]))",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:60m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[$__range:60m]))",
               "interval": "",
               "legendFormat": "SLO",
               "refId": "A"
             }
           ],
-          "title": "SLO: Availability (Dashboard Range)",
+          "title": "SLO: Availability (dashboard range)",
           "type": "timeseries"
         },
         {
