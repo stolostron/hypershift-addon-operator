@@ -104,14 +104,14 @@ HYPERSHIFT_COMMAND="hypershift"
 # Generate the first hosted cluster name
 CLUSTER_NAME_1=${CLUSTER_NAME_PREFIX}$(cat /dev/urandom | env LC_ALL=C tr -dc 'a-z0-9' | fold -w 6 | head -n 1)
 INFRA_ID_1=$(cat /dev/urandom | env LC_ALL=C tr -dc 'a-z0-9' | fold -w 32 | head -n 1)
-CLUSTER_UUID_1=$(uuidgen)
+CLUSTER_UUID_1=$(uuid)
 INFRA_OUTPUT_FILE_1=${CLUSTER_NAME_1}-infraout
 IAM_OUTPUT_FILE_1=${CLUSTER_NAME_1}-iam
 
 # Generate the second hosted cluster name
 CLUSTER_NAME_2=${CLUSTER_NAME_PREFIX}$(cat /dev/urandom | env LC_ALL=C tr -dc 'a-z0-9' | fold -w 6 | head -n 1)
 INFRA_ID_2=$(cat /dev/urandom | env LC_ALL=C tr -dc 'a-z0-9' | fold -w 32 | head -n 1)
-CLUSTER_UUID_2=$(uuidgen)
+CLUSTER_UUID_2=$(uuid)
 INFRA_OUTPUT_FILE_2=${CLUSTER_NAME_2}-infraout
 IAM_OUTPUT_FILE_2=${CLUSTER_NAME_2}-iam
 
@@ -553,8 +553,11 @@ enableHostedModeAddon() {
 echo "$(date) ==== Enable hypershift feature ===="
 enableHypershiftForLocalCluster
 
-echo "$(date) ==== Installing hypershift binary ===="
-installHypershiftBinary
+if ! command -v ${HYPERSHIFT_COMMAND} &> /dev/null
+then
+    echo "$(date) ==== Installing hypershift binary ===="
+    installHypershiftBinary
+fi
 
 # Enabled hosted mode addons
 # https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/running_mce_acm_addons_hostedmode.md
