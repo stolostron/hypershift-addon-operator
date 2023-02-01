@@ -36,7 +36,7 @@ data:
       "gnetId": null,
       "graphTooltip": 0,
       "id": 5,
-      "iteration": 1674668249231,
+      "iteration": 1675265580169,
       "links": [],
       "panels": [
         {
@@ -974,7 +974,7 @@ data:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective: This is measured in 10m intervals, and is scored independent from each reading",
+          "description": "Service Level Objective:  (> 95% Availability in a 10min window)",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1019,7 +1019,7 @@ data:
             "orientation": "auto",
             "reduceOptions": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "fields": "",
               "values": false
@@ -1031,7 +1031,7 @@ data:
           "targets": [
             {
               "exemplar": true,
-              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m]))/ sum( count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m])) ",
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\", managed_cluster_name=\"$cluster\"}[10m]))",
               "hide": false,
               "interval": "",
               "legendFormat": "Addon Availability",
@@ -1043,7 +1043,6 @@ data:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective: Measures the addon availability in a 10min period, and then averaged across the time window chosen for the dashboard",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1087,7 +1086,7 @@ data:
             "orientation": "auto",
             "reduceOptions": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "fields": "",
               "values": false
@@ -1302,6 +1301,7 @@ data:
         },
         {
           "datasource": null,
+          "description": "HCP: Hosted control palne",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1346,10 +1346,18 @@ data:
           "targets": [
             {
               "exemplar": true,
+              "expr": "sum(mce_hs_addon_available_hosted_control_planes_gauge)",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "Available - HCP",
+              "refId": "C"
+            },
+            {
+              "exemplar": true,
               "expr": "sum(mce_hs_addon_available_hosted_clusters_gauge)",
               "instant": true,
               "interval": "",
-              "legendFormat": "Available",
+              "legendFormat": "Available - Clusters",
               "refId": "A"
             },
             {
@@ -1358,7 +1366,7 @@ data:
               "hide": false,
               "instant": true,
               "interval": "",
-              "legendFormat": "Total",
+              "legendFormat": "Total - Clusters",
               "refId": "B"
             }
           ],
@@ -1367,7 +1375,7 @@ data:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective: This is measured in 10m intervals, and is scored independent from each reading",
+          "description": "Service Level Objective:  (> 95% Availability in a 10min window)",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1412,7 +1420,7 @@ data:
             "orientation": "auto",
             "reduceOptions": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "fields": "",
               "values": false
@@ -1436,7 +1444,6 @@ data:
         },
         {
           "datasource": null,
-          "description": "Service Level Objective: Measures the addon availability in a 10min period, and then averaged across the time window chosen for the dashboard",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -1480,7 +1487,7 @@ data:
             "orientation": "auto",
             "reduceOptions": {
               "calcs": [
-                "lastNotNull"
+                "last"
               ],
               "fields": "",
               "values": false
@@ -1688,11 +1695,12 @@ data:
         },
         {
           "datasource": null,
-          "description": "",
+          "description": "Service Level Objective:  (> 95% Availability in a 10min window) For all HyperShift Addons",
           "fieldConfig": {
             "defaults": {
               "color": {
-                "mode": "palette-classic"
+                "fixedColor": "#ffffff",
+                "mode": "fixed"
               },
               "custom": {
                 "axisLabel": "",
@@ -1707,68 +1715,76 @@ data:
                   "viz": false
                 },
                 "lineInterpolation": "linear",
-                "lineWidth": 1,
+                "lineWidth": 2,
                 "pointSize": 5,
                 "scaleDistribution": {
                   "type": "linear"
                 },
-                "showPoints": "never",
+                "showPoints": "auto",
                 "spanNulls": false,
                 "stacking": {
                   "group": "A",
                   "mode": "none"
                 },
                 "thresholdsStyle": {
-                  "mode": "off"
+                  "mode": "area"
                 }
               },
               "decimals": 0,
               "mappings": [
                 {
                   "options": {
-                    "0": {
+                    "from": 1,
+                    "result": {
                       "color": "green",
-                      "index": 1,
-                      "text": "OK"
+                      "index": 0
                     },
-                    "1": {
-                      "color": "red",
-                      "index": 0,
-                      "text": "Degraded"
-                    },
-                    "0.2": {
-                      "index": 2,
-                      "text": "-"
-                    },
-                    "0.4": {
-                      "index": 3,
-                      "text": "-"
-                    },
-                    "0.6": {
-                      "index": 4,
-                      "text": "-"
-                    },
-                    "0.8": {
-                      "index": 5,
-                      "text": "-"
-                    }
+                    "to": 0.95
                   },
-                  "type": "value"
+                  "type": "range"
+                },
+                {
+                  "options": {
+                    "from": 0.9499,
+                    "result": {
+                      "color": "yellow",
+                      "index": 1
+                    },
+                    "to": 0.8
+                  },
+                  "type": "range"
+                },
+                {
+                  "options": {
+                    "from": 0.799,
+                    "result": {
+                      "color": "red",
+                      "index": 2
+                    },
+                    "to": 0
+                  },
+                  "type": "range"
                 }
               ],
               "max": 1,
-              "min": 0,
-              "noValue": "N/A",
               "thresholds": {
-                "mode": "absolute",
+                "mode": "percentage",
                 "steps": [
                   {
-                    "color": "yellow",
+                    "color": "red",
                     "value": null
+                  },
+                  {
+                    "color": "#EAB839",
+                    "value": 80
+                  },
+                  {
+                    "color": "green",
+                    "value": 95
                   }
                 ]
               },
-              "unit": "string"
+              "unit": "percentunit"
             },
             "overrides": []
           },
@@ -1778,31 +1794,28 @@ data:
             "x": 12,
             "y": 28
           },
-          "id": 16,
+          "id": 37,
           "options": {
             "legend": {
               "calcs": [],
-              "displayMode": "list",
+              "displayMode": "hidden",
               "placement": "bottom"
             },
             "tooltip": {
               "mode": "multi"
             }
           },
-          "pluginVersion": "8.1.3",
           "targets": [
             {
               "exemplar": true,
-              "expr": "mce_hs_addon_hypershift_operator_degraded_bool",
-              "instant": false,
+              "expr": "sum(sum_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m]))/ sum(count_over_time(acm_managed_cluster_addon_status_condition{addon_name=\"hypershift-addon\",  condition=\"Available\", status=\"true\"}[10m]))",
+              "hide": false,
               "interval": "",
-              "legendFormat": "{{cluster}}",
-              "refId": "A"
+              "legendFormat": "Addon Availability",
+              "refId": "B"
             }
           ],
-          "timeFrom": null,
-          "timeShift": null,
-          "title": "HyperShift Operator",
+          "title": "SLO - HyperShift Addon Availability (10m)",
           "type": "timeseries"
         },
         {
@@ -1902,99 +1915,123 @@ data:
           }
         },
         {
-          "aliasColors": {},
-          "bars": false,
-          "dashLength": 10,
-          "dashes": false,
           "datasource": null,
-          "description": "The number of failed attempts to copy a Hosted Cluster's kubeconfig on a given Hosting Cluster",
-          "fill": 1,
-          "fillGradient": 0,
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 10,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "never",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "decimals": 0,
+              "mappings": [
+                {
+                  "options": {
+                    "0": {
+                      "color": "green",
+                      "index": 1,
+                      "text": "OK"
+                    },
+                    "1": {
+                      "color": "red",
+                      "index": 0,
+                      "text": "Degraded"
+                    },
+                    "0.2": {
+                      "index": 2,
+                      "text": "-"
+                    },
+                    "0.4": {
+                      "index": 3,
+                      "text": "-"
+                    },
+                    "0.6": {
+                      "index": 4,
+                      "text": "-"
+                    },
+                    "0.8": {
+                      "index": 5,
+                      "text": "-"
+                    }
+                  },
+                  "type": "value"
+                }
+              ],
+              "max": 1,
+              "min": 0,
+              "noValue": "N/A",
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "yellow",
+                    "value": null
+                  }
+                ]
+              },
+              "unit": "string"
+            },
+            "overrides": []
+          },
           "gridPos": {
-            "h": 7,
+            "h": 8,
             "w": 12,
             "x": 12,
             "y": 36
           },
-          "hiddenSeries": false,
-          "id": 29,
-          "legend": {
-            "avg": false,
-            "current": false,
-            "hideZero": true,
-            "max": false,
-            "min": false,
-            "show": true,
-            "total": false,
-            "values": false
-          },
-          "lines": true,
-          "linewidth": 1,
-          "nullPointMode": "null",
+          "id": 16,
           "options": {
-            "alertThreshold": false
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom"
+            },
+            "tooltip": {
+              "mode": "multi"
+            }
           },
-          "percentage": false,
           "pluginVersion": "8.1.3",
-          "pointradius": 2,
-          "points": false,
-          "renderer": "flot",
-          "seriesOverrides": [],
-          "spaceLength": 10,
-          "stack": false,
-          "steppedLine": false,
           "targets": [
             {
               "exemplar": true,
-              "expr": "mce_hs_addon_kubeconfig_secret_copy_failure_count",
+              "expr": "mce_hs_addon_hypershift_operator_degraded_bool",
+              "instant": false,
               "interval": "",
               "legendFormat": "{{cluster}}",
               "refId": "A"
             }
           ],
-          "thresholds": [],
           "timeFrom": null,
-          "timeRegions": [],
           "timeShift": null,
-          "title": "Kubeconfig Copy Failures",
-          "tooltip": {
-            "shared": true,
-            "sort": 0,
-            "value_type": "individual"
-          },
-          "type": "graph",
-          "xaxis": {
-            "buckets": null,
-            "mode": "time",
-            "name": null,
-            "show": true,
-            "values": []
-          },
-          "yaxes": [
-            {
-              "$$hashKey": "object:59",
-              "decimals": 0,
-              "format": "short",
-              "label": null,
-              "logBase": 1,
-              "max": null,
-              "min": "0",
-              "show": true
-            },
-            {
-              "$$hashKey": "object:60",
-              "format": "short",
-              "label": "",
-              "logBase": 1,
-              "max": null,
-              "min": "0",
-              "show": false
-            }
-          ],
-          "yaxis": {
-            "align": false,
-            "alignLevel": null
-          }
+          "title": "HyperShift Operator",
+          "type": "timeseries"
         },
         {
           "datasource": null,
@@ -2110,6 +2147,101 @@ data:
           "timeShift": null,
           "title": "External DNS",
           "type": "timeseries"
+        },
+        {
+          "aliasColors": {},
+          "bars": false,
+          "dashLength": 10,
+          "dashes": false,
+          "datasource": null,
+          "description": "The number of failed attempts to copy a Hosted Cluster's kubeconfig on a given Hosting Cluster",
+          "fill": 1,
+          "fillGradient": 0,
+          "gridPos": {
+            "h": 7,
+            "w": 12,
+            "x": 12,
+            "y": 44
+          },
+          "hiddenSeries": false,
+          "id": 29,
+          "legend": {
+            "avg": false,
+            "current": false,
+            "hideZero": true,
+            "max": false,
+            "min": false,
+            "show": true,
+            "total": false,
+            "values": false
+          },
+          "lines": true,
+          "linewidth": 1,
+          "nullPointMode": "null",
+          "options": {
+            "alertThreshold": false
+          },
+          "percentage": false,
+          "pluginVersion": "8.1.3",
+          "pointradius": 2,
+          "points": false,
+          "renderer": "flot",
+          "seriesOverrides": [],
+          "spaceLength": 10,
+          "stack": false,
+          "steppedLine": false,
+          "targets": [
+            {
+              "exemplar": true,
+              "expr": "mce_hs_addon_kubeconfig_secret_copy_failure_count",
+              "interval": "",
+              "legendFormat": "{{cluster}}",
+              "refId": "A"
+            }
+          ],
+          "thresholds": [],
+          "timeFrom": null,
+          "timeRegions": [],
+          "timeShift": null,
+          "title": "Kubeconfig Copy Failures",
+          "tooltip": {
+            "shared": true,
+            "sort": 0,
+            "value_type": "individual"
+          },
+          "type": "graph",
+          "xaxis": {
+            "buckets": null,
+            "mode": "time",
+            "name": null,
+            "show": true,
+            "values": []
+          },
+          "yaxes": [
+            {
+              "$$hashKey": "object:59",
+              "decimals": 0,
+              "format": "short",
+              "label": null,
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": true
+            },
+            {
+              "$$hashKey": "object:60",
+              "format": "short",
+              "label": "",
+              "logBase": 1,
+              "max": null,
+              "min": "0",
+              "show": false
+            }
+          ],
+          "yaxis": {
+            "align": false,
+            "alignLevel": null
+          }
         }
       ],
       "refresh": "30s",
@@ -2125,8 +2257,8 @@ data:
             "allValue": null,
             "current": {
               "selected": false,
-              "text": "jnp-hyp03",
-              "value": "jnp-hyp03"
+              "text": "jnp-hyp01",
+              "value": "jnp-hyp01"
             },
             "datasource": null,
             "definition": "label_values(mce_hs_addon_hypershift_operator_degraded_bool,cluster)",
@@ -2151,7 +2283,7 @@ data:
         ]
       },
       "time": {
-        "from": "now-6h",
+        "from": "now-12h",
         "to": "now"
       },
       "timepicker": {
@@ -2172,5 +2304,5 @@ data:
       "timezone": "",
       "title": "ACM - HyperShift Addon",
       "uid": "87f7f256a3506f65da8694b290e8d8e4",
-      "version": 3
+      "version": 4
     }
