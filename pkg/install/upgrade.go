@@ -36,6 +36,8 @@ type UpgradeController struct {
 	privateLinkSecret         corev1.Secret
 	imageOverrideConfigmap    corev1.ConfigMap
 	reinstallNeeded           bool // this is used only for code test
+	startup                   bool //
+	installfailed             bool // previous installation failed - retry needed on next attempt
 }
 
 func NewUpgradeController(hubClient, spokeClient client.Client, logger logr.Logger, addonName, addonNamespace, clusterName, operatorImage,
@@ -52,6 +54,7 @@ func NewUpgradeController(hubClient, spokeClient client.Client, logger logr.Logg
 		withOverride:              withOverride,
 		hypershiftInstallExecutor: &HypershiftLibExecutor{},
 		ctx:                       context,
+		startup:                   true,
 	}
 }
 
@@ -64,12 +67,19 @@ func (c *UpgradeController) Start() {
 	c.stopch = make(chan struct{})
 
 	go wait.Until(func() {
+		c.log.Info(fmt.Sprintf("check if HyperShift operator re-installation is required (startup=%v, installfailed=%v)", c.startup, c.installfailed))
+
 		c.reinstallNeeded = false
-		if c.installOptionsChanged() || c.upgradeImageCheck() {
+		if c.startup || c.installfailed || c.installOptionsChanged() || c.upgradeImageCheck() {
 			c.reinstallNeeded = true
-			c.log.Info("change has been detected to require hypershift operator re-installation")
-			if err := c.RunHypershiftOperatorUpdate(c.ctx); err != nil {
+			c.log.Info("hypershift operator re-installation is required")
+			if err := c.runHypershiftInstall(c.ctx, c.startup); err != nil {
 				c.log.Error(err, "failed to install hypershift operator")
+
+				c.installfailed = true
+			} else {
+				c.installfailed = false
+				c.startup = false
 			}
 		}
 	}, 2*time.Minute, c.stopch) // Connect to the hub every 2 minutes to check for any changes

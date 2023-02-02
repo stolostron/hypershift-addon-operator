@@ -389,6 +389,14 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
 	controller.Stop()
 
+	controller.startup = true
+	controller.installfailed = false
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.startup && controller.installfailed
+	}, 3*time.Minute, 10*time.Second, "Nothing has changed, but Startup=true. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
 	changedPrivateLinkSecret := &corev1.Secret{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      util.HypershiftPrivateLinkSecretName,
@@ -410,6 +418,8 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 		return false
 	}, 10*time.Second, 1*time.Second, "The private link secret was updated successfully")
 
+	controller.startup = false
+	controller.installfailed = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
@@ -430,6 +440,8 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "The private link secret was removed. The hypershift operator needs to be re-installed")
 	controller.Stop()
 
+	controller.startup = false
+	controller.installfailed = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return !controller.reinstallNeeded
