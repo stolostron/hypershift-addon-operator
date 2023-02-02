@@ -24,6 +24,10 @@
 #export AWS_ACCESS_KEY_ID=
 #export AWS_SECRET_ACCESS_KEY=
 
+# Canary test expects a xml result file in a folder.
+# Default the result to failed until it's successful.
+cp /hypershift-failed.xml /results
+
 if [ -z ${OCP_RELEASE_IMAGE+x} ]; then
   echo "OCP_RELEASE_IMAGE is not defined"
   exit 1
@@ -295,7 +299,7 @@ deleteHostedCluster() {
     waitForManifestworkDelete ${HOSTING_CLUSTER_NAME} ${infraID}
 }
 
-cleaup() {
+cleanup() {
     clusterName=$1
     infraID=$2
     infraFile=$3
@@ -592,6 +596,10 @@ verifyHostedCluster ${INFRA_ID_1}
 echo "$(date) ==== Verifying hosted cluster  ${CLUSTER_NAME_2} ===="
 verifyHostedCluster ${INFRA_ID_2}
 
+# Test ran successfully, remove the failed result file and put the successful file in
+rm -f /results/hypershift-failed.xml
+cp /hypershift-success.xml /results
+
 # Delete the first managed cluster
 echo "$(date) ==== Deleting hosted cluster  ${CLUSTER_NAME_1} ===="
 deleteHostedCluster ${CLUSTER_NAME_1} ${INFRA_ID_1}
@@ -602,7 +610,9 @@ deleteHostedCluster ${CLUSTER_NAME_2} ${INFRA_ID_2}
 
 # Destroy infra, IAM and remove files
 echo "$(date) ==== Cleaning up hosted cluster  ${CLUSTER_NAME_1} ===="
-cleaup ${CLUSTER_NAME_1} ${INFRA_ID_1} ${INFRA_OUTPUT_FILE_1} ${IAM_OUTPUT_FILE_1}
+cleanup ${CLUSTER_NAME_1} ${INFRA_ID_1} ${INFRA_OUTPUT_FILE_1} ${IAM_OUTPUT_FILE_1}
 
 echo "$(date) ==== Cleaning up hosted cluster  ${CLUSTER_NAME_2} ===="
-cleaup ${CLUSTER_NAME_2} ${INFRA_ID_2} ${INFRA_OUTPUT_FILE_2} ${IAM_OUTPUT_FILE_2}
+cleanup ${CLUSTER_NAME_2} ${INFRA_ID_2} ${INFRA_OUTPUT_FILE_2} ${IAM_OUTPUT_FILE_2}
+
+exit 0

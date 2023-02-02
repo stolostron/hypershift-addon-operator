@@ -13,6 +13,9 @@ RUN curl -LO https://dl.k8s.io/release/v1.26.0/bin/linux/amd64/kubectl \
         && mv kubectl /bin
 
 COPY ./test/canary/run_canary_test.sh .
+COPY ./test/canary/hypershift-failed.xml .
+COPY ./test/canary/hypershift-success.xml .
+RUN mkdir -p /results
 RUN mkdir -p /resources
 COPY ./test/canary/resources /resources
 
