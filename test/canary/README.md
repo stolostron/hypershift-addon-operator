@@ -33,6 +33,7 @@ OCP_RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.12.0-x86_64
 HOSTING_CLUSTER_NAME=local-cluster
 CLUSTER_NAME_PREFIX=ge-
 REGION=us-east-1
+RESULTS_DIR=/tmp
 ```
 
 Run the test:
@@ -40,6 +41,7 @@ Run the test:
 ```
 docker run \
   --volume $KUBECONFIG_PATH:/kubeconfig \
+  --volume $RESULTS_DIR:/results \
   --env KUBECONFIG=/kubeconfig \
   --env OCP_RELEASE_IMAGE=$OCP_RELEASE_IMAGE \
   --env OCP_PULL_SECRET=$OCP_PULL_SECRET \
