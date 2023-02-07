@@ -356,7 +356,6 @@ spec:
             storage:
               persistentVolume:
                 size: 4Gi
-                storageClassName: gp3-csi
               type: PersistentVolume
           managementType: Managed
         fips: false
