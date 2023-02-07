@@ -5,6 +5,7 @@ RUN  microdnf update -y \
         && microdnf install uuid \
         && microdnf install jq \
         && microdnf install openssh-clients \
+        && microdnf install tar \
         && microdnf clean all
 
 # Install the kubectl binary
