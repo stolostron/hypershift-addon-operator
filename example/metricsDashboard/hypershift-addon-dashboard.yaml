@@ -36,7 +36,7 @@ data:
       "gnetId": null,
       "graphTooltip": 0,
       "id": 5,
-      "iteration": 1675265580169,
+      "iteration": 1675874401203,
       "links": [],
       "panels": [
         {
@@ -55,7 +55,7 @@ data:
         },
         {
           "datasource": null,
-          "description": "",
+          "description": "HCP: Hosted Control Plane",
           "fieldConfig": {
             "defaults": {
               "color": {
@@ -87,7 +87,7 @@ data:
           },
           "gridPos": {
             "h": 8,
-            "w": 6,
+            "w": 12,
             "x": 0,
             "y": 1
           },
@@ -109,83 +109,32 @@ data:
           "targets": [
             {
               "exemplar": true,
+              "expr": "mce_hs_addon_available_hosted_control_planes_gauge{cluster=\"$cluster\"}",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "HCP",
+              "refId": "B"
+            },
+            {
+              "exemplar": true,
               "expr": "mce_hs_addon_available_hosted_clusters_gauge{cluster=\"$cluster\"}",
               "instant": true,
               "interval": "",
-              "legendFormat": "{{cluster}}",
+              "legendFormat": "Available",
               "refId": "A"
+            },
+            {
+              "exemplar": true,
+              "expr": "mce_hs_addon_total_hosted_control_planes_gauge{cluster=\"$cluster\"}",
+              "hide": false,
+              "interval": "",
+              "legendFormat": "Total",
+              "refId": "C"
             }
           ],
           "timeFrom": null,
           "timeShift": null,
-          "title": "Available Hosted Control Planes",
-          "type": "gauge"
-        },
-        {
-          "datasource": null,
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "thresholds"
-              },
-              "decimals": 0,
-              "mappings": [],
-              "max": 90,
-              "min": 0,
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "#EAB839",
-                    "value": 60
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 6,
-            "x": 6,
-            "y": 1
-          },
-          "id": 6,
-          "interval": "60s",
-          "options": {
-            "reduceOptions": {
-              "calcs": [
-                "lastNotNull"
-              ],
-              "fields": "",
-              "values": false
-            },
-            "showThresholdLabels": true,
-            "showThresholdMarkers": true,
-            "text": {}
-          },
-          "pluginVersion": "8.1.3",
-          "targets": [
-            {
-              "exemplar": true,
-              "expr": "mce_hs_addon_total_hosted_control_planes_gauge{cluster=\"$cluster\"}",
-              "instant": true,
-              "interval": "",
-              "legendFormat": "{{cluster}}",
-              "refId": "A"
-            }
-          ],
-          "timeFrom": null,
-          "title": "Total Hosted Control Planes",
+          "title": "Clusters",
           "type": "gauge"
         },
         {
@@ -1349,7 +1298,7 @@ data:
               "expr": "sum(mce_hs_addon_available_hosted_control_planes_gauge)",
               "hide": false,
               "interval": "",
-              "legendFormat": "Available - HCP",
+              "legendFormat": "HCP",
               "refId": "C"
             },
             {
@@ -1357,7 +1306,7 @@ data:
               "expr": "sum(mce_hs_addon_available_hosted_clusters_gauge)",
               "instant": true,
               "interval": "",
-              "legendFormat": "Available - Clusters",
+              "legendFormat": "Available",
               "refId": "A"
             },
             {
@@ -1366,11 +1315,11 @@ data:
               "hide": false,
               "instant": true,
               "interval": "",
-              "legendFormat": "Total - Clusters",
+              "legendFormat": "Total",
               "refId": "B"
             }
           ],
-          "title": "Hosted Control Planes",
+          "title": "Clusters",
           "type": "bargauge"
         },
         {
@@ -2257,8 +2206,8 @@ data:
             "allValue": null,
             "current": {
               "selected": false,
-              "text": "jnp-hyp01",
-              "value": "jnp-hyp01"
+              "text": "local-cluster",
+              "value": "local-cluster"
             },
             "datasource": null,
             "definition": "label_values(mce_hs_addon_hypershift_operator_degraded_bool,cluster)",
@@ -2279,11 +2228,32 @@ data:
             "skipUrlSync": false,
             "sort": 1,
             "type": "query"
+          },
+          {
+            "current": {
+              "selected": true,
+              "text": "Observatorium",
+              "value": "Observatorium"
+            },
+            "description": null,
+            "error": null,
+            "hide": 0,
+            "includeAll": false,
+            "label": null,
+            "multi": false,
+            "name": "datasource",
+            "options": [],
+            "query": "prometheus",
+            "queryValue": "",
+            "refresh": 1,
+            "regex": "",
+            "skipUrlSync": false,
+            "type": "datasource"
           }
         ]
       },
       "time": {
-        "from": "now-12h",
+        "from": "now-6h",
         "to": "now"
       },
       "timepicker": {
@@ -2304,5 +2274,5 @@ data:
       "timezone": "",
       "title": "ACM - HyperShift Addon",
       "uid": "87f7f256a3506f65da8694b290e8d8e4",
-      "version": 4
+      "version": 1
     }
