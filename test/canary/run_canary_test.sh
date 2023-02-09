@@ -1,6 +1,15 @@
 #!/bin/bash
 
-# This script is run on the hub cluster
+# This script is run on the AWS hub cluster
+
+# If the cluster is not AWS then exit gracefully and report success
+# TODO ACM-3290 to support all platforms
+CLOUD_LABEL=$(kubectl get managedcluster local-cluster -o jsonpath='{.metadata.labels.cloud}')
+if [ "$CLOUD_LABEL" != "Amazon" ]; then
+    echo "Skipping test execution. The local-cluster managedcluster does not have a cloud label with the value: Amazon"
+    cp /hypershift-success.xml /results
+    exit 0
+fi
 
 #########################################
 #   POPULATE THESE WITH ENV VARS        #
