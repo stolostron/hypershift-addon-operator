@@ -68,6 +68,13 @@ const (
 	HypershiftEnvVarImageClusterApi           = "IMAGE_CLUSTER_API"
 	HypershiftEnvVarImageAgentCapiProvider    = "IMAGE_AGENT_CAPI_PROVIDER"
 
+	// external-managed-kubeconfig secret
+	ExternalManagedKubeconfigSecretName     = "external-managed-kubeconfig"
+	ExternalManagedKubeconfigSecretNsPrefix = "klusterlet-"
+
+	// Hosted cluster refresh-time annotation for triggering reconcile
+	HostedClusterRefreshAnnoKey = "open-cluster-management.io/refresh"
+
 	// AddOnPlacementScore resource name
 	HostedClusterScoresResourceName = "hosted-clusters-score"
 	// AddOnPlacementScore score name

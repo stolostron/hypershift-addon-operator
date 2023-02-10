@@ -229,6 +229,16 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to create agent status controller: %s, err: %w", util.AddonStatusControllerName, err)
 	}
 
+	addonSecretController := &AddonSecretController{
+		spokeClient: spokeKubeClient,
+		log:         o.Log.WithName("addon-secret-controller"),
+	}
+
+	if err = addonSecretController.SetupWithManager(mgr); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
+		return fmt.Errorf("unable to create agent secret controller: %s, err: %w", "addon-secret-controller", err)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to set up health check, err: %w", err)
@@ -288,16 +298,16 @@ func (c *agentController) scaffoldHostedclusterSecrets(hcKey types.NamespacedNam
 func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context, secretData map[string][]byte, hc hyperv1beta1.HostedCluster) error {
 	// 1. Get hosted cluster's admin kubeconfig secret
 	secret := &corev1.Secret{}
-	secret.SetName("external-managed-kubeconfig")
+	secret.SetName(util.ExternalManagedKubeconfigSecretName)
 	managedClusterAnnoValue, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
 	if !ok || len(managedClusterAnnoValue) == 0 {
 		managedClusterAnnoValue = hc.Name
 	}
-	secret.SetNamespace("klusterlet-" + managedClusterAnnoValue)
+	secret.SetNamespace(util.ExternalManagedKubeconfigSecretNsPrefix + managedClusterAnnoValue)
 	kubeconfigData := secretData["kubeconfig"]
 
 	klusterletNamespace := &corev1.Namespace{}
-	klusterletNamespaceNsn := types.NamespacedName{Name: "klusterlet-" + managedClusterAnnoValue}
+	klusterletNamespaceNsn := types.NamespacedName{Name: util.ExternalManagedKubeconfigSecretNsPrefix + managedClusterAnnoValue}
 
 	err := c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace)
 	if err != nil {

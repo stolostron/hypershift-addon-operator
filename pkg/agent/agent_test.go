@@ -106,7 +106,7 @@ kind: Config`)
 	// Create klusterlet namespace
 	klusterletNamespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "klusterlet-" + hc.Name,
+			Name: util.ExternalManagedKubeconfigSecretNsPrefix + hc.Name,
 		},
 	}
 	err = aCtrl.hubClient.Create(ctx, klusterletNamespace)
@@ -127,7 +127,7 @@ kind: Config`)
 	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
 	assert.Nil(t, err, "is nil when the kubeadmin password secret is found")
 
-	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-" + hc.Name}
+	kcExtSecretNN := types.NamespacedName{Name: util.ExternalManagedKubeconfigSecretName, Namespace: util.ExternalManagedKubeconfigSecretNsPrefix + hc.Name}
 	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
 	assert.Nil(t, err, "is nil when external-managed-kubeconfig secret is found")
 
@@ -227,7 +227,7 @@ kind: Config`)
 
 	// external-managed-kubeconfig could not be created because there is no klusterlet namespace
 	secret := &corev1.Secret{}
-	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-" + hc.Name}
+	kcExtSecretNN := types.NamespacedName{Name: util.ExternalManagedKubeconfigSecretName, Namespace: util.ExternalManagedKubeconfigSecretNsPrefix + hc.Name}
 	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
 	assert.NotNil(t, err, "external-managed-kubeconfig secret not found")
 	assert.Equal(t, true, res.Requeue)
@@ -314,7 +314,7 @@ kind: Config`)
 	// Create klusterlet namespace
 	klusterletNamespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "klusterlet-" + hc.Spec.InfraID,
+			Name: util.ExternalManagedKubeconfigSecretNsPrefix + hc.Spec.InfraID,
 		},
 	}
 	err = aCtrl.hubClient.Create(ctx, klusterletNamespace)
@@ -335,7 +335,7 @@ kind: Config`)
 	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
 	assert.Nil(t, err, "is nil when the kubeadmin password secret is found")
 
-	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-" + hc.Spec.InfraID}
+	kcExtSecretNN := types.NamespacedName{Name: util.ExternalManagedKubeconfigSecretName, Namespace: util.ExternalManagedKubeconfigSecretNsPrefix + hc.Spec.InfraID}
 	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
 	assert.Nil(t, err, "is nil when external-managed-kubeconfig secret is found")
 
