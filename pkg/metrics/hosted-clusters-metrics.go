@@ -17,6 +17,21 @@ var HostedClusterAvailableGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Number of available hosted clusters",
 })
 
+var MaxNumHostedClustersGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "mce_hs_addon_max_hosted_clusters_gauge",
+	Help: "Maximum number of hosted clusters",
+})
+
+var ThresholdNumHostedClustersGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "mce_hs_addon_threshold_hosted_clusters_gauge",
+	Help: "Threshold number of hosted clusters",
+})
+
 func init() {
-	CollectorsForRegistration = append(CollectorsForRegistration, TotalHostedClusterGauge, HostedControlPlaneAvailableGauge, HostedClusterAvailableGauge)
+	CollectorsForRegistration = append(CollectorsForRegistration,
+		TotalHostedClusterGauge,
+		HostedControlPlaneAvailableGauge,
+		HostedClusterAvailableGauge,
+		MaxNumHostedClustersGauge,
+		ThresholdNumHostedClustersGauge)
 }
