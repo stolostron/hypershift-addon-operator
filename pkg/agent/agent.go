@@ -198,6 +198,8 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	aCtrl.thresholdHostedClusterCount = thresholdHCNum
 	log.Info("the maximum hosted cluster count set to " + strconv.Itoa(aCtrl.maxHostedClusterCount))
 	log.Info("the threshold hosted cluster count set to " + strconv.Itoa(aCtrl.thresholdHostedClusterCount))
+	metrics.MaxNumHostedClustersGauge.Set(float64(maxHCNum))
+	metrics.ThresholdNumHostedClustersGauge.Set(float64(thresholdHCNum))
 
 	err = aCtrl.SyncAddOnPlacementScore(ctx)
 	if err != nil {
