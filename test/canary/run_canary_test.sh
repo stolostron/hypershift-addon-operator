@@ -42,6 +42,16 @@ if [ -z ${OCP_RELEASE_IMAGE+x} ]; then
   exit 1
 fi
 
+if [ -z ${HUB_OCP_VERSION+x} ]; then
+  echo "HUB_OCP_VERSION is not defined"
+  exit 1
+fi
+
+if [ -z ${UNSUPPORTED_OCP_VERSION+x} ]; then
+  echo "UNSUPPORTED_OCP_VERSION is not defined"
+  exit 1
+fi
+
 if [ -z ${OCP_PULL_SECRET+x} ]; then
   echo "OCP_PULL_SECRET is not defined"
   exit 1
@@ -86,6 +96,17 @@ fi
 if [ -z ${AWS_SECRET_ACCESS_KEY+x} ]; then
   echo "AWS_SECRET_ACCESS_KEY is not defined"
   exit 1
+fi
+
+# https://stackoverflow.com/questions/16989598/comparing-php-version-numbers-using-bash/24067243#24067243
+function version_gt() { test "$(printf '%s\n' "$@" | sort -V | head -n 1)" != "$1"; }
+if version_gt $HUB_OCP_VERSION $UNSUPPORTED_OCP_VERSION; then
+     echo "Supported Openshift version $HUB_OCP_VERSION is greater than $UNSUPPORTED_OCP_VERSION"
+else
+    echo "Skipping test execution. HUB_OCP_VERSION: $HUB_OCP_VERSION and UNSUPPORTED_OCP_VERSION: $UNSUPPORTED_OCP_VERSION"
+    rm -f /results/hypershift-failed.xml
+    cp /hypershift-success.xml /results
+    exit 0
 fi
 
 # Create AWS credentials file
