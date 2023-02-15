@@ -205,37 +205,38 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		}
 	}
 
+
+
 	awsPlatform := true
-	var oidcProviderCredentials bool
+	oidcProviderCredentials := true
 
 	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.clusterName}
 	se := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, bucketSecretKey, se); err != nil {
-		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey))
-
+		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub.", bucketSecretKey))
 		oidcProviderCredentials = false
-		
+		//awsPlatform = false
 	}
+
 	// cache the bucket secret for comparison againt the hub's to detect any change
 	c.bucketSecret = *se
 
-
+	
 	spl := &corev1.Secret{}
 	//Private link creds
 	privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
-	if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
-		if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
-			awsPlatform = false
-		}
+
+	if err := c.hubClient.Get(ctx, privateSecretKey, spl); err != nil {
+		//Could not get private key
+		awsPlatform = false
+		c.log.Info(fmt.Sprintf("private secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", privateSecretKey))
 	}
-		
 
 	args := []string{
 		"--namespace", hypershiftOperatorKey.Namespace,
 	}
 
 	
-	c.log.Info("succesfully changed image")
 	if oidcProviderCredentials { // if the S3 secret is found, install hypershift with s3 options
 		bucketName := string(se.Data["bucket"])
 		bucketRegion := string(se.Data["region"])
@@ -257,6 +258,8 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 		// Set this to one to indicate that the AWS S3 bucket secret is used for the operator installation
 		metrics.IsAWSS3BucketSecretConfigured.Set(1)
+
+		
 
 		if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
 			if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
