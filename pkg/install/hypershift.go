@@ -206,25 +206,37 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	}
 
 	awsPlatform := true
+	var oidcProviderCredentials bool
 
 	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.clusterName}
 	se := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, bucketSecretKey, se); err != nil {
 		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey))
 
-		awsPlatform = false
+		oidcProviderCredentials = false
+		
 	}
-
 	// cache the bucket secret for comparison againt the hub's to detect any change
 	c.bucketSecret = *se
+
+
+	spl := &corev1.Secret{}
+	//Private link creds
+	privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
+	if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
+		if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
+			awsPlatform = false
+		}
+	}
+		
 
 	args := []string{
 		"--namespace", hypershiftOperatorKey.Namespace,
 	}
 
-	spl := &corev1.Secret{}
-
-	if awsPlatform { // if the S3 secret is found, install hypershift with s3 options
+	
+	c.log.Info("succesfully changed image")
+	if oidcProviderCredentials { // if the S3 secret is found, install hypershift with s3 options
 		bucketName := string(se.Data["bucket"])
 		bucketRegion := string(se.Data["region"])
 
@@ -245,9 +257,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 		// Set this to one to indicate that the AWS S3 bucket secret is used for the operator installation
 		metrics.IsAWSS3BucketSecretConfigured.Set(1)
-
-		//Private link creds
-		privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
 
 		if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
 			if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
