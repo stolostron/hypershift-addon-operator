@@ -38,7 +38,7 @@ const (
 
 func initClient() ctrlClient.Client {
 	scheme := runtime.NewScheme()
-	//corev1.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
 	appsv1.AddToScheme(scheme)
 	corev1.AddToScheme(scheme)
 	metav1.AddMetaToScheme(scheme)
@@ -1141,8 +1141,8 @@ func TestRunHypershiftInstallExternalDNSDifferentSecret(t *testing.T) {
 				"--external-dns-domain-filter", "my.house.com",
 				"--external-dns-provider", "aws",
 				"--external-dns-txt-owner-id", "the-owner",
-				"--enable-uwm-telemetry-remote-write",
 				"--platform-monitoring", "OperatorOnly",
+				"--enable-uwm-telemetry-remote-write",
 				"--hypershift-image", "my-test-image",
 			}
 			assert.Equal(t, expectArgs, installJob.Spec.Template.Spec.Containers[0].Args, "mismatched container arguments")
