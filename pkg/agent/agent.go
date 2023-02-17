@@ -169,13 +169,9 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	uCtrl := install.NewUpgradeController(hubClient, spokeKubeClient, o.Log, o.AddonName, o.AddonNamespace, o.SpokeClusterName,
 		o.HypershiftOperatorImage, o.PullSecretName, o.WithOverride, ctx)
 
-	// retry 3 times, in case something wrong with creating the hypershift install job
-	if err := uCtrl.RunHypershiftOperatorInstallOnAgentStartup(ctx); err != nil {
-		log.Error(err, "failed to install hypershift Operator")
-		// merics for the hypershift operator installation is in its own function
-		metrics.AddonAgentFailedToStartBool.Set(1)
-		return err
-	}
+	// Perform initial hypershift operator installation on start-up, then start the process to continuously check
+	// if the hypershift operator re-installation is needed
+	uCtrl.Start()
 
 	leaseClient, err := kubernetes.NewForConfig(spokeConfig)
 	if err != nil {
@@ -202,6 +198,8 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	aCtrl.thresholdHostedClusterCount = thresholdHCNum
 	log.Info("the maximum hosted cluster count set to " + strconv.Itoa(aCtrl.maxHostedClusterCount))
 	log.Info("the threshold hosted cluster count set to " + strconv.Itoa(aCtrl.thresholdHostedClusterCount))
+	metrics.MaxNumHostedClustersGauge.Set(float64(maxHCNum))
+	metrics.ThresholdNumHostedClustersGauge.Set(float64(thresholdHCNum))
 
 	err = aCtrl.SyncAddOnPlacementScore(ctx)
 	if err != nil {
@@ -239,10 +237,6 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to set up ready check, err: %w", err)
 	}
-
-	// After the initial hypershift operator installation, start the process to continuously check
-	// if the hypershift operator re-installation is needed
-	uCtrl.Start()
 
 	return mgr.Start(ctrl.SetupSignalHandler())
 }
