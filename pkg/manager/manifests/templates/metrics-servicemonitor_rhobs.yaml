@@ -1,9 +1,10 @@
 {{- if ne .disableMetrics "true" }}
-apiVersion: monitoring.coreos.com/v1
+  {{- if eq .enableRHOBSMonitoring "true" }}
+apiVersion: monitoring.rhobs/v1
 kind: ServiceMonitor
 metadata:
   name: acm-{{ .AddonName }}-metrics
-  namespace: openshift-monitoring
+  namespace: {{ .AddonInstallNamespace }}
 spec:
   endpoints:
   - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
@@ -19,4 +20,5 @@ spec:
   selector:
     matchLabels:
       app: {{ .AddonName }}
+  {{- end }}
 {{- end }}

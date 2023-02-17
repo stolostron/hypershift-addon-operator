@@ -1,11 +1,12 @@
-FROM ubuntu:latest
+FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 
 # Install utils
-RUN apt update \
-        && apt install -y uuid-runtime \
-        && apt install -y curl \
-        && apt install -y openssh-client \
-        && apt install -y jq
+RUN  microdnf update -y \
+        && microdnf install uuid \
+        && microdnf install jq \
+        && microdnf install openssh-clients \
+        && microdnf install tar \
+        && microdnf clean all
 
 # Install the kubectl binary
 RUN curl -LO https://dl.k8s.io/release/v1.26.0/bin/linux/amd64/kubectl \
@@ -13,7 +14,17 @@ RUN curl -LO https://dl.k8s.io/release/v1.26.0/bin/linux/amd64/kubectl \
         && mv kubectl /bin
 
 COPY ./test/canary/run_canary_test.sh .
+COPY ./test/canary/hypershift-failed.xml .
+COPY ./test/canary/hypershift-success.xml .
+RUN mkdir -p /results
 RUN mkdir -p /resources
 COPY ./test/canary/resources /resources
+
+# Uncomment below to test with upstream
+#COPY ./test/canary/bin/hypershift /bin
+#RUN chmod +x /bin/hypershift
+
+# run as root
+USER root
 
 ENTRYPOINT ["./run_canary_test.sh"]

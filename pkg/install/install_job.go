@@ -75,9 +75,9 @@ func (c *UpgradeController) runHyperShiftInstallJob(ctx context.Context, image, 
 		jobPodSpec.Containers[0].VolumeMounts = []corev1.VolumeMount{{Name: util.HypershiftInstallJobVolume, MountPath: mountPath}}
 	}
 
-	backoffLimit := int32(3)
+	backoffLimit := int32(0)
 	activeDeadlineSeconds := int64(600)
-	ttlSecondsAfterFinished := int32(172800) // 48 hrs
+	ttlSecondsAfterFinished := int32(1200) // 20 mins
 	job := &kbatch.Job{
 		ObjectMeta: metav1.ObjectMeta{
 			GenerateName: util.HypershiftInstallJobName,
@@ -98,7 +98,7 @@ func (c *UpgradeController) runHyperShiftInstallJob(ctx context.Context, image, 
 
 	c.log.Info(fmt.Sprintf("created HyperShift install job: %s", job.Name))
 
-	return job, wait.PollImmediate(10*time.Second, 5*time.Minute, c.isInstallJobFinished(ctx, job.Name))
+	return job, wait.PollImmediate(10*time.Second, 2*time.Minute, c.isInstallJobFinished(ctx, job.Name))
 }
 
 func (c *UpgradeController) isInstallJobSuccessful(ctx context.Context, jobName string) (bool, error) {
