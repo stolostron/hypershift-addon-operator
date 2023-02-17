@@ -137,7 +137,7 @@ ifeq (, $(shell which clusteradm))
 	@{ \
 	set -e ;\
 	export INSTALL_DIR="${GOPATH}/bin" ;\
-	curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s -- 0.4.0 ;\
+	curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash ;\
 	}
 	CLUSTERADM=${GOPATH}/bin/clusteradm
 else

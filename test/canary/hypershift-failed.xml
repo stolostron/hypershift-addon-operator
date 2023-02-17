@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-  <testsuite name="Hypershift E2E Suite" tests="1" failures="1" errors="0" time="888.88">
-      <testcase name="Hypershift: [P1][Sev1][hypershift] Should run successfully - [Integration] Should run successfully" classname="Hypershift E2E Suite" time="888.88888888">
-          <failure type="Failure">run_canary_test:10&#xA;Failed after 888.888s.&#xA;Expected&#xA;    &lt;bool&gt;: false&#xA;to be true&#xA;run_canary_test:10</failure>
-      </testcase>
-  </testsuite>

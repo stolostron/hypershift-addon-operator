@@ -302,6 +302,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 	//Enable control plane telemetry forwarding
 	telemetryArgs := []string{
+		"--enable-uwm-telemetry-remote-write",
 		"--platform-monitoring", "OperatorOnly",
 	}
 	args = append(args, telemetryArgs...)
@@ -316,11 +317,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			"SRE",
 		}
 		args = append(args, rhobsArgs...)
-	} else {
-		uwmArgs := []string{
-			"--enable-uwm-telemetry-remote-write",
-		}
-		args = append(args, uwmArgs...)
 	}
 
 	hypershiftImage := c.operatorImage

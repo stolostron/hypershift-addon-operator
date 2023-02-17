@@ -1,4 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-  <testsuite name="Hypershift E2E Suite" tests="1" failures="0" errors="0" time="888.88">
-      <testcase name="Hypershift: [P1][Sev1][hypershift][Integration] Should run successfully" classname="Hypershift E2E Suite" time="8.888888888"></testcase>
-  </testsuite>

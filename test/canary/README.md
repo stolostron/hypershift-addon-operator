@@ -30,12 +30,9 @@ Edit the following if necessary or run it as it is:
 
 ```
 OCP_RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.12.0-x86_64
-HUB_OCP_VERSION=4.12.0
-UNSUPPORTED_OCP_VERSION=4.10.0
 HOSTING_CLUSTER_NAME=local-cluster
 CLUSTER_NAME_PREFIX=ge-
 REGION=us-east-1
-RESULTS_DIR=/tmp
 ```
 
 Run the test:
@@ -43,11 +40,8 @@ Run the test:
 ```
 docker run \
   --volume $KUBECONFIG_PATH:/kubeconfig \
-  --volume $RESULTS_DIR:/results \
   --env KUBECONFIG=/kubeconfig \
   --env OCP_RELEASE_IMAGE=$OCP_RELEASE_IMAGE \
-  --env HUB_OCP_VERSION=$HUB_OCP_VERSION \
-  --env UNSUPPORTED_OCP_VERSION=$UNSUPPORTED_OCP_VERSION \
   --env OCP_PULL_SECRET=$OCP_PULL_SECRET \
   --env HOSTING_CLUSTER_NAME=$HOSTING_CLUSTER_NAME \
   --env CLUSTER_NAME_PREFIX=$CLUSTER_NAME_PREFIX \
