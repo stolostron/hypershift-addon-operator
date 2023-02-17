@@ -1,0 +1,56 @@
+name: Go
+
+on:
+  workflow_dispatch: {}
+  pull_request:
+    branches:
+      - main
+      - release-*
+
+env:
+  # Common versions
+  GO_VERSION: '1.18'
+  GO_REQUIRED_MIN_VERSION: ''
+  GOPATH: '/home/runner/work/stolostron/hypershift-addon-operator/go'
+defaults:
+  run:
+    working-directory: go/src/stolostron/hypershift-addon-operator
+
+jobs:
+  e2e:
+    if: github.repository == 'stolostron/hypershift-addon-operator'
+    name: e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          path: go/src/github.com/stolostron/hypershift-addon-operator
+      - name: install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - name: install imagebuilder
+        run: go install github.com/openshift/imagebuilder/cmd/imagebuilder@v1.2.1
+      - name: build-images
+        run: make docker-build
+      - name: setup kind
+        uses: engineerd/setup-kind@v0.5.0
+        with:
+          version: v0.14.0
+          name: cluster1
+      - name: setup kind
+        uses: engineerd/setup-kind@v0.5.0
+        with:
+          version: v0.14.0
+          name: hub
+      - name: Load image on the nodes of the cluster
+        run: |
+          kind load docker-image --name=cluster1 quay.io/stolostron/hypershift-addon-operator:latest
+          kind load docker-image --name=hub quay.io/stolostron/hypershift-addon-operator:latest
+      - name: Run GitHub e2e test
+        run: |
+          make test-e2e-github
+        env:
+          KUBECONFIG: /home/runner/.kube/config

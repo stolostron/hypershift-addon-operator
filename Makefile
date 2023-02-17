@@ -152,3 +152,10 @@ quickstart:
 .PHONY: docker-build-canary
 docker-build-canary:   # Build docker image with the manager.
 	docker build -t ${IMG_CANARY} -f Dockerfile.canary .
+
+# GitHub e2e test
+.PHONY: test-e2e-github
+test-e2e-github: deploy-ocm
+
+deploy-ocm:
+	hack/deploy/ocm/install.sh
