@@ -213,7 +213,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.clusterName}
 	se := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, bucketSecretKey, se); err != nil {
-		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey))
+		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub.", bucketSecretKey))
 
 		oidcBucket = false
 	}
@@ -221,20 +221,24 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	// cache the bucket secret for comparison againt the hub's to detect any change
 	c.bucketSecret = *se
 
-	
+
 	//Attempt to retrieve private link creds
 	privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
 	spl := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, privateSecretKey, spl); err != nil {
-		c.log.Info(fmt.Sprintf("private secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", privateSecretKey))
+		c.log.Info(fmt.Sprintf("private secret(%s) not found on the hub.", privateSecretKey))
 
 		privateLinkCreds = false
 	}
 	// cache the private link secret for comparison againt the hub's to detect any change
 	c.privateLinkSecret = *spl
 
+
 	//Platform is aws if either secret exists
 	awsPlatform = oidcBucket || privateLinkCreds
+	if (!awsPlatform) {
+		c.log.Info(fmt.Sprintf("bucket secret(%s) and private secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey, privateSecretKey))
+	}
 
 	args := []string{
 		"--namespace", hypershiftOperatorKey.Namespace,
@@ -261,26 +265,22 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 		// Set this to one to indicate that the AWS S3 bucket secret is used for the operator installation
 		metrics.IsAWSS3BucketSecretConfigured.Set(1)
+		
 	}
 
 	if privateLinkCreds { // if private link credentials is found, install hypershift with private secret options
-
-		if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
-			if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
-				return err
-			}
-			c.log.Info("private link region & credential arguments included")
-			awsArgs := []string{
-				"--aws-private-secret", util.HypershiftPrivateLinkSecretName,
-				"--aws-private-region", string(spl.Data["region"]),
-				"--private-platform", "AWS",
-			}
-			args = append(args, awsArgs...)
-		} else {
-			c.log.Info(fmt.Sprintf("private-link secret(%s) was not found", privateSecretKey))
+		if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
+			return err
 		}
+		c.log.Info("private link region & credential arguments included")
+		awsArgs := []string{
+			"--aws-private-secret", util.HypershiftPrivateLinkSecretName,
+			"--aws-private-region", string(spl.Data["region"]),
+			"--private-platform", "AWS",
+		}
+		args = append(args, awsArgs...)
+	
 	}
-
 
 	//External DNS
 	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
