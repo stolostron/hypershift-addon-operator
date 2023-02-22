@@ -221,7 +221,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	// cache the bucket secret for comparison againt the hub's to detect any change
 	c.bucketSecret = *se
 
-
 	//Attempt to retrieve private link creds
 	privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
 	spl := &corev1.Secret{}
@@ -233,10 +232,9 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	// cache the private link secret for comparison againt the hub's to detect any change
 	c.privateLinkSecret = *spl
 
-
 	//Platform is aws if either secret exists
 	awsPlatform = oidcBucket || privateLinkCreds
-	if (!awsPlatform) {
+	if !awsPlatform {
 		c.log.Info(fmt.Sprintf("bucket secret(%s) and private secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey, privateSecretKey))
 	}
 
@@ -265,7 +263,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 		// Set this to one to indicate that the AWS S3 bucket secret is used for the operator installation
 		metrics.IsAWSS3BucketSecretConfigured.Set(1)
-		
+
 	}
 
 	if privateLinkCreds { // if private link credentials is found, install hypershift with private secret options
@@ -279,8 +277,12 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			"--private-platform", "AWS",
 		}
 		args = append(args, awsArgs...)
-	
+
 	}
+	// c.log.Info("Args are:\n")
+	// for i := 0; i < len(args); i++ {
+	// 	c.log.Info(args[i] + "\n")
+	// }
 
 	//External DNS
 	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
