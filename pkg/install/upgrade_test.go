@@ -2,7 +2,6 @@ package install
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
@@ -373,14 +372,11 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	}
 	controller.hubClient.Create(ctx, newPrivateLinkSecret)
 
-	fmt.Println(newPrivateLinkSecret)
-
 	assert.Eventually(t, func() bool {
 		theSecret := &corev1.Secret{}
 		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftPrivateLinkSecretName}, theSecret)
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test private link secret was created successfully")
-
 
 	controller.Start()
 	assert.Eventually(t, func() bool {
@@ -412,7 +408,7 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 			Namespace: controller.clusterName,
 		},
 		Data: map[string][]byte{
-			"region": []byte(`us-west-1`),
+			"region":      []byte(`us-west-1`),
 			"credentials": []byte(`my-credential-file`),
 		},
 	}
@@ -472,5 +468,5 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "The agent fails to get the private link secret from the hub. The hypershift operator should not be re-installed")
 
 	controller.Stop()
-	
+
 }

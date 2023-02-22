@@ -36,7 +36,7 @@ type UpgradeController struct {
 	privateLinkSecret         corev1.Secret
 	imageOverrideConfigmap    corev1.ConfigMap
 	reinstallNeeded           bool // this is used only for code test
-	awsPlatform               bool //this is used only for code test
+	awsPlatform               bool // this is used only for code test
 	startup                   bool //
 	installfailed             bool // previous installation failed - retry needed on next attempt
 }

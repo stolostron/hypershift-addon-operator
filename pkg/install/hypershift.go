@@ -234,6 +234,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 	//Platform is aws if either secret exists
 	awsPlatform = oidcBucket || privateLinkCreds
+	c.awsPlatform = awsPlatform
 	if !awsPlatform {
 		c.log.Info(fmt.Sprintf("bucket secret(%s) and private secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey, privateSecretKey))
 	}
@@ -279,10 +280,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		args = append(args, awsArgs...)
 
 	}
-	// c.log.Info("Args are:\n")
-	// for i := 0; i < len(args); i++ {
-	// 	c.log.Info(args[i] + "\n")
-	// }
 
 	//External DNS
 	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
