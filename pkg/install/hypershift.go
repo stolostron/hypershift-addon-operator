@@ -225,7 +225,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
 	spl := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, privateSecretKey, spl); err != nil {
-		c.log.Info(fmt.Sprintf("private secret(%s) not found on the hub.", privateSecretKey))
+		c.log.Info(fmt.Sprintf("private link secret(%s) not found on the hub.", privateSecretKey))
 
 		privateLinkCreds = false
 	}
@@ -236,7 +236,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	awsPlatform = oidcBucket || privateLinkCreds
 	c.awsPlatform = awsPlatform
 	if !awsPlatform {
-		c.log.Info(fmt.Sprintf("bucket secret(%s) and private secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey, privateSecretKey))
+		c.log.Info(fmt.Sprintf("bucket secret(%s) and private link secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey, privateSecretKey))
 	}
 
 	args := []string{
