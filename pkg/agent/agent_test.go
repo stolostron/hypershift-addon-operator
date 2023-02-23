@@ -686,6 +686,7 @@ func TestCleanupCommand(t *testing.T) {
 		AddonName:      "hypershift-addon",
 		AddonNamespace: "hypershift",
 	}
+
 	err := o.runCleanup(ctx, nil)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 }
@@ -697,16 +698,6 @@ func TestRunControllerManager(t *testing.T) {
 		Log:            zapr.NewLogger(zapLog),
 		AddonName:      "hypershift-addon",
 		AddonNamespace: "hypershift",
-	}
-
-	fakeClusterCS := clustercsfake.NewSimpleClientset()
-
-	aCtrl := &agentController{
-		spokeClustersClient: fakeClusterCS,
-		spokeUncachedClient: client,
-		spokeClient:         client,
-		hubClient:           client,
-		log:                 zapr.NewLogger(zapLog),
 	}
 
 	err := o.runControllerManager(ctx)
