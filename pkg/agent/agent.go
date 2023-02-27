@@ -32,7 +32,9 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/lease"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
+	operatorapiv1 "open-cluster-management.io/api/operator/v1"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/install"
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
@@ -48,6 +50,9 @@ func init() {
 	utilruntime.Must(hyperv1beta1.AddToScheme(scheme))
 	utilruntime.Must(addonv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(clusterv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(clusterv1.AddToScheme(scheme))
+	utilruntime.Must(operatorapiv1.AddToScheme(scheme))
+
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -425,6 +430,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err := c.spokeClient.Get(ctx, req.NamespacedName, hc); err != nil {
 		if apierrors.IsNotFound(err) {
 			c.log.Info(fmt.Sprintf("remove hostedcluster(%s) secrets on hub, since hostedcluster is gone", req.NamespacedName))
+
 			return ctrl.Result{}, deleteMirrorSecrets()
 		}
 
@@ -434,6 +440,11 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	if !hc.GetDeletionTimestamp().IsZero() {
 		c.log.Info(fmt.Sprintf("hostedcluster %s has deletionTimestamp %s. Skip reconciling klusterlet secrets", hc.Name, hc.GetDeletionTimestamp().String()))
+
+		if err := c.deleteManagedCluster(ctx, hc); err != nil {
+			c.log.Error(err, "failed to delete the managed cluster")
+		}
+
 		return ctrl.Result{}, nil
 	}
 
@@ -660,6 +671,62 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		c.log.Info("updated the hosted cluster cound cluster claims successfully")
 	}
 
+	return nil
+}
+
+func (c *agentController) deleteManagedCluster(ctx context.Context, hc *hyperv1beta1.HostedCluster) error {
+	if hc == nil {
+		return fmt.Errorf("failed to delete nil hostedCluster")
+	}
+
+	managedClusterName, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
+	if !ok || len(managedClusterName) == 0 {
+		managedClusterName = hc.Name
+	}
+
+	klusterletName := "klusterlet-" + managedClusterName
+
+	// Remove the operator.open-cluster-management.io/klusterlet-hosted-cleanup finalizer in klusterlet
+	klusterlet := &operatorapiv1.Klusterlet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: klusterletName,
+		},
+	}
+
+	if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(klusterlet), klusterlet); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.log.Info(fmt.Sprintf("klusterlet %v is already deleted", klusterletName))
+		} else {
+			c.log.Error(err, fmt.Sprintf("failed to get the klusterlet %v", klusterletName))
+			return err
+		}
+	}
+
+	updated := controllerutil.RemoveFinalizer(klusterlet, "operator.open-cluster-management.io/klusterlet-hosted-cleanup")
+	c.log.Info(fmt.Sprintf("klusterlet %v finalizer removed:%v", klusterletName, updated))
+
+	// Delete the managed cluster
+	mc := &clusterv1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: managedClusterName,
+		},
+	}
+
+	if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(mc), mc); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.log.Info(fmt.Sprintf("managedCluster %v is already deleted", managedClusterName))
+		} else {
+			c.log.Error(err, fmt.Sprintf("failed to get the managedCluster %v", managedClusterName))
+			return err
+		}
+	}
+
+	if err := c.spokeClient.Delete(ctx, mc); err != nil {
+		c.log.Error(err, fmt.Sprintf("failed to delete the managedCluster %v", managedClusterName))
+		return err
+	}
+
+	c.log.Info(fmt.Sprintf("deleted managedCluster %v", managedClusterName))
 	return nil
 }
 
