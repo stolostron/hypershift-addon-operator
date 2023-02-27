@@ -112,8 +112,8 @@ func (c *UpgradeController) RunHypershiftCleanup(ctx context.Context) error {
 	c.log.Info("enter RunHypershiftCleanup")
 	defer c.log.Info("exit RunHypershiftCleanup")
 
-	if !c.isDeploymentMarked(ctx) {
-		c.log.Info(fmt.Sprintf("skip deletion of the hypershift operator, not created by %s", util.AddonControllerName))
+	if !c.isHypershiftOperatorByMCE(ctx) {
+		c.log.Info("skip deletion of the hypershift operator, not managed by mce")
 		return nil
 	}
 
@@ -496,7 +496,7 @@ func (c *UpgradeController) ensurePullSecret(ctx context.Context) error {
 	return err
 }
 
-func (c *UpgradeController) isDeploymentMarked(ctx context.Context) bool {
+func (c *UpgradeController) isHypershiftOperatorByMCE(ctx context.Context) bool {
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
@@ -505,11 +505,8 @@ func (c *UpgradeController) isDeploymentMarked(ctx context.Context) bool {
 	}
 
 	a := obj.GetAnnotations()
-	if len(a) == 0 || len(a[util.HypershiftAddonAnnotationKey]) == 0 {
-		return false
-	}
 
-	return true
+	return a[util.HypershiftOperatorNoMCEAnnotationKey] != "true"
 }
 
 func (c *UpgradeController) hasHostedClusters(ctx context.Context) (bool, error) {
@@ -533,12 +530,13 @@ func (c *UpgradeController) operatorUpgradable(ctx context.Context) (error, bool
 		return err, false, nil
 	}
 
-	// Check if deployment is created by the addon
-	if obj.Annotations[util.HypershiftAddonAnnotationKey] == util.AddonControllerName {
-		return nil, true, obj
+	// Check if hypershift operator deployment has "hypershift.open-cluster-management.io/not-by-mce: true" annotation
+	// With this annotation, the addon agent should not install or upgrade the hypershift operator
+	if obj.Annotations[util.HypershiftOperatorNoMCEAnnotationKey] == "true" {
+		return nil, false, obj
 	}
 
-	return nil, false, nil
+	return nil, true, obj
 }
 
 func (c *UpgradeController) updateHyperShiftDeployment(ctx context.Context) error {
@@ -547,9 +545,6 @@ func (c *UpgradeController) updateHyperShiftDeployment(ctx context.Context) erro
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
 		return err
 	}
-
-	// Add annotation
-	obj.Annotations[util.HypershiftAddonAnnotationKey] = util.AddonControllerName
 
 	// Update pull image
 	if c.pullSecret != "" {

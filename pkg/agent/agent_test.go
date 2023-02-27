@@ -686,6 +686,7 @@ func TestCleanupCommand(t *testing.T) {
 		AddonName:      "hypershift-addon",
 		AddonNamespace: "hypershift",
 	}
+
 	err := o.runCleanup(ctx, nil)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 }
@@ -698,6 +699,7 @@ func TestRunControllerManager(t *testing.T) {
 		AddonName:      "hypershift-addon",
 		AddonNamespace: "hypershift",
 	}
+
 	err := o.runControllerManager(ctx)
 	assert.NotNil(t, err, "err it not nil if the controller fail to run")
 }
