@@ -767,7 +767,6 @@ func initErrorClient() client.Client {
 	appsv1.AddToScheme(scheme)
 	corev1.AddToScheme(scheme)
 	metav1.AddMetaToScheme(scheme)
-	hyperv1beta1.AddToScheme(scheme)
 	clusterv1alpha1.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()

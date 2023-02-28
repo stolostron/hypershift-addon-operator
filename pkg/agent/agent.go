@@ -569,7 +569,9 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup b
 	listopts := &client.ListOptions{}
 	hcList := &hyperv1beta1.HostedClusterList{}
 	err = c.spokeUncachedClient.List(context.TODO(), hcList, listopts)
-	hcCRDNotInstalledYet := err != nil && strings.HasPrefix(err.Error(), "no matches for kind \"HostedCluster\" in version") && startup
+	hcCRDNotInstalledYet := err != nil &&
+		(strings.HasPrefix(err.Error(), "no matches for kind ") || strings.HasPrefix(err.Error(), "no kind is registered ")) &&
+		startup
 	if hcCRDNotInstalledYet {
 		c.log.Info("this is the initial agent startup and the hypershift CRDs are not installed yet, " + err.Error())
 		c.log.Info("going to continue updating AddOnPlacementScore and cluster claims with zero HC count")
