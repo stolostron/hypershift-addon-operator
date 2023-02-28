@@ -128,22 +128,8 @@ deploy-addon-manager:
 	$(KUBECTL) set env -n multicluster-engine deployment/hypershift-addon-manager HYPERSHIFT_ADDON_IMAGE_NAME=$(IMG)
 	$(KUBECTL) rollout status -n multicluster-engine deployment/hypershift-addon-manager --timeout=60s
 
-deploy-ocm: ensure-clusteradm
+deploy-ocm:
 	hack/install_ocm.sh
-
-.PHONY: ensure-clusteradm
-ensure-clusteradm:
-ifeq (, $(shell which clusteradm))
-	@{ \
-	set -e ;\
-	export INSTALL_DIR="${GOPATH}/bin" ;\
-	curl -L https://raw.githubusercontent.com/open-cluster-management-io/clusteradm/main/install.sh | bash -s -- 0.4.0 ;\
-	}
-	CLUSTERADM=${GOPATH}/bin/clusteradm
-else
-	CLUSTERADM=$(shell which clusteradm)
-endif
-	$(@info CLUSTERADM="$(CLUSTERADM)")
 
 .PHONY: quickstart
 quickstart:
