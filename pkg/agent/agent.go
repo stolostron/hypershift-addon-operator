@@ -201,7 +201,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	metrics.MaxNumHostedClustersGauge.Set(float64(maxHCNum))
 	metrics.ThresholdNumHostedClustersGauge.Set(float64(thresholdHCNum))
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, true)
 	if err != nil {
 		// AddOnPlacementScore must be created initially
 		metrics.AddonAgentFailedToStartBool.Set(1)
@@ -383,7 +383,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
 	// Update the AddOnPlacementScore resource, continue reconcile even if error occurred
-	_ = c.SyncAddOnPlacementScore(ctx)
+	_ = c.SyncAddOnPlacementScore(ctx, false)
 
 	// Delete HC secrets on the hub using labels for HC and the hosting NS
 	deleteMirrorSecrets := func() error {
@@ -545,7 +545,7 @@ func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1
 	return false
 }
 
-func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
+func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup bool) error {
 	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "AddOnPlacementScore",
@@ -569,7 +569,14 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 	listopts := &client.ListOptions{}
 	hcList := &hyperv1beta1.HostedClusterList{}
 	err = c.spokeUncachedClient.List(context.TODO(), hcList, listopts)
-	if err != nil {
+	hcCRDNotInstalledYet := err != nil && strings.HasPrefix(err.Error(), "no matches for kind \"HostedCluster\" in version") && startup
+	if hcCRDNotInstalledYet {
+		c.log.Info("this is the initial agent startup and the hypershift CRDs are not installed yet, " + err.Error())
+		c.log.Info("going to continue updating AddOnPlacementScore and cluster claims with zero HC count")
+	}
+	// During the first agent startup on a brand new cluster, the hypershift operator and its CRDs will not be installed yet.
+	// So listing the HCs will fail. In this case, just set the count to len(hcList.Items) which is zero.
+	if err != nil && !hcCRDNotInstalledYet {
 		// just log the error. it should not stop the rest of reconcile
 		c.log.Error(err, "failed to get HostedCluster list")
 

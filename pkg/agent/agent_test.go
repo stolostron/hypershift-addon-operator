@@ -383,7 +383,7 @@ func TestHostedClusterCount(t *testing.T) {
 		thresholdHostedClusterCount: 3,
 	}
 
-	err := aCtrl.SyncAddOnPlacementScore(ctx)
+	err := aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// No HC yet, so the zero cluster claim value should be true
@@ -403,7 +403,7 @@ func TestHostedClusterCount(t *testing.T) {
 		i++
 	}
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// Created 4 HCs, max 5 so the full cluster claim value should be false
@@ -441,7 +441,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// 5 HCs, max 5 so the full cluster claim value should be true
@@ -471,7 +471,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Delete(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	fullClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
@@ -499,7 +499,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Delete(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// 3 HCs, threshold 3 so the threshold cluster claim value should be true
@@ -514,7 +514,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Delete(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// 2 HCs, threshold 3 so the threshold cluster claim value should be true
@@ -537,7 +537,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Delete(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// 0 HC, max 5 so the full cluster claim value should be false
@@ -588,7 +588,7 @@ func TestHostedClusterCountErrorCase(t *testing.T) {
 		i++
 	}
 
-	err := aCtrl.SyncAddOnPlacementScore(ctx)
+	err := aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	clusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
@@ -605,7 +605,7 @@ func TestHostedClusterCountErrorCase(t *testing.T) {
 	// should contain a condition indicating the failure but the existing score should not change
 	// The score should still be 5
 	aCtrl.spokeUncachedClient = initErrorClient()
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
