@@ -628,6 +628,48 @@ func TestHostedClusterCountErrorCase(t *testing.T) {
 	assert.Equal(t, float64(5), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
 	assert.Equal(t, float64(5), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
 }
+func TestHostedClusterCountStartupErrorCase(t *testing.T) {
+	ctx := context.Background()
+	client := initErrorClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
+	aCtrl := &agentController{
+		spokeClustersClient:         fakeClusterCS,
+		spokeUncachedClient:         client,
+		spokeClient:                 client,
+		hubClient:                   client,
+		log:                         zapr.NewLogger(zapLog),
+		maxHostedClusterCount:       80,
+		thresholdHostedClusterCount: 60,
+	}
+
+	// This tests SyncAddOnPlacementScore call during agent startup with no hypershift operator installation on the cluster yet.
+	err := aCtrl.SyncAddOnPlacementScore(ctx, true)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
+
+	clusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), clusterClaim.Spec.Value)
+
+	thresholdClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountAboveThresholdClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count at threshold clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), thresholdClusterClaim.Spec.Value)
+
+	zeroClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountZeroClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count zero clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(true), zeroClusterClaim.Spec.Value)
+
+	placementScore := &clusterv1alpha1.AddOnPlacementScore{}
+	placementScoreNN := types.NamespacedName{Name: util.HostedClusterScoresResourceName, Namespace: aCtrl.clusterName}
+	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
+	assert.Nil(t, err, "is nil when addonPlacementScore is found")
+	assert.Equal(t, int32(0), placementScore.Status.Scores[0].Value)
+
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
+}
 
 func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
 	hc := &hyperv1beta1.HostedCluster{
@@ -725,6 +767,8 @@ func initErrorClient() client.Client {
 	appsv1.AddToScheme(scheme)
 	corev1.AddToScheme(scheme)
 	metav1.AddMetaToScheme(scheme)
+	hyperv1beta1.AddToScheme(scheme)
+	clusterv1alpha1.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
 	ncb.WithScheme(scheme)
