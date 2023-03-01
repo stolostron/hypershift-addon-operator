@@ -1707,3 +1707,74 @@ func TestOperatorImagesUpdatedCheck(t *testing.T) {
 	imagesUpdated = aCtrl.operatorImagesUpdated(imb, *dp)
 	assert.True(t, imagesUpdated, "detected that there is difference between the image stream and deployment images")
 }
+
+func TestAWSPlatformDetection(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	controller := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+		privateLinkSecret:         corev1.Secret{},
+		bucketSecret:              corev1.Secret{},
+	}
+
+	privateLinkSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftPrivateLinkSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"region":      []byte(`us-east-1`),
+			"credentials": []byte(`my-credential-file`),
+		},
+	}
+	bucketSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftBucketSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"bucket":      []byte(`my-bucket`),
+			"region":      []byte(`us-east-1`),
+			"credentials": []byte(`myCredential`),
+		},
+	}
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.awsPlatform
+	}, 10*time.Second, 1*time.Second, "Neither OIDC or Private Link Credentials provided. Installing for non-AWS platform")
+	controller.Stop()
+
+	controller.hubClient.Create(ctx, privateLinkSecret)
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.awsPlatform
+	}, 10*time.Second, 1*time.Second, "Only Private Link Credentials provided. Installing for AWS platform")
+	controller.Stop()
+
+	controller.hubClient.Create(ctx, bucketSecret)
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.awsPlatform
+	}, 10*time.Second, 1*time.Second, "Both OIDC or Private Link Credentials provided. Installing for AWS platform")
+	controller.Stop()
+
+	controller.hubClient.Delete(ctx, privateLinkSecret)
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.awsPlatform
+	}, 10*time.Second, 1*time.Second, "Only OIDC Credentials provided. Installing for AWS platform")
+	controller.Stop()
+}

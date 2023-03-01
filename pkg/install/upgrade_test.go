@@ -366,7 +366,8 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 			Namespace: controller.clusterName,
 		},
 		Data: map[string][]byte{
-			"region": []byte(`us-east-1`),
+			"region":      []byte(`us-east-1`),
+			"credentials": []byte(`my-credential-file`),
 		},
 	}
 	controller.hubClient.Create(ctx, newPrivateLinkSecret)
@@ -383,6 +384,8 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "The private link secret has changed. The hypershift operator needs to be re-installed")
 	controller.Stop()
 
+	//Add test to check successful installation
+
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return !controller.reinstallNeeded
@@ -392,9 +395,11 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	controller.startup = true
 	controller.installfailed = false
 	controller.Start()
+
 	assert.Eventually(t, func() bool {
 		return controller.startup && controller.installfailed
 	}, 3*time.Minute, 10*time.Second, "Nothing has changed, but Startup=true. The hypershift operator needs to be re-installed")
+
 	controller.Stop()
 
 	changedPrivateLinkSecret := &corev1.Secret{
@@ -403,7 +408,8 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 			Namespace: controller.clusterName,
 		},
 		Data: map[string][]byte{
-			"region": []byte(`us-west-1`),
+			"region":      []byte(`us-west-1`),
+			"credentials": []byte(`my-credential-file`),
 		},
 	}
 
@@ -421,9 +427,11 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	controller.startup = false
 	controller.installfailed = false
 	controller.Start()
+
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "The private link secret was updated. The hypershift operator needs to be re-installed")
+
 	controller.Stop()
 
 	controller.hubClient.Delete(ctx, newPrivateLinkSecret)
@@ -435,23 +443,30 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "The test private link secret was deleted successfully")
 
 	controller.Start()
+
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "The private link secret was removed. The hypershift operator needs to be re-installed")
+
 	controller.Stop()
 
 	controller.startup = false
 	controller.installfailed = false
 	controller.Start()
+
 	assert.Eventually(t, func() bool {
 		return !controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
+
 	controller.Stop()
 
 	controller.hubClient = initErrorClient()
 	controller.Start()
+
 	assert.Eventually(t, func() bool {
 		return !controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "The agent fails to get the private link secret from the hub. The hypershift operator should not be re-installed")
+
 	controller.Stop()
+
 }
