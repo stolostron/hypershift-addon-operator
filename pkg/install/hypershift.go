@@ -178,9 +178,11 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 	// If the hypershift operator installation already exists and it is a controller initial start up,
 	// we need to check if the operator re-installation is necessary by comparing the operator images.
+	// If the hypershift operator installation failed in the previous attempt, no checking. We need to
+	// install again.
 	// For now, assume that secrets did not change (MCE upgrade or pod re-cycle scenarios)
 	// If controllerStartup = false, we are here because the image override configmap or some operator secrets have changed. No check required.
-	reinstallCheckRequired := (operatorDeployment != nil) && controllerStartup
+	reinstallCheckRequired := (operatorDeployment != nil) && controllerStartup && !c.installfailed
 
 	c.log.Info("reinstallCheckRequired = " + strconv.FormatBool(reinstallCheckRequired))
 

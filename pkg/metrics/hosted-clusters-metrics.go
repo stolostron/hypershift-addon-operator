@@ -17,6 +17,11 @@ var HostedClusterAvailableGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Number of available hosted clusters",
 })
 
+var HostedClusterBeingDeletedGauge = prometheus.NewGauge(prometheus.GaugeOpts{
+	Name: "mce_hs_addon_deleted_hosted_clusters_gauge",
+	Help: "Number of hosted clusters being deleted",
+})
+
 var MaxNumHostedClustersGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 	Name: "mce_hs_addon_max_hosted_clusters_gauge",
 	Help: "Maximum number of hosted clusters",
@@ -32,6 +37,7 @@ func init() {
 		TotalHostedClusterGauge,
 		HostedControlPlaneAvailableGauge,
 		HostedClusterAvailableGauge,
+		HostedClusterBeingDeletedGauge,
 		MaxNumHostedClustersGauge,
 		ThresholdNumHostedClustersGauge)
 }

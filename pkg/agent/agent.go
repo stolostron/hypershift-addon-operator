@@ -170,6 +170,8 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	o.Log = o.Log.WithName("agent-reconciler")
 	aCtrl.plugInOption(o)
 
+	metrics.InstallationFailningGaugeBool.Set(0)
+
 	// Image upgrade controller
 	uCtrl := install.NewUpgradeController(hubClient, spokeKubeClient, o.Log, o.AddonName, o.AddonNamespace, o.SpokeClusterName,
 		o.HypershiftOperatorImage, o.PullSecretName, o.WithOverride, ctx)
@@ -622,6 +624,7 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup b
 
 		availableHcpNum := 0
 		completedHcNum := 0
+		deletingHcNum := 0
 
 		for _, hc := range hcList.Items {
 			if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || c.isHostedControlPlaneAvailable(hc.Status) {
@@ -632,12 +635,18 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup b
 				isVersionHistoryStateFound(hc.Status.Version.History, configv1.CompletedUpdate) {
 				completedHcNum++
 			}
+
+			if !hc.GetDeletionTimestamp().IsZero() {
+				deletingHcNum++
+			}
 		}
 
 		// Total number of available hosted control plains metric
 		metrics.HostedControlPlaneAvailableGauge.Set(float64(availableHcpNum))
 		// Total number of completed hosted clusters metric
 		metrics.HostedClusterAvailableGauge.Set(float64(completedHcNum))
+		// Total number of hosted clusters being deleted
+		metrics.HostedClusterBeingDeletedGauge.Set(float64(deletingHcNum))
 
 		meta.SetStatusCondition(&addOnPlacementScore.Status.Conditions, metav1.Condition{
 			Type:    "HostedClusterCountUpdated",
