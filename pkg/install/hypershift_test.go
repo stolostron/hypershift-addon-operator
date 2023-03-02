@@ -38,7 +38,6 @@ const (
 
 func initClient() ctrlClient.Client {
 	scheme := runtime.NewScheme()
-	corev1.AddToScheme(scheme)
 	appsv1.AddToScheme(scheme)
 	corev1.AddToScheme(scheme)
 	metav1.AddMetaToScheme(scheme)
@@ -72,16 +71,13 @@ func initDeployObj() *appsv1.Deployment {
 func initDeployAddonObj() *appsv1.Deployment {
 	deploy := initDeployObj()
 	deploy.Annotations = map[string]string{
-		util.HypershiftAddonAnnotationKey: util.AddonControllerName,
+		util.HypershiftOperatorNoMCEAnnotationKey: "true",
 	}
 	return deploy
 }
 
 func initDeployAddonImageDiffObj() *appsv1.Deployment {
 	deploy := initDeployObj()
-	deploy.Annotations = map[string]string{
-		util.HypershiftAddonAnnotationKey: util.AddonControllerName,
-	}
 	deploy.Spec.Template.Spec.Containers = []corev1.Container{
 		{Image: "testimage"},
 	}
@@ -189,12 +185,12 @@ func TestIsDeploymentMarked(t *testing.T) {
 		{
 			name:       "unmarked deployment",
 			deploy:     initDeployObj(),
-			expectedOk: false,
+			expectedOk: true,
 		},
 		{
 			name:       "marked deployment",
 			deploy:     initDeployAddonObj(),
-			expectedOk: true,
+			expectedOk: false,
 		},
 	}
 
@@ -210,7 +206,7 @@ func TestIsDeploymentMarked(t *testing.T) {
 				assert.Nil(t, aCtrl.spokeUncachedClient.Create(ctx, c.deploy), "")
 			}
 
-			ok := aCtrl.isDeploymentMarked(ctx)
+			ok := aCtrl.isHypershiftOperatorByMCE(ctx)
 			assert.Equal(t, c.expectedOk, ok, "ok as expected")
 		})
 	}
@@ -231,17 +227,17 @@ func TestDeploymentExistsWithNoImage(t *testing.T) {
 			expectedOk: true,
 		},
 		{
-			name:       "hypershift-operator Deployment, not owned by acm addon",
+			name:       "hypershift-operator Deployment, does not have not-by-mce annotation",
 			deploy:     initDeployObj(),
-			expectedOk: false,
-		},
-		{
-			name:       "hypershift-operator Deployment, owned by acm addon with identical images",
-			deploy:     initDeployAddonObj(),
 			expectedOk: true,
 		},
 		{
-			name:          "hypershift-operator Deployment, owned by acm addon with identical images",
+			name:       "hypershift-operator Deployment, has not-by-mce = true annotation with identical images",
+			deploy:     initDeployAddonObj(),
+			expectedOk: false,
+		},
+		{
+			name:          "hypershift-operator Deployment, does not have not-by-mce annotation with different images",
 			deploy:        initDeployAddonImageDiffObj(),
 			operatorImage: "my-new-image02",
 			expectedOk:    true,
@@ -403,9 +399,8 @@ func TestRunHypershiftInstall(t *testing.T) {
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "operator",
-			Namespace:   "hypershift",
-			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
+			Name:      "operator",
+			Namespace: "hypershift",
 		},
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
@@ -808,9 +803,8 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "operator",
-			Namespace:   "hypershift",
-			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
+			Name:      "operator",
+			Namespace: "hypershift",
 		},
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
@@ -957,9 +951,8 @@ func TestRunHypershiftInstallEnableRHOBS(t *testing.T) {
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "operator",
-			Namespace:   "hypershift",
-			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
+			Name:      "operator",
+			Namespace: "hypershift",
 		},
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
@@ -1079,9 +1072,8 @@ func TestRunHypershiftInstallExternalDNSDifferentSecret(t *testing.T) {
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "operator",
-			Namespace:   "hypershift",
-			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
+			Name:      "operator",
+			Namespace: "hypershift",
 		},
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
@@ -1360,9 +1352,8 @@ func TestSkipHypershiftInstallWithNoChange(t *testing.T) {
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "operator",
-			Namespace:   "hypershift",
-			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
+			Name:      "operator",
+			Namespace: "hypershift",
 		},
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
@@ -1638,9 +1629,8 @@ func TestOperatorImagesUpdatedCheck(t *testing.T) {
 			APIVersion: "apps/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        "operator",
-			Namespace:   "hypershift",
-			Annotations: map[string]string{util.HypershiftAddonAnnotationKey: util.AddonControllerName},
+			Name:      "operator",
+			Namespace: "hypershift",
 		},
 		Spec: appsv1.DeploymentSpec{
 			Template: corev1.PodTemplateSpec{
@@ -1716,4 +1706,75 @@ func TestOperatorImagesUpdatedCheck(t *testing.T) {
 
 	imagesUpdated = aCtrl.operatorImagesUpdated(imb, *dp)
 	assert.True(t, imagesUpdated, "detected that there is difference between the image stream and deployment images")
+}
+
+func TestAWSPlatformDetection(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	controller := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+		privateLinkSecret:         corev1.Secret{},
+		bucketSecret:              corev1.Secret{},
+	}
+
+	privateLinkSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftPrivateLinkSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"region":      []byte(`us-east-1`),
+			"credentials": []byte(`my-credential-file`),
+		},
+	}
+	bucketSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftBucketSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"bucket":      []byte(`my-bucket`),
+			"region":      []byte(`us-east-1`),
+			"credentials": []byte(`myCredential`),
+		},
+	}
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return !controller.awsPlatform
+	}, 10*time.Second, 1*time.Second, "Neither OIDC or Private Link Credentials provided. Installing for non-AWS platform")
+	controller.Stop()
+
+	controller.hubClient.Create(ctx, privateLinkSecret)
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.awsPlatform
+	}, 10*time.Second, 1*time.Second, "Only Private Link Credentials provided. Installing for AWS platform")
+	controller.Stop()
+
+	controller.hubClient.Create(ctx, bucketSecret)
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.awsPlatform
+	}, 10*time.Second, 1*time.Second, "Both OIDC or Private Link Credentials provided. Installing for AWS platform")
+	controller.Stop()
+
+	controller.hubClient.Delete(ctx, privateLinkSecret)
+
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.awsPlatform
+	}, 10*time.Second, 1*time.Second, "Only OIDC Credentials provided. Installing for AWS platform")
+	controller.Stop()
 }

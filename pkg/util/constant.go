@@ -33,9 +33,9 @@ const (
 	HypershiftOperatorExternalDNSName = "external-dns"
 
 	// Labels for resources to reference the Hosted Cluster
-	HypershiftClusterNameLabel      = "hypershiftdeployments.cluster.open-cluster-management.io/cluster-name"
-	HypershiftHostingNamespaceLabel = "hypershiftdeployments.cluster.open-cluster-management.io/hosting-namespace"
-	HypershiftAddonAnnotationKey    = "hypershift.open-cluster-management.io/createBy"
+	HypershiftClusterNameLabel           = "hypershiftdeployments.cluster.open-cluster-management.io/cluster-name"
+	HypershiftHostingNamespaceLabel      = "hypershiftdeployments.cluster.open-cluster-management.io/hosting-namespace"
+	HypershiftOperatorNoMCEAnnotationKey = "hypershift.open-cluster-management.io/not-by-mce"
 
 	// ImageStream image names
 	ImageStreamAwsCapiProvider      = "cluster-api-provider-aws"

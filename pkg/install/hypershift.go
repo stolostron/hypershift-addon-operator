@@ -112,8 +112,8 @@ func (c *UpgradeController) RunHypershiftCleanup(ctx context.Context) error {
 	c.log.Info("enter RunHypershiftCleanup")
 	defer c.log.Info("exit RunHypershiftCleanup")
 
-	if !c.isDeploymentMarked(ctx) {
-		c.log.Info(fmt.Sprintf("skip deletion of the hypershift operator, not created by %s", util.AddonControllerName))
+	if !c.isHypershiftOperatorByMCE(ctx) {
+		c.log.Info("skip deletion of the hypershift operator, not managed by mce")
 		return nil
 	}
 
@@ -178,9 +178,11 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 	// If the hypershift operator installation already exists and it is a controller initial start up,
 	// we need to check if the operator re-installation is necessary by comparing the operator images.
+	// If the hypershift operator installation failed in the previous attempt, no checking. We need to
+	// install again.
 	// For now, assume that secrets did not change (MCE upgrade or pod re-cycle scenarios)
 	// If controllerStartup = false, we are here because the image override configmap or some operator secrets have changed. No check required.
-	reinstallCheckRequired := (operatorDeployment != nil) && controllerStartup
+	reinstallCheckRequired := (operatorDeployment != nil) && controllerStartup && !c.installfailed
 
 	c.log.Info("reinstallCheckRequired = " + strconv.FormatBool(reinstallCheckRequired))
 
@@ -205,26 +207,45 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		}
 	}
 
-	awsPlatform := true
+	awsPlatform := false
+	oidcBucket := true
+	privateLinkCreds := true
 
+	//Attempt to retrieve oidc bucket secret
 	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.clusterName}
 	se := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, bucketSecretKey, se); err != nil {
-		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey))
+		c.log.Info(fmt.Sprintf("bucket secret(%s) not found on the hub.", bucketSecretKey))
 
-		awsPlatform = false
+		oidcBucket = false
 	}
 
 	// cache the bucket secret for comparison againt the hub's to detect any change
 	c.bucketSecret = *se
 
+	//Attempt to retrieve private link creds
+	privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
+	spl := &corev1.Secret{}
+	if err := c.hubClient.Get(ctx, privateSecretKey, spl); err != nil {
+		c.log.Info(fmt.Sprintf("private link secret(%s) not found on the hub.", privateSecretKey))
+
+		privateLinkCreds = false
+	}
+	// cache the private link secret for comparison againt the hub's to detect any change
+	c.privateLinkSecret = *spl
+
+	//Platform is aws if either secret exists
+	awsPlatform = oidcBucket || privateLinkCreds
+	c.awsPlatform = awsPlatform
+	if !awsPlatform {
+		c.log.Info(fmt.Sprintf("bucket secret(%s) and private link secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey, privateSecretKey))
+	}
+
 	args := []string{
 		"--namespace", hypershiftOperatorKey.Namespace,
 	}
 
-	spl := &corev1.Secret{}
-
-	if awsPlatform { // if the S3 secret is found, install hypershift with s3 options
+	if oidcBucket { // if the S3 secret is found, install hypershift with s3 options
 		bucketName := string(se.Data["bucket"])
 		bucketRegion := string(se.Data["region"])
 
@@ -246,27 +267,22 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		// Set this to one to indicate that the AWS S3 bucket secret is used for the operator installation
 		metrics.IsAWSS3BucketSecretConfigured.Set(1)
 
-		//Private link creds
-		privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
-
-		if err := c.hubClient.Get(ctx, privateSecretKey, spl); err == nil {
-			if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
-				return err
-			}
-			c.log.Info("private link region & credential arguments included")
-			awsArgs := []string{
-				"--aws-private-secret", util.HypershiftPrivateLinkSecretName,
-				"--aws-private-region", string(spl.Data["region"]),
-				"--private-platform", "AWS",
-			}
-			args = append(args, awsArgs...)
-		} else {
-			c.log.Info(fmt.Sprintf("private-link secret(%s) was not found", privateSecretKey))
-		}
-
-		// cache the private link secret for comparison againt the hub's to detect any change
-		c.privateLinkSecret = *spl
 	}
+
+	if privateLinkCreds { // if private link credentials is found, install hypershift with private secret options
+		if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
+			return err
+		}
+		c.log.Info("private link region & credential arguments included")
+		awsArgs := []string{
+			"--aws-private-secret", util.HypershiftPrivateLinkSecretName,
+			"--aws-private-region", string(spl.Data["region"]),
+			"--private-platform", "AWS",
+		}
+		args = append(args, awsArgs...)
+
+	}
+
 	//External DNS
 	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
 	sExtDNS := &corev1.Secret{}
@@ -496,7 +512,7 @@ func (c *UpgradeController) ensurePullSecret(ctx context.Context) error {
 	return err
 }
 
-func (c *UpgradeController) isDeploymentMarked(ctx context.Context) bool {
+func (c *UpgradeController) isHypershiftOperatorByMCE(ctx context.Context) bool {
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
@@ -505,11 +521,8 @@ func (c *UpgradeController) isDeploymentMarked(ctx context.Context) bool {
 	}
 
 	a := obj.GetAnnotations()
-	if len(a) == 0 || len(a[util.HypershiftAddonAnnotationKey]) == 0 {
-		return false
-	}
 
-	return true
+	return a[util.HypershiftOperatorNoMCEAnnotationKey] != "true"
 }
 
 func (c *UpgradeController) hasHostedClusters(ctx context.Context) (bool, error) {
@@ -533,12 +546,13 @@ func (c *UpgradeController) operatorUpgradable(ctx context.Context) (error, bool
 		return err, false, nil
 	}
 
-	// Check if deployment is created by the addon
-	if obj.Annotations[util.HypershiftAddonAnnotationKey] == util.AddonControllerName {
-		return nil, true, obj
+	// Check if hypershift operator deployment has "hypershift.open-cluster-management.io/not-by-mce: true" annotation
+	// With this annotation, the addon agent should not install or upgrade the hypershift operator
+	if obj.Annotations[util.HypershiftOperatorNoMCEAnnotationKey] == "true" {
+		return nil, false, obj
 	}
 
-	return nil, false, nil
+	return nil, true, obj
 }
 
 func (c *UpgradeController) updateHyperShiftDeployment(ctx context.Context) error {
@@ -547,9 +561,6 @@ func (c *UpgradeController) updateHyperShiftDeployment(ctx context.Context) erro
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
 		return err
 	}
-
-	// Add annotation
-	obj.Annotations[util.HypershiftAddonAnnotationKey] = util.AddonControllerName
 
 	// Update pull image
 	if c.pullSecret != "" {

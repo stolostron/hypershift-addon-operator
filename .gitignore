@@ -8,6 +8,7 @@ cmd/cmd*
 bin
 testbin/*
 local.sh
+clusteradm
 
 # Test binary, built with `go test -c`
 *.test

@@ -36,6 +36,7 @@ type UpgradeController struct {
 	privateLinkSecret         corev1.Secret
 	imageOverrideConfigmap    corev1.ConfigMap
 	reinstallNeeded           bool // this is used only for code test
+	awsPlatform               bool // this is used only for code test
 	startup                   bool //
 	installfailed             bool // previous installation failed - retry needed on next attempt
 }
@@ -77,9 +78,11 @@ func (c *UpgradeController) Start() {
 				c.log.Error(err, "failed to install hypershift operator")
 
 				c.installfailed = true
+				metrics.InstallationFailningGaugeBool.Set(float64(1))
 			} else {
 				c.installfailed = false
 				c.startup = false
+				metrics.InstallationFailningGaugeBool.Set(0)
 			}
 		}
 	}, 2*time.Minute, c.stopch) // Connect to the hub every 2 minutes to check for any changes

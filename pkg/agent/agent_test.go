@@ -8,28 +8,29 @@ import (
 	"time"
 
 	"github.com/go-logr/zapr"
+	configv1 "github.com/openshift/api/config/v1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
 	clustercsfake "open-cluster-management.io/api/client/cluster/clientset/versioned/fake"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
+	operatorapiv1 "open-cluster-management.io/api/operator/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
-
-	configv1 "github.com/openshift/api/config/v1"
-	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
-
-	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 )
 
 func TestReconcile(t *testing.T) {
@@ -383,7 +384,7 @@ func TestHostedClusterCount(t *testing.T) {
 		thresholdHostedClusterCount: 3,
 	}
 
-	err := aCtrl.SyncAddOnPlacementScore(ctx)
+	err := aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// No HC yet, so the zero cluster claim value should be true
@@ -403,7 +404,7 @@ func TestHostedClusterCount(t *testing.T) {
 		i++
 	}
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// Created 4 HCs, max 5 so the full cluster claim value should be false
@@ -441,7 +442,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// 5 HCs, max 5 so the full cluster claim value should be true
@@ -471,7 +472,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Delete(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	fullClusterClaim, err = aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
@@ -499,7 +500,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Delete(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// 3 HCs, threshold 3 so the threshold cluster claim value should be true
@@ -514,7 +515,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Delete(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// 2 HCs, threshold 3 so the threshold cluster claim value should be true
@@ -537,7 +538,7 @@ func TestHostedClusterCount(t *testing.T) {
 	err = aCtrl.hubClient.Delete(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is deleted successfully")
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	// 0 HC, max 5 so the full cluster claim value should be false
@@ -588,7 +589,7 @@ func TestHostedClusterCountErrorCase(t *testing.T) {
 		i++
 	}
 
-	err := aCtrl.SyncAddOnPlacementScore(ctx)
+	err := aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	clusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
@@ -605,7 +606,7 @@ func TestHostedClusterCountErrorCase(t *testing.T) {
 	// should contain a condition indicating the failure but the existing score should not change
 	// The score should still be 5
 	aCtrl.spokeUncachedClient = initErrorClient()
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, false)
 	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
 
 	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
@@ -627,6 +628,48 @@ func TestHostedClusterCountErrorCase(t *testing.T) {
 
 	assert.Equal(t, float64(5), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
 	assert.Equal(t, float64(5), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
+}
+func TestHostedClusterCountStartupErrorCase(t *testing.T) {
+	ctx := context.Background()
+	client := initErrorClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
+	aCtrl := &agentController{
+		spokeClustersClient:         fakeClusterCS,
+		spokeUncachedClient:         client,
+		spokeClient:                 client,
+		hubClient:                   client,
+		log:                         zapr.NewLogger(zapLog),
+		maxHostedClusterCount:       80,
+		thresholdHostedClusterCount: 60,
+	}
+
+	// This tests SyncAddOnPlacementScore call during agent startup with no hypershift operator installation on the cluster yet.
+	err := aCtrl.SyncAddOnPlacementScore(ctx, true)
+	assert.Nil(t, err, "err nil when CreateAddOnPlacementScore was successfully")
+
+	clusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountFullClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), clusterClaim.Spec.Value)
+
+	thresholdClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountAboveThresholdClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count at threshold clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(false), thresholdClusterClaim.Spec.Value)
+
+	zeroClusterClaim, err := aCtrl.spokeClustersClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hostedClusterCountZeroClusterClaimKey, metav1.GetOptions{})
+	assert.Nil(t, err, "is nil when the hc count zero clusterclaim is found")
+	assert.Equal(t, strconv.FormatBool(true), zeroClusterClaim.Spec.Value)
+
+	placementScore := &clusterv1alpha1.AddOnPlacementScore{}
+	placementScoreNN := types.NamespacedName{Name: util.HostedClusterScoresResourceName, Namespace: aCtrl.clusterName}
+	err = aCtrl.hubClient.Get(ctx, placementScoreNN, placementScore)
+	assert.Nil(t, err, "is nil when addonPlacementScore is found")
+	assert.Equal(t, int32(0), placementScore.Status.Scores[0].Value)
+
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
+	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
 }
 
 func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
@@ -686,6 +729,7 @@ func TestCleanupCommand(t *testing.T) {
 		AddonName:      "hypershift-addon",
 		AddonNamespace: "hypershift",
 	}
+
 	err := o.runCleanup(ctx, nil)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 }
@@ -698,8 +742,108 @@ func TestRunControllerManager(t *testing.T) {
 		AddonName:      "hypershift-addon",
 		AddonNamespace: "hypershift",
 	}
+
 	err := o.runControllerManager(ctx)
 	assert.NotNil(t, err, "err it not nil if the controller fail to run")
+}
+
+func Test_agentController_deleteManagedCluster(t *testing.T) {
+	ctx := context.Background()
+	client := initClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
+	kl := &operatorapiv1.Klusterlet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "klusterlet-hc-1",
+		},
+	}
+	err := client.Create(ctx, kl)
+	assert.Nil(t, err, "err nil when klusterlet is created successfully")
+
+	mc := &clusterv1.ManagedCluster{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "c1",
+		},
+		Spec: clusterv1.ManagedClusterSpec{
+			HubAcceptsClient:     false,
+			LeaseDurationSeconds: 0,
+		},
+	}
+	err = client.Create(ctx, mc)
+	assert.Nil(t, err, "err nil when managedcluster is created successfully")
+
+	hcNN := types.NamespacedName{Name: "hc-1", Namespace: "clusters"}
+	hcNoAnno := getHostedCluster(hcNN)
+	err = client.Create(ctx, hcNoAnno)
+	assert.Nil(t, err, "err nil when hostedcluster is created successfully")
+
+	hcNN2 := types.NamespacedName{Name: "hc-2", Namespace: "clusters"}
+	hcAnno := getHostedCluster(hcNN2)
+	hcAnno.Annotations = map[string]string{util.ManagedClusterAnnoKey: "c1"}
+	err = client.Create(ctx, hcAnno)
+	assert.Nil(t, err, "err nil when hostedcluster is created successfully")
+
+	aCtrl := &agentController{
+		spokeClustersClient:         fakeClusterCS,
+		spokeUncachedClient:         client,
+		spokeClient:                 client,
+		hubClient:                   client,
+		log:                         zapr.NewLogger(zapLog),
+		maxHostedClusterCount:       80,
+		thresholdHostedClusterCount: 60,
+	}
+
+	type args struct {
+		ctx context.Context
+		hc  *hyperv1beta1.HostedCluster
+	}
+	tests := []struct {
+		name    string
+		hc      *hyperv1beta1.HostedCluster
+		mc      *clusterv1.ManagedCluster
+		wantErr bool
+	}{
+		{
+			name:    "Delete nil hostedhosted",
+			hc:      nil,
+			wantErr: true,
+		},
+		{
+			name:    "Delete hostedhosted with no managedcluster-name annotation",
+			hc:      hcNoAnno,
+			mc:      mc,
+			wantErr: true,
+		},
+		{
+			name:    "Delete hostedhosted with no managedcluster-name annotation",
+			hc:      hcAnno,
+			mc:      mc,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := aCtrl.deleteManagedCluster(ctx, tt.hc); (err != nil) != tt.wantErr {
+				t.Errorf("agentController.deleteManagedCluster() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if mc != nil {
+				gotMc := &clusterv1.ManagedCluster{}
+				err = client.Get(ctx, types.NamespacedName{Name: mc.Name, Namespace: mc.Namespace}, gotMc)
+
+				if !tt.wantErr {
+					// Managed cluster is deleted
+					assert.NotNil(t, err, "err not nil if managed cluster is not found")
+					assert.True(t, apierrors.IsNotFound(err), "true if error is type IsNotFound")
+				} else {
+					assert.Nil(t, err, "err nil if managed cluster is found")
+				}
+			}
+		})
+	}
 }
 
 func initClient() client.Client {
@@ -710,6 +854,8 @@ func initClient() client.Client {
 	metav1.AddMetaToScheme(scheme)
 	hyperv1beta1.AddToScheme(scheme)
 	clusterv1alpha1.AddToScheme(scheme)
+	clusterv1.AddToScheme(scheme)
+	operatorapiv1.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
 	ncb.WithScheme(scheme)
@@ -723,6 +869,7 @@ func initErrorClient() client.Client {
 	appsv1.AddToScheme(scheme)
 	corev1.AddToScheme(scheme)
 	metav1.AddMetaToScheme(scheme)
+	clusterv1alpha1.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
 	ncb.WithScheme(scheme)

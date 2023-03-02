@@ -32,7 +32,9 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/lease"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
+	operatorapiv1 "open-cluster-management.io/api/operator/v1"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/install"
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
@@ -48,6 +50,9 @@ func init() {
 	utilruntime.Must(hyperv1beta1.AddToScheme(scheme))
 	utilruntime.Must(addonv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(clusterv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(clusterv1.AddToScheme(scheme))
+	utilruntime.Must(operatorapiv1.AddToScheme(scheme))
+
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -165,6 +170,8 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	o.Log = o.Log.WithName("agent-reconciler")
 	aCtrl.plugInOption(o)
 
+	metrics.InstallationFailningGaugeBool.Set(0)
+
 	// Image upgrade controller
 	uCtrl := install.NewUpgradeController(hubClient, spokeKubeClient, o.Log, o.AddonName, o.AddonNamespace, o.SpokeClusterName,
 		o.HypershiftOperatorImage, o.PullSecretName, o.WithOverride, ctx)
@@ -201,7 +208,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	metrics.MaxNumHostedClustersGauge.Set(float64(maxHCNum))
 	metrics.ThresholdNumHostedClustersGauge.Set(float64(thresholdHCNum))
 
-	err = aCtrl.SyncAddOnPlacementScore(ctx)
+	err = aCtrl.SyncAddOnPlacementScore(ctx, true)
 	if err != nil {
 		// AddOnPlacementScore must be created initially
 		metrics.AddonAgentFailedToStartBool.Set(1)
@@ -383,7 +390,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
 	// Update the AddOnPlacementScore resource, continue reconcile even if error occurred
-	_ = c.SyncAddOnPlacementScore(ctx)
+	_ = c.SyncAddOnPlacementScore(ctx, false)
 
 	// Delete HC secrets on the hub using labels for HC and the hosting NS
 	deleteMirrorSecrets := func() error {
@@ -425,6 +432,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err := c.spokeClient.Get(ctx, req.NamespacedName, hc); err != nil {
 		if apierrors.IsNotFound(err) {
 			c.log.Info(fmt.Sprintf("remove hostedcluster(%s) secrets on hub, since hostedcluster is gone", req.NamespacedName))
+
 			return ctrl.Result{}, deleteMirrorSecrets()
 		}
 
@@ -434,6 +442,11 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 	if !hc.GetDeletionTimestamp().IsZero() {
 		c.log.Info(fmt.Sprintf("hostedcluster %s has deletionTimestamp %s. Skip reconciling klusterlet secrets", hc.Name, hc.GetDeletionTimestamp().String()))
+
+		if err := c.deleteManagedCluster(ctx, hc); err != nil {
+			c.log.Error(err, "failed to delete the managed cluster")
+		}
+
 		return ctrl.Result{}, nil
 	}
 
@@ -545,7 +558,7 @@ func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1
 	return false
 }
 
-func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
+func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup bool) error {
 	addOnPlacementScore := &clusterv1alpha1.AddOnPlacementScore{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "AddOnPlacementScore",
@@ -569,7 +582,16 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 	listopts := &client.ListOptions{}
 	hcList := &hyperv1beta1.HostedClusterList{}
 	err = c.spokeUncachedClient.List(context.TODO(), hcList, listopts)
-	if err != nil {
+	hcCRDNotInstalledYet := err != nil &&
+		(strings.HasPrefix(err.Error(), "no matches for kind ") || strings.HasPrefix(err.Error(), "no kind is registered ")) &&
+		startup
+	if hcCRDNotInstalledYet {
+		c.log.Info("this is the initial agent startup and the hypershift CRDs are not installed yet, " + err.Error())
+		c.log.Info("going to continue updating AddOnPlacementScore and cluster claims with zero HC count")
+	}
+	// During the first agent startup on a brand new cluster, the hypershift operator and its CRDs will not be installed yet.
+	// So listing the HCs will fail. In this case, just set the count to len(hcList.Items) which is zero.
+	if err != nil && !hcCRDNotInstalledYet {
 		// just log the error. it should not stop the rest of reconcile
 		c.log.Error(err, "failed to get HostedCluster list")
 
@@ -602,6 +624,7 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 
 		availableHcpNum := 0
 		completedHcNum := 0
+		deletingHcNum := 0
 
 		for _, hc := range hcList.Items {
 			if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || c.isHostedControlPlaneAvailable(hc.Status) {
@@ -612,12 +635,18 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 				isVersionHistoryStateFound(hc.Status.Version.History, configv1.CompletedUpdate) {
 				completedHcNum++
 			}
+
+			if !hc.GetDeletionTimestamp().IsZero() {
+				deletingHcNum++
+			}
 		}
 
 		// Total number of available hosted control plains metric
 		metrics.HostedControlPlaneAvailableGauge.Set(float64(availableHcpNum))
 		// Total number of completed hosted clusters metric
 		metrics.HostedClusterAvailableGauge.Set(float64(completedHcNum))
+		// Total number of hosted clusters being deleted
+		metrics.HostedClusterBeingDeletedGauge.Set(float64(deletingHcNum))
 
 		meta.SetStatusCondition(&addOnPlacementScore.Status.Conditions, metav1.Condition{
 			Type:    "HostedClusterCountUpdated",
@@ -660,6 +689,62 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context) error {
 		c.log.Info("updated the hosted cluster cound cluster claims successfully")
 	}
 
+	return nil
+}
+
+func (c *agentController) deleteManagedCluster(ctx context.Context, hc *hyperv1beta1.HostedCluster) error {
+	if hc == nil {
+		return fmt.Errorf("failed to delete nil hostedCluster")
+	}
+
+	managedClusterName, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
+	if !ok || len(managedClusterName) == 0 {
+		managedClusterName = hc.Name
+	}
+
+	klusterletName := "klusterlet-" + managedClusterName
+
+	// Remove the operator.open-cluster-management.io/klusterlet-hosted-cleanup finalizer in klusterlet
+	klusterlet := &operatorapiv1.Klusterlet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: klusterletName,
+		},
+	}
+
+	if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(klusterlet), klusterlet); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.log.Info(fmt.Sprintf("klusterlet %v is already deleted", klusterletName))
+		} else {
+			c.log.Error(err, fmt.Sprintf("failed to get the klusterlet %v", klusterletName))
+			return err
+		}
+	}
+
+	updated := controllerutil.RemoveFinalizer(klusterlet, "operator.open-cluster-management.io/klusterlet-hosted-cleanup")
+	c.log.Info(fmt.Sprintf("klusterlet %v finalizer removed:%v", klusterletName, updated))
+
+	// Delete the managed cluster
+	mc := &clusterv1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: managedClusterName,
+		},
+	}
+
+	if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(mc), mc); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.log.Info(fmt.Sprintf("managedCluster %v is already deleted", managedClusterName))
+		} else {
+			c.log.Error(err, fmt.Sprintf("failed to get the managedCluster %v", managedClusterName))
+			return err
+		}
+	}
+
+	if err := c.spokeClient.Delete(ctx, mc); err != nil {
+		c.log.Error(err, fmt.Sprintf("failed to delete the managedCluster %v", managedClusterName))
+		return err
+	}
+
+	c.log.Info(fmt.Sprintf("deleted managedCluster %v", managedClusterName))
 	return nil
 }
 
