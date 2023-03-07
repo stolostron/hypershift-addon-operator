@@ -15,11 +15,14 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
+
+var mce_namespace string
 
 func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error {
 	// get the current version of MCE CSV from multicluster-engine namespace
@@ -49,9 +52,9 @@ func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error
 func GetMCECSV(hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.ClusterServiceVersion, error) {
 	csvlist := &operatorsv1alpha1.ClusterServiceVersionList{}
 
-	listopts := &client.ListOptions{Namespace: "multicluster-engine"}
+	//listopts := &client.ListOptions{Namespace: "multicluster-engine"}
 
-	err := hubclient.List(context.TODO(), csvlist, listopts)
+	err := hubclient.List(context.TODO(), csvlist)
 
 	if err != nil {
 		log.Error(err, "failed to list CSVs")
@@ -62,6 +65,7 @@ func GetMCECSV(hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.Clu
 	for _, csv := range csvlist.Items {
 		if strings.HasPrefix(csv.Name, "multicluster-engine.") {
 			names = append(names, csv.Name)
+			mce_namespace = csv.Namespace
 		}
 	}
 
@@ -75,7 +79,7 @@ func GetMCECSV(hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.Clu
 	sort.Sort(sort.Reverse(sort.StringSlice(names)))
 
 	csv := &operatorsv1alpha1.ClusterServiceVersion{}
-	csvNN := types.NamespacedName{Namespace: "multicluster-engine", Name: names[0]}
+	csvNN := types.NamespacedName{Namespace: mce_namespace, Name: names[0]}
 
 	err = hubclient.Get(context.TODO(), csvNN, csv)
 
@@ -295,8 +299,30 @@ func getConsoleDownload(routeUrl string, log logr.Logger) (*consolev1.ConsoleCLI
 }
 
 func getOwnerRef(hubclient client.Client, log logr.Logger) (*metav1.OwnerReference, []corev1.EnvVar, error) {
+
+	//get mce target namespace for operand deployments
+	deploymentNamespace := "multicluster-engine"
+
+	mceList := &mcev1.MultiClusterEngineList{}
+	err := hubclient.List(context.TODO(), mceList)
+	if err != nil {
+		log.Error(err, "failed to get multicluster engine list")
+		return nil, nil, err
+	}
+
+	if len(mceList.Items) == 0 {
+		err := errors.New("no MCE found")
+		log.Error(err, "no MCE found")
+		return nil, nil, err
+	} 
+
+	//Only 1 multicluster engine, select first
+	if (mceList.Items[0].Spec.TargetNamespace != "") {
+		deploymentNamespace = mceList.Items[0].Spec.TargetNamespace
+	}
+
 	deployment := &appsv1.Deployment{}
-	err := hubclient.Get(context.TODO(), types.NamespacedName{Namespace: "multicluster-engine", Name: "hypershift-addon-manager"}, deployment)
+	err = hubclient.Get(context.TODO(), types.NamespacedName{Namespace: deploymentNamespace, Name: "hypershift-addon-manager"}, deployment)
 	if err != nil {
 		log.Error(err, "failed to get hypershift-addon-manager deployment")
 		return nil, nil, err
