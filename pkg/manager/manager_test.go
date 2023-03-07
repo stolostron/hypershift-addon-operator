@@ -9,6 +9,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
@@ -121,6 +122,7 @@ func initClient() client.Client {
 	rbacv1.AddToScheme(scheme)
 	clusterv1.AddToScheme(scheme)
 	addonv1alpha1.AddToScheme(scheme)
+	mcev1.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
 	ncb.WithScheme(scheme)
