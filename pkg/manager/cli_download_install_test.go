@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -35,6 +36,11 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	// This section tests that we can find the correct MCE CSV
 	// and get the hypershift CLI container image reference from the CSV
 	//
+
+	// Create mock multicluster engine
+	newmce := getTestMCE("multiclusterengine", "multicluster-engine")
+	err := o.Client.Create(context.TODO(), newmce)
+	assert.Nil(t, err, "could not create test MCE")
 
 	// This should get no MCE CSV (error case)
 	csv, err := GetMCECSV(o.Client, o.log)
@@ -105,7 +111,7 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	assert.Nil(t, err, "err nil when hypershift CLI download deployment exists")
 	assert.Equal(t, "hypershift-addon-manager", cliDeployment.OwnerReferences[0].Name)
 
-	// Checl hypershift CLI deployment proxy settings
+	// Check hypershift CLI deployment proxy settings
 	assert.Equal(t, 3, len(cliDeployment.Spec.Template.Spec.Containers[0].Env))
 	assert.True(t, strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[0].Name, "_PROXY"))
 	assert.True(t, strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[1].Name, "_PROXY"))
@@ -217,4 +223,17 @@ func getTestClusterRole() *rbacv1.ClusterRole {
 		},
 	}
 	return clusterRole
+}
+
+func getTestMCE(name string, namespace string) *mcev1.MultiClusterEngine {
+	mce := &mcev1.MultiClusterEngine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        name,
+		},
+		Spec: mcev1.MultiClusterEngineSpec{
+			TargetNamespace:    namespace,
+			
+		},
+	}
+	return mce
 }
