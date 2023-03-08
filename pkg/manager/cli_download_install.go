@@ -11,18 +11,17 @@ import (
 	consolev1 "github.com/openshift/api/console/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-var mce_namespace string
 
 func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error {
 	// get the current version of MCE CSV from multicluster-engine namespace
@@ -62,6 +61,7 @@ func GetMCECSV(hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.Clu
 	}
 
 	var names []string
+	var mce_namespace string
 	for _, csv := range csvlist.Items {
 		if strings.HasPrefix(csv.Name, "multicluster-engine.") {
 			names = append(names, csv.Name)
@@ -314,10 +314,10 @@ func getOwnerRef(hubclient client.Client, log logr.Logger) (*metav1.OwnerReferen
 		err := errors.New("no MCE found")
 		log.Error(err, "no MCE found")
 		return nil, nil, err
-	} 
+	}
 
 	//Only 1 multicluster engine, select first
-	if (mceList.Items[0].Spec.TargetNamespace != "") {
+	if mceList.Items[0].Spec.TargetNamespace != "" {
 		deploymentNamespace = mceList.Items[0].Spec.TargetNamespace
 	}
 
