@@ -507,6 +507,22 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				}
 			}
 
+			// Remove certificate-authority-data from admin-kubeconfig
+			if strings.HasSuffix(hubMirrorSecret.Name, "admin-kubeconfig") && hasNameCerts(hc) {
+				kubeconfig := hubMirrorSecret.Data["kubeconfig"]
+
+				updatedKubeconfig, err := removeCertAuthDataFromKubeConfig(kubeconfig)
+				if err != nil {
+					lastErr = err
+					c.log.Error(err, "failed to remove certificate-authority-data from kubeconfig")
+					continue
+				}
+
+				c.log.Info(fmt.Sprintf("Removed certificate-authority-data from secret: %v", hubMirrorSecret.Name))
+
+				hubMirrorSecret.Data["kubeconfig"] = updatedKubeconfig
+			}
+
 			nilFunc := func() error { return nil }
 
 			_, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, hubMirrorSecret, nilFunc)
@@ -806,4 +822,30 @@ func (o *AgentOptions) runCleanup(ctx context.Context, uCtrl *install.UpgradeCon
 	}
 
 	return nil
+}
+
+func removeCertAuthDataFromKubeConfig(kubeconfig []byte) ([]byte, error) {
+	config, err := clientcmd.Load(kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, v := range config.Clusters {
+		v.CertificateAuthorityData = nil
+		v.InsecureSkipTLSVerify = true
+	}
+
+	updatedConfig, err := clientcmd.Write(*config)
+	if err != nil {
+		return nil, err
+	}
+
+	return updatedConfig, nil
+}
+
+func hasNameCerts(hc *hyperv1beta1.HostedCluster) bool {
+	return hc.Spec.Configuration != nil &&
+		hc.Spec.Configuration.APIServer != nil &&
+		&hc.Spec.Configuration.APIServer.ServingCerts != nil &&
+		len(hc.Spec.Configuration.APIServer.ServingCerts.NamedCertificates) > 0
 }
