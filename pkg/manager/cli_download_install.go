@@ -22,7 +22,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-
 func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error {
 	// get the current version of MCE CSV from multicluster-engine namespace
 	csv, err := GetMCECSV(hubclient, log)

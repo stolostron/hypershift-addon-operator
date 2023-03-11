@@ -318,7 +318,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 	// Get the hypershift operator installation flags configmap from the hub
 	installFlagsCM := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
-	c.imageOverrideConfigmap = installFlagsCM
+	c.installFlagsConfigmap = installFlagsCM
 
 	hypershiftImage := c.operatorImage
 	imageStreamCMData := make(map[string]string, 0)

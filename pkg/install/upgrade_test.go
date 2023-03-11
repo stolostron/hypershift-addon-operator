@@ -9,6 +9,8 @@ import (
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	appsv1 "k8s.io/api/apps/v1"
+	kbatch "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -397,8 +399,8 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	controller.Start()
 
 	assert.Eventually(t, func() bool {
-		return controller.startup && controller.installfailed
-	}, 3*time.Minute, 10*time.Second, "Nothing has changed, but Startup=true. The hypershift operator needs to be re-installed")
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "Nothing has changed, but Startup=true. The hypershift operator needs to be re-installed")
 
 	controller.Stop()
 
@@ -469,4 +471,146 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 
 	controller.Stop()
 
+}
+
+func TestInstallFlagChanges(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	controller := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+		installFlagsConfigmap:     corev1.ConfigMap{},
+	}
+
+	addonNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: controller.addonNamespace,
+		},
+	}
+	controller.hubClient.Create(ctx, addonNs)
+	defer controller.hubClient.Delete(ctx, addonNs)
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      controller.pullSecret,
+			Namespace: controller.addonNamespace,
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(`docker-pull-secret`),
+		},
+	}
+	controller.hubClient.Create(ctx, pullSecret)
+
+	newInstallFlagsConfigmap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftInstallFlagsCM,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string]string{
+			"installFlagsToAdd":    "--platform-monitoring AWS --exclude-etcd --metrics-set SRE",
+			"installFlagsToRemove": "--enable-uwm-telemetry-remote-write",
+		},
+	}
+
+	controller.hubClient.Create(ctx, newInstallFlagsConfigmap)
+
+	assert.Eventually(t, func() bool {
+		theCM := &corev1.ConfigMap{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftInstallFlagsCM}, theCM)
+		if err == nil {
+			return string(theCM.Data["installFlagsToAdd"]) == "--platform-monitoring AWS --exclude-etcd --metrics-set SRE"
+		}
+		return false
+	}, 10*time.Second, 1*time.Second, "The install flag configmap was created successfully")
+
+	dp := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "operator",
+			Namespace: "hypershift",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "nginx",
+						Image: "nginx:1.14.2",
+						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+					}},
+				},
+			},
+		},
+	}
+	controller.hubClient.Create(ctx, dp)
+	defer controller.hubClient.Delete(ctx, dp)
+
+	err := installHyperShiftOperator(t, ctx, controller, false)
+	defer deleteAllInstallJobs(ctx, controller.spokeUncachedClient, controller.addonNamespace)
+	assert.Nil(t, err, "is nil if install HyperShift is successful")
+
+	// expect the default --enable-uwm-telemetry-remote-write flag to be removed and additional flags to be created or updated
+	installJobList := &kbatch.JobList{}
+	err = controller.spokeUncachedClient.List(ctx, installJobList)
+	if assert.Nil(t, err, "listing jobs should succeed: %s", err) {
+		if assert.Equal(t, 1, len(installJobList.Items), "there should be exactly one install job") {
+			installJob := installJobList.Items[0]
+			expectArgs := []string{
+				"--namespace", "hypershift",
+				"--hypershift-image", "my-test-image",
+				"--platform-monitoring", "AWS",
+				"--exclude-etcd",
+				"--metrics-set", "SRE",
+			}
+			assert.Equal(t, expectArgs, installJob.Spec.Template.Spec.Containers[0].Args, "mismatched container arguments")
+		}
+	}
+
+	changedInstallFlagsConfigmap := &corev1.ConfigMap{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      util.HypershiftInstallFlagsCM,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string]string{
+			"installFlagsToAdd":    "--platform-monitoring None",
+			"installFlagsToRemove": "",
+		},
+	}
+
+	controller.hubClient.Update(ctx, changedInstallFlagsConfigmap)
+
+	assert.Eventually(t, func() bool {
+		theCM := &corev1.ConfigMap{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftInstallFlagsCM}, theCM)
+		if err == nil {
+			return string(theCM.Data["installFlagsToAdd"]) == "--platform-monitoring None"
+		}
+		return false
+	}, 10*time.Second, 1*time.Second, "The install flag configmap was updated successfully")
+
+	controller.Start()
+
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The install flags configmap has changed. The hypershift operator needs to be re-installed")
+
+	controller.Stop()
+
+	controller.Start()
+
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
+
+	controller.Stop()
 }
