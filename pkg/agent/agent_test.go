@@ -308,6 +308,20 @@ kind: Config`)
 	// Create hosted cluster
 	hc := getHostedCluster(hcNN)
 	hc.Annotations = map[string]string{util.ManagedClusterAnnoKey: "infra-abcdef"}
+	hc.Spec.Configuration = &hyperv1beta1.ClusterConfiguration{
+		APIServer: &configv1.APIServerSpec{
+			ServingCerts: configv1.APIServerServingCerts{
+				NamedCertificates: []configv1.APIServerNamedServingCert{
+					{
+						ServingCertificate: configv1.SecretNameReference{
+							Name: "test-tls",
+						},
+					},
+				},
+			},
+		},
+	}
+
 	err = aCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
@@ -846,6 +860,133 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 				} else {
 					assert.Nil(t, err, "err nil if managed cluster is found")
 				}
+			}
+		})
+	}
+}
+
+var kubeconfig0 = `apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: test
+    server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:7443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    namespace: default
+    user: admin
+  name: admin
+current-context: admin
+kind: Config
+`
+
+var kubeconfig1 = `apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: test
+    server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:7443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    namespace: default
+    user: admin
+  name: admin
+current-context: admin
+kind: Config
+`
+
+var kubeconfig2 = `apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: test
+    server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:7443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    namespace: default
+    user: admin
+  name: admin
+current-context: admin
+kind: Config
+`
+
+func Test_removeCertAuthDataFromKubeConfig(t *testing.T) {
+	tests := []struct {
+		name       string
+		kubeconfig []byte
+	}{
+		{
+			name:       "No cluster",
+			kubeconfig: []byte(kubeconfig0),
+		},
+		{
+			name:       "Single cluster",
+			kubeconfig: []byte(kubeconfig1),
+		},
+		{
+			name:       "Two cluster",
+			kubeconfig: []byte(kubeconfig2),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := removeCertAuthDataFromKubeConfig(tt.kubeconfig)
+			assert.Nil(t, err, "No error removing certificate-authority-data")
+
+			gotConfig, err := clientcmd.Load(got)
+			assert.Nil(t, err, "No error loading updated kubeconfig")
+
+			for _, v := range gotConfig.Clusters {
+				assert.Nil(t, v.CertificateAuthorityData, "No certificate-authority-data")
+				assert.True(t, v.InsecureSkipTLSVerify)
+			}
+		})
+	}
+}
+
+func Test_hasNameCerts(t *testing.T) {
+	hcNN1 := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
+	hc1 := getHostedCluster(hcNN1)
+
+	hcNN2 := types.NamespacedName{Name: "hd-2", Namespace: "clusters"}
+	hc2 := getHostedCluster(hcNN2)
+	hc2.Spec.Configuration = &hyperv1beta1.ClusterConfiguration{
+		APIServer: &configv1.APIServerSpec{
+			ServingCerts: configv1.APIServerServingCerts{
+				NamedCertificates: []configv1.APIServerNamedServingCert{
+					{
+						ServingCertificate: configv1.SecretNameReference{
+							Name: "test-tls",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	tests := []struct {
+		name string
+		hc   *hyperv1beta1.HostedCluster
+		want bool
+	}{
+		{
+			name: "No ServingCertificate",
+			hc:   hc1,
+			want: false,
+		},
+		{
+			name: "Has ServingCertificate",
+			hc:   hc2,
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasNameCerts(tt.hc); got != tt.want {
+				t.Errorf("hasNameCerts() = %v, want %v", got, tt.want)
 			}
 		})
 	}
