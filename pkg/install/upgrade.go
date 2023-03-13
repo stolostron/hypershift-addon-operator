@@ -35,6 +35,7 @@ type UpgradeController struct {
 	extDnsSecret              corev1.Secret
 	privateLinkSecret         corev1.Secret
 	imageOverrideConfigmap    corev1.ConfigMap
+	installFlagsConfigmap     corev1.ConfigMap
 	reinstallNeeded           bool // this is used only for code test
 	awsPlatform               bool // this is used only for code test
 	startup                   bool //
@@ -116,6 +117,13 @@ func (c *UpgradeController) installOptionsChanged() bool {
 		return true
 	}
 
+	// check for changes in hypershift operator installation flags configmap
+	newInstallFlagsCM := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
+	if c.configmapDataChanged(newInstallFlagsCM, c.installFlagsConfigmap, util.HypershiftInstallFlagsCM) {
+		c.installFlagsConfigmap = newInstallFlagsCM // save the new configmap for the next cycle of comparison
+		return true
+	}
+
 	return false
 }
 
@@ -140,25 +148,28 @@ func (c *UpgradeController) secretDataChanged(oldSecret, newSecret corev1.Secret
 
 func (c *UpgradeController) upgradeImageCheck() bool {
 	// Get the image override configmap from the hub and compare it to the controller's cached image override configmap
-	newImageOverrideConfigmap := c.getImageOverrideMapFromHub()
-
-	// If changed, we want to re-install the operator
-	if !reflect.DeepEqual(c.imageOverrideConfigmap.Data, newImageOverrideConfigmap.Data) {
-		c.log.Info(fmt.Sprintf("the image override configmap(%s) has changed", util.HypershiftOverrideImagesCM))
+	newImageOverrideConfigmap := c.getConfigMapFromHub(util.HypershiftOverrideImagesCM)
+	if c.configmapDataChanged(newImageOverrideConfigmap, c.imageOverrideConfigmap, util.HypershiftOverrideImagesCM) {
 		c.imageOverrideConfigmap = newImageOverrideConfigmap // save the new configmap for the next cycle of comparison
 		return true
 	}
-
 	return false
 }
 
-func (c *UpgradeController) getImageOverrideMapFromHub() corev1.ConfigMap {
-	overrideImagesCm := &corev1.ConfigMap{}
-	overrideImagesCmKey := types.NamespacedName{Name: util.HypershiftOverrideImagesCM, Namespace: c.clusterName}
-	if err := c.hubClient.Get(context.TODO(), overrideImagesCmKey, overrideImagesCm); err != nil && !errors.IsNotFound(err) {
+func (c *UpgradeController) getConfigMapFromHub(cmName string) corev1.ConfigMap {
+	cm := &corev1.ConfigMap{}
+	cmKey := types.NamespacedName{Name: cmName, Namespace: c.clusterName}
+	if err := c.hubClient.Get(context.TODO(), cmKey, cm); err != nil && !errors.IsNotFound(err) {
 		c.log.Error(err, "failed to get configmap from the hub: ")
-		// Update hub image override configmap sync metrics count
-		metrics.HubResourceSyncFailureCount.WithLabelValues("configmap").Inc()
 	}
-	return *overrideImagesCm
+	return *cm
+}
+
+func (c *UpgradeController) configmapDataChanged(oldCM, newCM corev1.ConfigMap, cmName string) bool {
+	// If changed, we want to re-install the operator
+	if !reflect.DeepEqual(oldCM.Data, newCM.Data) {
+		c.log.Info(fmt.Sprintf("the configmap(%s) has changed", cmName))
+		return true
+	}
+	return false
 }

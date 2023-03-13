@@ -316,28 +316,9 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	// cache the external DNS secret for comparison againt the hub's to detect any change
 	c.extDnsSecret = *sExtDNS
 
-	//Enable control plane telemetry forwarding
-	telemetryArgs := []string{
-		"--platform-monitoring", "OperatorOnly",
-	}
-	args = append(args, telemetryArgs...)
-
-	// Enable RHOBS
-	if strings.EqualFold(os.Getenv("RHOBS_MONITORING"), "true") {
-		c.log.Info("RHOBS_MONITORING=true, adding --rhobs-monitoring true --metrics-set SRE")
-		rhobsArgs := []string{
-			"--rhobs-monitoring",
-			"true",
-			"--metrics-set",
-			"SRE",
-		}
-		args = append(args, rhobsArgs...)
-	} else {
-		uwmArgs := []string{
-			"--enable-uwm-telemetry-remote-write",
-		}
-		args = append(args, uwmArgs...)
-	}
+	// Get the hypershift operator installation flags configmap from the hub
+	installFlagsCM := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
+	c.installFlagsConfigmap = installFlagsCM
 
 	hypershiftImage := c.operatorImage
 	imageStreamCMData := make(map[string]string, 0)
@@ -359,13 +340,18 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			!(c.operatorImagesUpdated(im, *operatorDeployment) ||
 				c.secretDataUpdated(util.HypershiftBucketSecretName, *se) ||
 				c.secretDataUpdated(util.HypershiftPrivateLinkSecretName, *spl) ||
-				c.secretDataUpdated(util.HypershiftExternalDNSSecretName, *sExtDNS)) {
-			c.log.Info("no change in hypershift operator images and secrets, skipping hypershift operator installation")
+				c.secretDataUpdated(util.HypershiftExternalDNSSecretName, *sExtDNS) ||
+				c.configmapDataUpdated(util.HypershiftInstallFlagsCM, installFlagsCM)) {
+			c.log.Info("no change in hypershift operator images, secrets and install flags, skipping hypershift operator installation")
 			return nil
 		}
 	} else {
 		args = append(args, "--hypershift-image", hypershiftImage)
 	}
+
+	// migrate the install flags that we used to add by default
+	// and add the rest of operator installation flags user specified
+	args = append(args, c.buildOtherInstallFlags(installFlagsCM)...)
 
 	// Emit metrics to indicate that hypershift operator installation is in progress
 	metrics.InInstallationOrUpgradeBool.Set(1)
@@ -415,6 +401,9 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	if err := c.saveSecretLocally(ctx, sExtDNS); err != nil { // external DNS secret
 		return err
 	}
+	if err := c.saveConfigmapLocally(ctx, &installFlagsCM); err != nil { // hypershift operator installation flags
+		return err
+	}
 
 	// Add label and update image pull secret in Hypershift deployment
 	err = c.updateHyperShiftDeployment(ctx)
@@ -423,6 +412,103 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	}
 
 	return nil
+}
+
+func (c *UpgradeController) buildOtherInstallFlags(installFlagsCM corev1.ConfigMap) []string {
+	flagsToAdd := []string{}
+	flagsToRemove := []string{}
+
+	if installFlagsCM.Data != nil {
+		c.log.Info(fmt.Sprintf("found %s configmap for the hypershift operator installation", util.HypershiftInstallFlagsCM))
+		flagsToAdd = strings.Fields(installFlagsCM.Data["installFlagsToAdd"])
+		flagsToRemove = strings.Fields(installFlagsCM.Data["installFlagsToRemove"])
+	}
+
+	args := []string{}
+
+	//Enable control plane telemetry forwarding
+	telemetryArgs := []string{
+		"--platform-monitoring", "OperatorOnly",
+	}
+	if !contains(flagsToRemove, "--platform-monitoring") { // if the flagsToRemove contains --platform-monitoring, do not add it
+		if contains(flagsToAdd, "--platform-monitoring") { // if the flagsToAdd contains --platform-monitoring, get the value from the list
+			val := getParamValue(flagsToAdd, "--platform-monitoring")
+			if val == "" {
+				c.log.Info("--platform-monitoring does not have any value in installParamsToAdd, setting it to default [ --platform-monitoringOperatorOnly ]")
+				args = append(args, telemetryArgs...)
+			} else {
+				c.log.Info(fmt.Sprintf("updating the install flag [ --platform-monitoring %s ]", val))
+				args = append(args, []string{
+					"--platform-monitoring", val,
+				}...)
+			}
+		} else {
+			args = append(args, telemetryArgs...)
+		}
+	}
+
+	// Enable RHOBS
+	if strings.EqualFold(os.Getenv("RHOBS_MONITORING"), "true") {
+		c.log.Info("RHOBS_MONITORING=true, adding --rhobs-monitoring true --metrics-set SRE")
+		rhobsArgs := []string{
+			"--rhobs-monitoring",
+			"true",
+			"--metrics-set",
+			"SRE",
+		}
+		args = append(args, rhobsArgs...)
+	} else {
+		// add --enable-uwm-telemetry-remote-write only if RHOBS monitoring is not enabled
+		uwmArgs := []string{
+			"--enable-uwm-telemetry-remote-write",
+		}
+		if contains(flagsToRemove, "--enable-uwm-telemetry-remote-write") {
+			c.log.Info("installFlagsToRemove contains --enable-uwm-telemetry-remote-write, removing it from the install flag list")
+		} else {
+			args = append(args, uwmArgs...)
+		}
+	}
+
+	// now add the rest of installParamsToAdd
+	for _, flag := range flagsToAdd {
+		// if the string is a flag key having -- prefix and not already added to the args
+		if strings.HasPrefix(flag, "--") && !contains(args, flag) {
+			flagVal := getParamValue(flagsToAdd, flag)
+			flagArgs := []string{flag}
+			if flagVal != "" {
+				flagArgs = append(flagArgs, flagVal)
+			}
+			args = append(args, flagArgs...)
+			c.log.Info(fmt.Sprintf("install flag [ %v ] added", flagArgs))
+		}
+	}
+
+	return args
+}
+
+func contains(theList []string, flagToFind string) bool {
+	for _, flag := range theList {
+		if flag == flagToFind {
+			return true
+		}
+	}
+	return false
+}
+
+func getParamValue(s []string, e string) string {
+	for i, a := range s {
+		if a == e {
+			if i == (len(s) - 1) {
+				return ""
+			}
+			if !strings.HasPrefix(s[i+1], "--") {
+				return s[i+1]
+			} else {
+				return ""
+			}
+		}
+	}
+	return ""
 }
 
 func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret, regionRequired bool) error {
@@ -473,6 +559,24 @@ func (c *UpgradeController) saveSecretLocally(ctx context.Context, hubSecret *co
 		c.log.Info(fmt.Sprintf("save the secret (%s/%s) locally on cluster %s", c.addonNamespace, hubSecret.Name, c.clusterName))
 		_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeSecret, func() error {
 			spokeSecret.Data = hubSecret.Data
+			return nil
+		})
+		return err
+	}
+	return nil
+}
+
+func (c *UpgradeController) saveConfigmapLocally(ctx context.Context, hubConfigmap *corev1.ConfigMap) error {
+	if hubConfigmap.Name != "" {
+		spokeConfigmap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hubConfigmap.Name,
+				Namespace: c.addonNamespace,
+			},
+		}
+		c.log.Info(fmt.Sprintf("save the configmap (%s/%s) locally on cluster %s", c.addonNamespace, hubConfigmap.Name, c.clusterName))
+		_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeConfigmap, func() error {
+			spokeConfigmap.Data = hubConfigmap.Data
 			return nil
 		})
 		return err
@@ -611,7 +715,7 @@ func (c *UpgradeController) readInDownstreamOverride() ([]byte, error) {
 
 	// This is the user provided upgrade images configmap
 	// Override the image values in the installer provided imagestream with this
-	imUpgradeConfigMap := c.getImageOverrideMapFromHub()
+	imUpgradeConfigMap := c.getConfigMapFromHub(util.HypershiftOverrideImagesCM)
 	if imUpgradeConfigMap.Data != nil {
 		c.log.Info(fmt.Sprintf("found %s configmap, overriding hypershift images in the imagestream", util.HypershiftOverrideImagesCM))
 
@@ -748,6 +852,22 @@ func (c *UpgradeController) secretDataUpdated(secretName string, secret corev1.S
 
 	if !reflect.DeepEqual(localSecret.Data, secret.Data) { // compare only the secret data
 		c.log.Info("the secret has changed")
+		return true
+	}
+
+	return false
+}
+
+func (c *UpgradeController) configmapDataUpdated(cmName string, cm corev1.ConfigMap) bool {
+	c.log.Info(fmt.Sprintf("comparing hypershift operator installation flags configmap(%s) to the locally saved configmap", cmName))
+	cmKey := types.NamespacedName{Name: cmName, Namespace: c.addonNamespace}
+	localCM := &corev1.ConfigMap{}
+	if err := c.spokeUncachedClient.Get(context.TODO(), cmKey, localCM); err != nil && !apierrors.IsNotFound(err) {
+		c.log.Error(err, "failed to find configmap:") // just log and continue
+	}
+
+	if !reflect.DeepEqual(localCM.Data, cm.Data) { // compare only the configmap data
+		c.log.Info("the configmap has changed")
 		return true
 	}
 

@@ -11,6 +11,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stolostron/hypershift-addon-operator/pkg/install"
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"github.com/stretchr/testify/assert"
@@ -719,6 +720,7 @@ func TestAgentCommand(t *testing.T) {
 func TestCleanupCommand(t *testing.T) {
 	ctx := context.Background()
 	zapLog, _ := zap.NewDevelopment()
+
 	cleanupCmd := NewCleanupCommand("operator", zapr.NewLogger(zapLog))
 	assert.Equal(t, "cleanup", cleanupCmd.Use)
 
@@ -730,7 +732,10 @@ func TestCleanupCommand(t *testing.T) {
 		AddonNamespace: "hypershift",
 	}
 
-	err := o.runCleanup(ctx, nil)
+	uCtrl := install.NewUpgradeController(nil, initClient(), o.Log, o.AddonName, o.AddonNamespace, "my-spoke-cluster",
+		"my-test-image", "my-pull-secret", true, ctx)
+
+	err := o.runCleanup(ctx, uCtrl)
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 }
 

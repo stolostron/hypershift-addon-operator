@@ -10,13 +10,13 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	"k8s.io/apimachinery/pkg/types"
 )
 
@@ -228,11 +228,10 @@ func getTestClusterRole() *rbacv1.ClusterRole {
 func getTestMCE(name string, namespace string) *mcev1.MultiClusterEngine {
 	mce := &mcev1.MultiClusterEngine{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        name,
+			Name: name,
 		},
 		Spec: mcev1.MultiClusterEngineSpec{
-			TargetNamespace:    namespace,
-			
+			TargetNamespace: namespace,
 		},
 	}
 	return mce

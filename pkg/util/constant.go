@@ -27,6 +27,7 @@ const (
 
 	HypershiftOverrideImagesCM = "hypershift-override-images"
 	ImageUpgradeControllerName = "hypershift-image-upgrade"
+	HypershiftInstallFlagsCM   = "hypershift-operator-install-flags"
 
 	HypershiftOperatorNamespace       = "hypershift"
 	HypershiftOperatorName            = "operator"
