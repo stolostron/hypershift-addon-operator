@@ -486,8 +486,8 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			hubMirrorSecret.SetAnnotations(map[string]string{util.ManagedClusterAnnoKey: managedClusterAnnoValue})
 			hubMirrorSecret.Data = se.Data
 
-			// Create or update external-managed-kubeconfig secret for managed cluster registration agent
 			if strings.HasSuffix(hubMirrorSecret.Name, "admin-kubeconfig") {
+				// Create or update external-managed-kubeconfig secret for managed cluster registration agent
 				c.log.Info("Generating external-managed-kubeconfig secret")
 
 				extSecret := se.DeepCopy()
@@ -504,6 +504,23 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 				} else {
 					c.log.Info("Successfully generated external-managed-kubeconfig secret")
+				}
+
+				// Replace certificate-authority-data from admin-kubeconfig
+				servingCert := getServingCert(hc)
+				if servingCert != "" {
+					kubeconfig := hubMirrorSecret.Data["kubeconfig"]
+
+					updatedKubeconfig, err := c.replaceCertAuthDataInKubeConfig(ctx, kubeconfig, hc.Namespace, servingCert)
+					if err != nil {
+						lastErr = err
+						c.log.Info("failed to replace certificate-authority-data from kubeconfig")
+						continue
+					}
+
+					c.log.Info(fmt.Sprintf("Replaced certificate-authority-data from secret: %v", hubMirrorSecret.Name))
+
+					hubMirrorSecret.Data["kubeconfig"] = updatedKubeconfig
 				}
 			}
 
@@ -806,4 +823,49 @@ func (o *AgentOptions) runCleanup(ctx context.Context, uCtrl *install.UpgradeCon
 	}
 
 	return nil
+}
+
+func (c *agentController) replaceCertAuthDataInKubeConfig(ctx context.Context, kubeconfig []byte, certNs, certName string) ([]byte, error) {
+	secret := &corev1.Secret{}
+	if err := c.spokeClient.Get(ctx, types.NamespacedName{Namespace: certNs, Name: certName}, secret); err != nil {
+		c.log.Info(fmt.Sprintf("failed to get secret for serving certificate %v/%v", certNs, certName))
+
+		return nil, err
+	}
+
+	tlsCrt := secret.Data["tls.crt"]
+	if tlsCrt == nil {
+		err := fmt.Errorf("invalid serving certificate secret")
+		c.log.Info(err.Error())
+
+		return nil, err
+	}
+
+	config, err := clientcmd.Load(kubeconfig)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, v := range config.Clusters {
+		v.CertificateAuthorityData = tlsCrt
+	}
+
+	updatedConfig, err := clientcmd.Write(*config)
+	if err != nil {
+		return nil, err
+	}
+
+	return updatedConfig, nil
+}
+
+// Retrieves the first serving certificate
+func getServingCert(hc *hyperv1beta1.HostedCluster) string {
+	if hc.Spec.Configuration != nil &&
+		hc.Spec.Configuration.APIServer != nil &&
+		&hc.Spec.Configuration.APIServer.ServingCerts != nil &&
+		len(hc.Spec.Configuration.APIServer.ServingCerts.NamedCertificates) > 0 {
+		return hc.Spec.Configuration.APIServer.ServingCerts.NamedCertificates[0].ServingCertificate.Name
+	}
+
+	return ""
 }
