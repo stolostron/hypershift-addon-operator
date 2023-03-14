@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	consolev1 "github.com/openshift/api/console/v1"
 	routev1 "github.com/openshift/api/route/v1"
@@ -18,6 +20,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 func TestEnableHypershiftCLIDownload(t *testing.T) {
@@ -265,6 +268,38 @@ func TestEnableHypershiftCLIDownloadNoConsole(t *testing.T) {
 	assert.EqualError(t, err, "consoleclidownloads.console.openshift.io \"hypershift-cli-download\" not found")
 }
 
+func TestRetryCSV(t *testing.T) {
+	controllerContext := &controllercmd.ControllerContext{}
+	client := initClient()
+	zapLog, _ := zap.NewDevelopment()
+	o := &override{
+		Client:            client,
+		log:               zapr.NewLogger(zapLog),
+		operatorNamespace: controllerContext.OperatorNamespace,
+		withOverride:      false,
+	}
+
+	c := make(chan error)
+
+	// Create mock multicluster engine
+	newmce := getTestMCE("multiclusterengine", "multicluster-engine")
+	err := o.Client.Create(context.TODO(), newmce)
+
+	newcsv := getTestMCECSV("v2.2.1", true)
+	err = o.Client.Create(context.TODO(), newcsv)
+	assert.Nil(t, err, "err nil when mce csv is created successfull")
+
+	dep := getTestAddonDeployment()
+	err = o.Client.Create(context.TODO(), dep)
+
+	//Run both functions simultaneously
+	go asyncEnableHypershiftCLIDownload(client, o.log, c)
+	go asyncClusterRole(o)
+	result := <-c
+	assert.Nil(t, result, "could not get MCE")
+
+}
+
 func getTestMCECSV(version string, downstream bool) *operatorsv1alpha1.ClusterServiceVersion {
 	csv := &operatorsv1alpha1.ClusterServiceVersion{
 		TypeMeta: metav1.TypeMeta{
@@ -376,4 +411,19 @@ func getTestMCE(name string, namespace string) *mcev1.MultiClusterEngine {
 		},
 	}
 	return mce
+}
+
+func asyncClusterRole(o *override) {
+	time.Sleep(3 * time.Minute)
+	clusterRole := getTestClusterRole()
+	o.Client.Create(context.TODO(), clusterRole)
+}
+
+func asyncEnableHypershiftCLIDownload(mockClient client.Client, log logr.Logger, c chan error) {
+	err := EnableHypershiftCLIDownload(mockClient, log)
+	c <- err
+	log.Info("done async enable")
+	if err != nil {
+		log.Error(err, "async errored")
+	}
 }
