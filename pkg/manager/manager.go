@@ -75,6 +75,10 @@ var agentPermissionFiles = []string{
 	"manifests/permission/role.yaml",
 	// rolebinding to bind the above role to a certain user group
 	"manifests/permission/rolebinding.yaml",
+	// clusterrole with RBAC rules to access resources on hub
+	"manifests/permission/clusterrole.yaml",
+	// clusterrolebinding to bind the above role to a certain user group
+	"manifests/permission/clusterrolebinding.yaml",
 }
 
 type override struct {

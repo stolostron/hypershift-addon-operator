@@ -32,6 +32,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 func TestReconcile(t *testing.T) {
@@ -383,6 +384,11 @@ kind: Config`)
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelZeroClusterClaim)))
 
 	// Delete hosted cluster and reconcile
+	hc.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+	err = aCtrl.hubClient.Update(ctx, hc)
+	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
+	assert.Nil(t, err, "err nil when reconcile was successfully")
+
 	aCtrl.hubClient.Delete(ctx, hc)
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
 	assert.Nil(t, err, "err nil when reconcile was successfully")
@@ -786,7 +792,8 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 
 	kl := &operatorapiv1.Klusterlet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "klusterlet-hc-1",
+			Name:       "klusterlet-c1",
+			Finalizers: []string{"operator.open-cluster-management.io/klusterlet-hosted-cleanup"},
 		},
 	}
 	err := client.Create(ctx, kl)
@@ -805,6 +812,19 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 	err = client.Create(ctx, mc)
 	assert.Nil(t, err, "err nil when managedcluster is created successfully")
 
+	mc2 := &clusterv1.ManagedCluster{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "hc-3",
+		},
+		Spec: clusterv1.ManagedClusterSpec{
+			HubAcceptsClient:     false,
+			LeaseDurationSeconds: 0,
+		},
+	}
+	err = client.Create(ctx, mc2)
+	assert.Nil(t, err, "err nil when managedcluster is created successfully")
+
 	hcNN := types.NamespacedName{Name: "hc-1", Namespace: "clusters"}
 	hcNoAnno := getHostedCluster(hcNN)
 	err = client.Create(ctx, hcNoAnno)
@@ -814,6 +834,12 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 	hcAnno := getHostedCluster(hcNN2)
 	hcAnno.Annotations = map[string]string{util.ManagedClusterAnnoKey: "c1"}
 	err = client.Create(ctx, hcAnno)
+	assert.Nil(t, err, "err nil when hostedcluster is created successfully")
+
+	hcNN3 := types.NamespacedName{Name: "hc-3", Namespace: "clusters"}
+	hcNoKlusterlet := getHostedCluster(hcNN3)
+	hcNoKlusterlet.Annotations = map[string]string{util.ManagedClusterAnnoKey: "hc-3"}
+	err = client.Create(ctx, hcNoKlusterlet)
 	assert.Nil(t, err, "err nil when hostedcluster is created successfully")
 
 	aCtrl := &agentController{
@@ -834,23 +860,30 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 		name    string
 		hc      *hyperv1beta1.HostedCluster
 		mc      *clusterv1.ManagedCluster
+		k       *operatorapiv1.Klusterlet
 		wantErr bool
 	}{
 		{
-			name:    "Delete nil hostedhosted",
+			name:    "Delete nil hosted cluster",
 			hc:      nil,
 			wantErr: true,
 		},
 		{
-			name:    "Delete hostedhosted with no managedcluster-name annotation",
+			name:    "Delete hosted cluster with no managedcluster-name annotation",
 			hc:      hcNoAnno,
-			mc:      mc,
-			wantErr: true,
+			wantErr: false,
 		},
 		{
-			name:    "Delete hostedhosted with no managedcluster-name annotation",
+			name:    "Delete hosted cluster with managedcluster-name annotation",
 			hc:      hcAnno,
 			mc:      mc,
+			k:       kl,
+			wantErr: false,
+		},
+		{
+			name:    "Delete hosted cluster with no klusterlet",
+			hc:      hcNoKlusterlet,
+			mc:      mc2,
 			wantErr: false,
 		},
 	}
@@ -860,17 +893,22 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 				t.Errorf("agentController.deleteManagedCluster() error = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			if mc != nil {
+			if tt.mc != nil {
 				gotMc := &clusterv1.ManagedCluster{}
-				err = client.Get(ctx, types.NamespacedName{Name: mc.Name, Namespace: mc.Namespace}, gotMc)
+				err = client.Get(ctx, types.NamespacedName{Name: tt.mc.Name, Namespace: tt.mc.Namespace}, gotMc)
 
-				if !tt.wantErr {
-					// Managed cluster is deleted
-					assert.NotNil(t, err, "err not nil if managed cluster is not found")
-					assert.True(t, apierrors.IsNotFound(err), "true if error is type IsNotFound")
-				} else {
-					assert.Nil(t, err, "err nil if managed cluster is found")
-				}
+				// Managed cluster is deleted
+				assert.NotNil(t, err, "err not nil if managed cluster is not found")
+				assert.True(t, apierrors.IsNotFound(err), "true if error is type IsNotFound")
+			}
+
+			if tt.k != nil {
+				// verify klusterlet has finalizer removed
+				gotKl := &operatorapiv1.Klusterlet{}
+				err = client.Get(ctx, types.NamespacedName{Name: tt.k.Name, Namespace: tt.k.Namespace}, gotKl)
+				assert.Nil(t, err, "err nil if klusterlet is found")
+				hasFinalizer := controllerutil.ContainsFinalizer(gotKl, "operator.open-cluster-management.io/klusterlet-hosted-cleanup")
+				assert.False(t, hasFinalizer, "false if finalizer is removed")
 			}
 		})
 	}
