@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"strconv"
 
 	"github.com/go-logr/logr"
 	"github.com/openshift/library-go/pkg/assets"
@@ -131,19 +130,11 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 			os.Exit(1)
 		}
 
-		//Don't create and enable hypershift-cli-download if OCP web console not installed
-		cliDownloadList := &consolev1.ConsoleCLIDownloadList{}
-		err = hubClient.List(context.TODO(), cliDownloadList)
-		if err == nil && (len(cliDownloadList.Items) > 0) {
-			log.Info("enabling hypershift CLI download ..")
-			err = EnableHypershiftCLIDownload(hubClient, log)
-			if err != nil {
-				// unable to install HypershiftCLIDownload is not critical.
-				// log and continue
-				log.Error(err, "failed to enable hypershift CLI download")
-			}
-		} else {
-			log.Info(fmt.Sprintf("skip to enable hypershift CLI download. err: %s, cli download count: %s", err.Error(), strconv.Itoa(len(cliDownloadList.Items))))
+		err = EnableHypershiftCLIDownload(hubClient, log)
+		if err != nil {
+			// unable to install HypershiftCLIDownload is not critical.
+			// log and continue
+			log.Error(err, "failed to enable hypershift CLI download")
 		}
 
 		<-ctx.Done()

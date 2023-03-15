@@ -173,20 +173,34 @@ func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log l
 		return err
 	}
 
-	// Construct and apply ConsoleCLIDownload
-	cliDownload, err := getConsoleDownload(route.Spec.Host, log)
+	enableCLIDownload := false
+	cliDownloadList := &consolev1.ConsoleCLIDownloadList{}
+	err = hubclient.List(context.TODO(), cliDownloadList)
 	if err != nil {
-		log.Error(err, "failed to prepare hypershift-cli-download ConsoleCLIDownload")
-		return err
+		log.Error(err, "failed to get cliDownloadList. Skip installing the hypershift CLI download.")
+	} else {
+		if len(cliDownloadList.Items) > 0 {
+			log.Info("found at least one ConsoleCLIDownload resource. Enabling the hypershift ConsoleCLIDownload")
+			enableCLIDownload = true
+		}
 	}
-	// set ownerRef for garbage collection after the hypershift feature is disabled
-	cliDownload.SetOwnerReferences([]metav1.OwnerReference{*clusterScopedOwnerRef})
-	_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, cliDownload, func() error { return nil })
-	if err != nil {
-		log.Error(err, "failed to create or update hypershift-cli-download ConsoleCLIDownload")
-		return err
+
+	if enableCLIDownload {
+		// Construct and apply ConsoleCLIDownload
+		cliDownload, err := getConsoleDownload(route.Spec.Host, log)
+		if err != nil {
+			log.Error(err, "failed to prepare hypershift-cli-download ConsoleCLIDownload")
+			return err
+		}
+		// set ownerRef for garbage collection after the hypershift feature is disabled
+		cliDownload.SetOwnerReferences([]metav1.OwnerReference{*clusterScopedOwnerRef})
+		_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, cliDownload, func() error { return nil })
+		if err != nil {
+			log.Error(err, "failed to create or update hypershift-cli-download ConsoleCLIDownload")
+			return err
+		}
+		log.Info("hypershift-cli-download ConsoleCLIDownload was applied successfully")
 	}
-	log.Info("hypershift-cli-download ConsoleCLIDownload was applied successfully")
 
 	return nil
 }
