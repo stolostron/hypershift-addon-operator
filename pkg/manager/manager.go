@@ -31,6 +31,7 @@ import (
 	"github.com/openshift/hypershift/support/rhobsmonitoring"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	appsv1 "k8s.io/api/apps/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -58,6 +59,7 @@ func init() {
 	utilruntime.Must(rbacv1.AddToScheme(genericScheme))
 	utilruntime.Must(monitoringv1.AddToScheme(genericScheme))
 	utilruntime.Must(rhobsmonitoring.AddToScheme(genericScheme))
+	utilruntime.Must(mcev1.AddToScheme(genericScheme))
 }
 
 const (
@@ -128,16 +130,11 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 			os.Exit(1)
 		}
 
-		//Don't create and enable hypershift-cli-download if OCP web console not installed
-		cliDownloadCRD := &consolev1.ConsoleCLIDownload{}
-		err = hubClient.Get(context.TODO(), client.ObjectKey{}, cliDownloadCRD)
-		if err == nil {
-			err = EnableHypershiftCLIDownload(hubClient, log)
-			if err != nil {
-				// unable to install HypershiftCLIDownload is not critical.
-				// log and continue
-				log.Error(err, "failed to enable hypershift CLI download")
-			}
+		err = EnableHypershiftCLIDownload(hubClient, log)
+		if err != nil {
+			// unable to install HypershiftCLIDownload is not critical.
+			// log and continue
+			log.Error(err, "failed to enable hypershift CLI download")
 		}
 
 		<-ctx.Done()
