@@ -105,14 +105,16 @@ func getHypershiftCLIDownloadImage(csv *operatorsv1alpha1.ClusterServiceVersion,
 func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log logr.Logger) error {
 	// Set owner reference to the addon manager deployment so that when the feature is disabled, HypershiftCLIDownload
 	// is uninstalled
-	ownerRef, envVars, err := getOwnerRef(hubclient, log)
+	ownerRef, envVars, installNamespace, err := getOwnerRef(hubclient, log)
 	if err != nil {
 		log.Error(err, "failed to get owner reference for hypershift-cli-download. abort.")
 		return err
 	}
 
+	log.Info("deploying hypershift CLI download in namespace " + installNamespace)
+
 	// Deployment
-	deployment, err := getCLIDeployment(cliImage, envVars, log)
+	deployment, err := getCLIDeployment(cliImage, envVars, log, installNamespace)
 	if err != nil {
 		log.Error(err, "failed to prepare hypershift-cli-download deployment")
 		return err
@@ -127,7 +129,7 @@ func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log l
 	log.Info("hypershift-cli-download deployment was applied successfully")
 
 	// Service
-	service, err := getService(log)
+	service, err := getService(log, installNamespace)
 	if err != nil {
 		log.Error(err, "failed to prepare hypershift-cli-download service")
 		return err
@@ -142,7 +144,7 @@ func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log l
 	log.Info("hypershift-cli-download service was applied successfully")
 
 	// Route
-	route, err := getRoute(log)
+	route, err := getRoute(log, installNamespace)
 	if err != nil {
 		log.Error(err, "failed to prepare hypershift-cli-download route")
 		return err
@@ -189,7 +191,7 @@ func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log l
 	return nil
 }
 
-func getCLIDeployment(cliImage string, envVars []corev1.EnvVar, log logr.Logger) (*appsv1.Deployment, error) {
+func getCLIDeployment(cliImage string, envVars []corev1.EnvVar, log logr.Logger, installNamespace string) (*appsv1.Deployment, error) {
 	depFile, err := fs.ReadFile("manifests/cli/deployment.yaml")
 	if err != nil {
 		log.Error(err, "failed to read manifests/cli/deployment.yaml")
@@ -202,6 +204,8 @@ func getCLIDeployment(cliImage string, envVars []corev1.EnvVar, log logr.Logger)
 		log.Error(err, "failed to parse manifests/cli/deployment.yaml")
 		return nil, err
 	}
+
+	dep.SetNamespace(installNamespace)
 
 	// set the deployment with the hypershift_cli image from CSV
 	dep.Spec.Template.Spec.Containers[0].Image = cliImage
@@ -221,7 +225,7 @@ func getCLIDeployment(cliImage string, envVars []corev1.EnvVar, log logr.Logger)
 	return dep, nil
 }
 
-func getService(log logr.Logger) (*corev1.Service, error) {
+func getService(log logr.Logger, installNamespace string) (*corev1.Service, error) {
 	serviceFile, err := fs.ReadFile("manifests/cli/service.yaml")
 	if err != nil {
 		log.Error(err, "failed to read manifests/cli/service.yaml")
@@ -235,10 +239,12 @@ func getService(log logr.Logger) (*corev1.Service, error) {
 		return nil, err
 	}
 
+	service.SetNamespace(installNamespace)
+
 	return service, nil
 }
 
-func getRoute(log logr.Logger) (*routev1.Route, error) {
+func getRoute(log logr.Logger, installNamespace string) (*routev1.Route, error) {
 	routeFile, err := fs.ReadFile("manifests/cli/route.yaml")
 	if err != nil {
 		log.Error(err, "failed to read manifests/cli/route.yaml")
@@ -251,6 +257,8 @@ func getRoute(log logr.Logger) (*routev1.Route, error) {
 		log.Error(err, "failed to parse manifests/cli/route.yaml")
 		return nil, err
 	}
+
+	route.SetNamespace(installNamespace)
 
 	return route, nil
 }
@@ -297,7 +305,7 @@ func getConsoleDownload(routeUrl string, log logr.Logger) (*consolev1.ConsoleCLI
 	return cliDownload, nil
 }
 
-func getOwnerRef(hubclient client.Client, log logr.Logger) (*metav1.OwnerReference, []corev1.EnvVar, error) {
+func getOwnerRef(hubclient client.Client, log logr.Logger) (*metav1.OwnerReference, []corev1.EnvVar, string, error) {
 
 	//get mce target namespace for operand deployments
 	deploymentNamespace := "multicluster-engine"
@@ -306,13 +314,13 @@ func getOwnerRef(hubclient client.Client, log logr.Logger) (*metav1.OwnerReferen
 	err := hubclient.List(context.TODO(), mceList)
 	if err != nil {
 		log.Error(err, "failed to get multicluster engine list")
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	if len(mceList.Items) == 0 {
 		err := errors.New("no MCE found")
 		log.Error(err, "no MCE found")
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	//Only 1 multicluster engine, select first
@@ -324,11 +332,11 @@ func getOwnerRef(hubclient client.Client, log logr.Logger) (*metav1.OwnerReferen
 	err = hubclient.Get(context.TODO(), types.NamespacedName{Namespace: deploymentNamespace, Name: "hypershift-addon-manager"}, deployment)
 	if err != nil {
 		log.Error(err, "failed to get hypershift-addon-manager deployment")
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	ownerRef := metav1.NewControllerRef(deployment.GetObjectMeta(), schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"})
-	return ownerRef, deployment.Spec.Template.Spec.Containers[0].Env, nil
+	return ownerRef, deployment.Spec.Template.Spec.Containers[0].Env, deploymentNamespace, nil
 }
 
 func getClusterScopedOwnerRef(hubclient client.Client, log logr.Logger) (*metav1.OwnerReference, error) {
