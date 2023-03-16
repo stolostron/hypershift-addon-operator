@@ -101,7 +101,7 @@ func TestCreateHostedClusterClaim(t *testing.T) {
 			name:                   "create hosted cluster claim failed, secret not found",
 			hostedclusterName:      "hc1",
 			hostedclusterNamespace: "clusters",
-			expectErr:              "not found",
+			expectErr:              "the secret does not have any data",
 			validateFunc: func(t *testing.T, runtimeClient ctrlclient.Client, clusterClient clusterclientset.Interface) {
 				_, err := clusterClient.ClusterV1alpha1().ClusterClaims().Get(context.TODO(), hypershiftHostedClusterClaimKey, metav1.GetOptions{})
 				assert.True(t, errors.IsNotFound(err))
@@ -117,8 +117,15 @@ func TestCreateHostedClusterClaim(t *testing.T) {
 				recorder:    eventstesting.NewTestingEventRecorder(t),
 			}
 
+			adminKubeconfigSecret := &corev1.Secret{}
+			_ = client.Get(context.TODO(), types.NamespacedName{Namespace: c.hostedclusterNamespace, Name: fmt.Sprintf("%s-admin-kubeconfig", c.hostedclusterName)}, adminKubeconfigSecret)
+
+			if adminKubeconfigSecret.Data == nil {
+				fmt.Println("Data is nil")
+			}
+
 			fakeClusterCS := clustercsfake.NewSimpleClientset()
-			err := ctrl.createHostedClusterClaim(context.TODO(), types.NamespacedName{Namespace: c.hostedclusterNamespace, Name: fmt.Sprintf("%s-admin-kubeconfig", c.hostedclusterName)},
+			err := ctrl.createHostedClusterClaim(context.TODO(), adminKubeconfigSecret,
 				func(secret *corev1.Secret) (clusterclientset.Interface, error) {
 					return fakeClusterCS, nil
 				})
