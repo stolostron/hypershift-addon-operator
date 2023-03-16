@@ -457,6 +457,8 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
+	adminKubeConfigSecretWithCert := &corev1.Secret{}
+
 	createOrUpdateMirrorSecrets := func() error {
 		var lastErr error
 		managedClusterAnnoValue, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
@@ -522,11 +524,20 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 					hubMirrorSecret.Data["kubeconfig"] = updatedKubeconfig
 				}
+
+				// Save this admin kubeconfig secret to use later to create the cluster claim
+				// which requires connection to the hosted cluster's API server
+				adminKubeConfigSecretWithCert = hubMirrorSecret
 			}
 
-			nilFunc := func() error { return nil }
+			mutateFunc := func(secret *corev1.Secret, data map[string][]byte) controllerutil.MutateFn {
+				return func() error {
+					secret.Data = data
+					return nil
+				}
+			}
 
-			_, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, hubMirrorSecret, nilFunc)
+			_, err := controllerutil.CreateOrUpdate(ctx, c.hubClient, hubMirrorSecret, mutateFunc(hubMirrorSecret, hubMirrorSecret.Data))
 			if err != nil {
 				lastErr = err
 				c.log.Error(err, fmt.Sprintf("failed to createOrUpdate hostedcluster secret %s to hub", client.ObjectKeyFromObject(hubMirrorSecret)))
@@ -544,13 +555,13 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}, nil
 	}
 
-	if err := c.createHostedClusterClaim(ctx, types.NamespacedName{Namespace: hc.Namespace, Name: hc.Status.KubeConfig.Name},
+	if err := c.createHostedClusterClaim(ctx, adminKubeConfigSecretWithCert,
 		generateClusterClientFromSecret); err != nil {
 		// just log the infomation and wait for the next reconcile to retry.
 		// since the hosted cluster may:
 		//   - not available now
 		//   - have not been imported to the hub, and there is no clusterclaim CRD.
-		c.log.V(4).Info("unable to create hosted cluster claim, wait for the next retry", "error", err.Error())
+		c.log.Info("unable to create hosted cluster claim, wait for the next retry", "error", err.Error())
 		return ctrl.Result{Requeue: true, RequeueAfter: 1 * time.Minute}, nil
 	}
 

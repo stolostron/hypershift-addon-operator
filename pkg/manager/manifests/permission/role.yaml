@@ -6,7 +6,7 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets", "configmaps"]
-    verbs: ["get", "list", "watch", "create", "delete"]
+    verbs: ["get", "list", "watch", "create", "delete", "update"]
   - apiGroups: ["addon.open-cluster-management.io"]
     resources: ["managedclusteraddons"]
     verbs: ["get", "list", "watch", "update", "patch"]
