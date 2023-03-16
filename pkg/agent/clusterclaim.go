@@ -11,7 +11,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
 
 	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
 
@@ -87,14 +86,11 @@ func (c *agentController) createHostedClusterZeroClusterClaim(ctx context.Contex
 	return createOrUpdate(ctx, c.spokeClustersClient, hcZeroClaim)
 }
 
-func (c *agentController) createHostedClusterClaim(ctx context.Context, secretKey types.NamespacedName,
+func (c *agentController) createHostedClusterClaim(ctx context.Context, secret *corev1.Secret,
 	generateClusterClientFromSecret func(secret *corev1.Secret) (clusterclientset.Interface, error)) error {
-	secret := &corev1.Secret{}
-	err := c.spokeClient.Get(ctx, secretKey, secret)
-	if err != nil {
-		return fmt.Errorf("unable to get hosted secret %s/%s, err: %w", secretKey.Namespace, secretKey.Name, err)
+	if secret.Data == nil {
+		return fmt.Errorf("the secret does not have any data")
 	}
-
 	clusterClient, err := generateClusterClientFromSecret(secret)
 	if err != nil {
 		return fmt.Errorf("failed to create spoke clusters client, err: %w", err)
