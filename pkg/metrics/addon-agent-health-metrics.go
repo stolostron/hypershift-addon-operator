@@ -2,6 +2,21 @@ package metrics
 
 import "github.com/prometheus/client_golang/prometheus"
 
+var TotalReconcileCount = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "mce_hs_addon_total_reconcile_count",
+	Help: "Total number of Hypershift addon agent's reconciliations",
+})
+
+var FailedReconcileCount = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "mce_hs_addon_failed_reconcile_count",
+	Help: "Number of Hypershift addon agent's failed reconciliations",
+})
+
+var ReconcileRequeueCount = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "mce_hs_addon_reconcile_requeue_count",
+	Help: "Number of Hypershift addon agent's requeued reconciliations",
+})
+
 var AddonAgentFailedToStartBool = prometheus.NewGauge(prometheus.GaugeOpts{
 	Name: "mce_hs_addon_failed_to_start_bool",
 	Help: "Hypershift addon agent failed to start true (1) or false (0)",
@@ -50,6 +65,9 @@ var HubResourceSyncFailureCount = prometheus.NewCounterVec(
 
 func init() {
 	CollectorsForRegistration = append(CollectorsForRegistration,
+		TotalReconcileCount,
+		FailedReconcileCount,
+		ReconcileRequeueCount,
 		AddonAgentFailedToStartBool,
 		InInstallationOrUpgradeBool,
 		InstallationOrUpgradeFailedCount,
