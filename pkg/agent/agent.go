@@ -730,6 +730,32 @@ func (c *agentController) deleteManagedCluster(ctx context.Context, hc *hyperv1b
 		managedClusterName = hc.Name
 	}
 
+	// Delete the managed cluster
+	mc := &clusterv1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: managedClusterName,
+		},
+	}
+
+	if err := c.hubClient.Get(ctx, client.ObjectKeyFromObject(mc), mc); err != nil {
+		if apierrors.IsNotFound(err) {
+			c.log.Info(fmt.Sprintf("managedCluster %v is already deleted", managedClusterName))
+			mc = nil
+		} else {
+			c.log.Info(fmt.Sprintf("failed to get the managedCluster %v", managedClusterName))
+			return err
+		}
+	}
+
+	if mc != nil {
+		if err := c.hubClient.Delete(ctx, mc); err != nil {
+			c.log.Info(fmt.Sprintf("failed to delete the managedCluster %v", managedClusterName))
+			return err
+		}
+
+		c.log.Info(fmt.Sprintf("deleted managedCluster %v", managedClusterName))
+	}
+
 	klusterletName := "klusterlet-" + managedClusterName
 
 	// Remove the operator.open-cluster-management.io/klusterlet-hosted-cleanup finalizer in klusterlet
@@ -739,11 +765,12 @@ func (c *agentController) deleteManagedCluster(ctx context.Context, hc *hyperv1b
 		},
 	}
 
-	if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(klusterlet), klusterlet); err != nil {
+	if err := c.spokeUncachedClient.Get(ctx, client.ObjectKeyFromObject(klusterlet), klusterlet); err != nil {
 		if apierrors.IsNotFound(err) {
 			c.log.Info(fmt.Sprintf("klusterlet %v is already deleted", klusterletName))
+			return nil
 		} else {
-			c.log.Error(err, fmt.Sprintf("failed to get the klusterlet %v", klusterletName))
+			c.log.Info(fmt.Sprintf("failed to get the klusterlet %v", klusterletName))
 			return err
 		}
 	}
@@ -751,28 +778,13 @@ func (c *agentController) deleteManagedCluster(ctx context.Context, hc *hyperv1b
 	updated := controllerutil.RemoveFinalizer(klusterlet, "operator.open-cluster-management.io/klusterlet-hosted-cleanup")
 	c.log.Info(fmt.Sprintf("klusterlet %v finalizer removed:%v", klusterletName, updated))
 
-	// Delete the managed cluster
-	mc := &clusterv1.ManagedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: managedClusterName,
-		},
-	}
-
-	if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(mc), mc); err != nil {
-		if apierrors.IsNotFound(err) {
-			c.log.Info(fmt.Sprintf("managedCluster %v is already deleted", managedClusterName))
-		} else {
-			c.log.Error(err, fmt.Sprintf("failed to get the managedCluster %v", managedClusterName))
+	if updated {
+		if err := c.spokeUncachedClient.Update(ctx, klusterlet); err != nil {
+			c.log.Info("failed to update klusterlet to remove the finalizer")
 			return err
 		}
 	}
 
-	if err := c.spokeClient.Delete(ctx, mc); err != nil {
-		c.log.Error(err, fmt.Sprintf("failed to delete the managedCluster %v", managedClusterName))
-		return err
-	}
-
-	c.log.Info(fmt.Sprintf("deleted managedCluster %v", managedClusterName))
 	return nil
 }
 

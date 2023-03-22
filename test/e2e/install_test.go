@@ -1,8 +1,11 @@
 package e2e_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -62,6 +65,21 @@ func deleteOIDCProviderSecret(ctx context.Context, client kubernetes.Interface, 
 	return client.CoreV1().Secrets(namespace).Delete(ctx, "hypershift-operator-oidc-provider-s3-credentials", metav1.DeleteOptions{})
 }
 
+func getPodLogs(pod *corev1.Pod) (string, error) {
+	podLogs := kubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: "hypershift-addon-agent"})
+	r, err := podLogs.Stream(context.TODO())
+
+	if err == nil {
+		defer r.Close()
+
+		buf := new(bytes.Buffer)
+		_, _ = io.Copy(buf, r)
+		return buf.String(), nil
+	} else {
+		return "", err
+	}
+}
+
 var _ = ginkgo.Describe("Install", func() {
 	var ctx context.Context
 	ginkgo.BeforeEach(func() {
@@ -108,14 +126,70 @@ var _ = ginkgo.Describe("Install", func() {
 		})
 
 		ginkgo.It("did not exist", func() {
+
 			ginkgo.By("Check the addon agent installation")
+
 			gomega.Eventually(func() bool {
 				deployment, err := kubeClient.AppsV1().Deployments(defaultInstallNamespace).Get(ctx, util.AgentDeploymentName, metav1.GetOptions{})
 				if err != nil {
+					ginkgo.By("Addon agent not found, checking manager logs")
+
+					var addonManagerPod *corev1.Pod
+					podList, err := kubeClient.CoreV1().Pods("multicluster-engine").List(ctx, metav1.ListOptions{})
+					if err != nil {
+						ginkgo.By("Error getting addon manager pods: " + err.Error())
+						return false
+					}
+
+					for _, p := range podList.Items {
+						if strings.HasPrefix(p.Name, "hypershift-addon-manager") {
+							addonManagerPod = &p
+							ginkgo.By("Found addon manager pod" + p.Name)
+
+							break
+						}
+					}
+
+					if addonManagerPod != nil {
+						log, err := getPodLogs(addonManagerPod)
+						if err != nil {
+							ginkgo.By(fmt.Sprintf("Error reading pod logs: %v", err.Error()))
+						} else {
+							ginkgo.By(fmt.Sprintf("Addon manager logs: %v", string(log)))
+						}
+					}
+
 					return false
 				}
 
+				ginkgo.By(fmt.Sprintf("Addon deployment: %v", deployment.String()))
 				if deployment.Status.AvailableReplicas <= 0 {
+
+					var addonAgentPod *corev1.Pod
+					podList, err := kubeClient.CoreV1().Pods(defaultInstallNamespace).List(ctx, metav1.ListOptions{})
+					if err != nil {
+						ginkgo.By("Error getting addon agent pods: " + err.Error())
+						return false
+					}
+
+					for _, p := range podList.Items {
+						if strings.HasPrefix(p.Name, "hypershift-addon-agent") {
+							addonAgentPod = &p
+							ginkgo.By("Found addon agent pod" + p.Name)
+
+							break
+						}
+					}
+
+					if addonAgentPod != nil {
+						log, err := getPodLogs(addonAgentPod)
+						if err != nil {
+							ginkgo.By(fmt.Sprintf("Error reading agent pod logs: %v", err.Error()))
+						} else {
+							ginkgo.By(fmt.Sprintf("Addon agent logs: %v", string(log)))
+						}
+					}
+
 					return false
 				}
 
