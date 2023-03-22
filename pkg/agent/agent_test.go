@@ -118,15 +118,16 @@ kind: Config`)
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
 	assert.Nil(t, err, "err nil when reconcile was successfully")
 
-	// Secret for kubconfig and kubeadmin-password are created
+	// Secret for kubconfig is created
 	secret := &corev1.Secret{}
 	kcSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-admin-kubeconfig", hc.Name), Namespace: aCtrl.clusterName}
 	err = aCtrl.hubClient.Get(ctx, kcSecretNN, secret)
 	assert.Nil(t, err, "is nil when the admin kubeconfig secret is found")
 
+	// The hosted cluster does not have status.KubeadminPassword so the kubeadmin-password is not expected to be copied
 	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-kubeadmin-password", hc.Name), Namespace: aCtrl.clusterName}
 	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
-	assert.Nil(t, err, "is nil when the kubeadmin password secret is found")
+	assert.True(t, err != nil && errors.IsNotFound(err), "is true when the kubeadmin-password secret is not copied")
 
 	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-" + hc.Name}
 	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
@@ -139,6 +140,17 @@ kind: Config`)
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.KubeconfigSecretCopyFailureCount))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
+
+	hc.Status.KubeadminPassword = &corev1.LocalObjectReference{Name: "kubeadmin-password"}
+	err = aCtrl.hubClient.Update(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster was updated successfully")
+
+	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
+	assert.Nil(t, err, "err nil when reconcile was successfully")
+
+	// The hosted cluster now has status.KubeadminPassword so the kubeadmin-password is expected to be copied
+	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
+	assert.Nil(t, err, "is nil when the kubeadmin-password secret is found")
 
 	// Delete hosted cluster and reconcile
 	aCtrl.hubClient.Delete(ctx, hc)
@@ -232,10 +244,45 @@ kind: Config`)
 	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
 	assert.NotNil(t, err, "external-managed-kubeconfig secret not found")
 	assert.Equal(t, true, res.Requeue)
-	assert.Equal(t, 30*time.Second, res.RequeueAfter)
+	assert.Equal(t, 1*time.Minute, res.RequeueAfter)
 	// Test that we do not count the klusterlet namespace missing as an error, this just means import has not been
 	// triggered
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.KubeconfigSecretCopyFailureCount))
+}
+
+func TestReconcileRequeueFromFailedReconcile(t *testing.T) {
+	ctx := context.Background()
+	client := initReconcileErrorClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
+	aCtrl := &agentController{
+		spokeClustersClient: fakeClusterCS,
+		spokeUncachedClient: client,
+		spokeClient:         client,
+		hubClient:           client,
+		log:                 zapr.NewLogger(zapLog),
+	}
+
+	// Create secrets
+	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
+
+	// Create hosted cluster
+	hc := getHostedCluster(hcNN)
+	err := aCtrl.hubClient.Create(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
+
+	// Reconcile
+	res, err := aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
+	assert.Nil(t, err, "err nil when reconcile was successfully")
+
+	// Could not generate AddOnPlacementScore so the reconcile should be requeued
+	assert.Equal(t, true, res.Requeue)
+	assert.Equal(t, 1*time.Minute, res.RequeueAfter)
+	// Test that we do not count the klusterlet namespace missing as an error, this just means import has not been
+	// triggered
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
 }
 
 func TestReconcileWithAnnotation(t *testing.T) {
@@ -324,8 +371,6 @@ kind: Config`)
 	err = aCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
-	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
-
 	// Create klusterlet namespace
 	klusterletNamespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -357,9 +402,10 @@ kind: Config`)
 	err = aCtrl.spokeClient.Get(ctx, kcSecretNN, secret)
 	assert.Nil(t, err, "is nil when the admin kubeconfig secret is found")
 
-	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-kubeadmin-password", hc.Spec.InfraID), Namespace: aCtrl.clusterName}
+	// The hosted cluster does not have status.KubeadminPassword so the kubeadmin-password is not expected to be copied
+	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-kubeadmin-password", hc.Name), Namespace: aCtrl.clusterName}
 	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
-	assert.Nil(t, err, "is nil when the kubeadmin password secret is found")
+	assert.True(t, err != nil && errors.IsNotFound(err), "is true when the kubeadmin-password secret is not copied")
 
 	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-" + hc.Spec.InfraID}
 	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
@@ -376,7 +422,6 @@ kind: Config`)
 	assert.Nil(t, err, "is nil when kubeconfig data can be loaded")
 	assert.Equal(t, kubeconfig.Clusters["cluster"].Server, "https://kube-apiserver."+hc.Namespace+"-"+hc.Name+".svc.cluster.local:443")
 
-	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelFullClusterClaim)))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelThresholdClusterClaim)))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelZeroClusterClaim)))
@@ -453,7 +498,6 @@ func TestHostedClusterCount(t *testing.T) {
 	assert.Nil(t, err, "is nil when addonPlacementScore is found")
 	assert.Equal(t, int32(aCtrl.maxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
 
-	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelFullClusterClaim)))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelThresholdClusterClaim)))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelZeroClusterClaim)))
@@ -724,9 +768,8 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
 			InfraID: "infra-abcdef",
 		},
 		Status: hyperv1beta1.HostedClusterStatus{
-			KubeConfig:        &corev1.LocalObjectReference{Name: "kubeconfig"},
-			KubeadminPassword: &corev1.LocalObjectReference{Name: "kubeadmin"},
-			Conditions:        []metav1.Condition{{Type: string(hyperv1beta1.HostedClusterAvailable), Status: metav1.ConditionTrue, Reason: hyperv1beta1.AsExpectedReason}},
+			KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"},
+			Conditions: []metav1.Condition{{Type: string(hyperv1beta1.HostedClusterAvailable), Status: metav1.ConditionTrue, Reason: hyperv1beta1.AsExpectedReason}},
 			Version: &hyperv1beta1.ClusterVersionStatus{
 				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate}},
 			},
@@ -1043,6 +1086,23 @@ func initClient() client.Client {
 	metav1.AddMetaToScheme(scheme)
 	hyperv1beta1.AddToScheme(scheme)
 	clusterv1alpha1.AddToScheme(scheme)
+	clusterv1.AddToScheme(scheme)
+	operatorapiv1.AddToScheme(scheme)
+
+	ncb := fake.NewClientBuilder()
+	ncb.WithScheme(scheme)
+	return ncb.Build()
+
+}
+
+func initReconcileErrorClient() client.Client {
+	scheme := runtime.NewScheme()
+	//corev1.AddToScheme(scheme)
+	appsv1.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
+	metav1.AddMetaToScheme(scheme)
+	hyperv1beta1.AddToScheme(scheme)
+	//clusterv1alpha1.AddToScheme(scheme)
 	clusterv1.AddToScheme(scheme)
 	operatorapiv1.AddToScheme(scheme)
 
