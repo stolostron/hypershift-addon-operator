@@ -404,9 +404,10 @@ kind: Config`)
 	err = aCtrl.spokeClient.Get(ctx, kcSecretNN, secret)
 	assert.Nil(t, err, "is nil when the admin kubeconfig secret is found")
 
-	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-kubeadmin-password", hc.Spec.InfraID), Namespace: aCtrl.clusterName}
+	// The hosted cluster does not have status.KubeadminPassword so the kubeadmin-password is not expected to be copied
+	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-kubeadmin-password", hc.Name), Namespace: aCtrl.clusterName}
 	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
-	assert.Nil(t, err, "is nil when the kubeadmin password secret is found")
+	assert.True(t, err != nil && errors.IsNotFound(err), "is true when the kubeadmin-password secret is not copied")
 
 	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-" + hc.Spec.InfraID}
 	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
