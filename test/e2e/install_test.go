@@ -65,8 +65,12 @@ func deleteOIDCProviderSecret(ctx context.Context, client kubernetes.Interface, 
 	return client.CoreV1().Secrets(namespace).Delete(ctx, "hypershift-operator-oidc-provider-s3-credentials", metav1.DeleteOptions{})
 }
 
-func getPodLogs(pod *corev1.Pod) (string, error) {
-	podLogs := kubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: "hypershift-addon-agent"})
+func getPodLogs(pod *corev1.Pod, container string) (string, error) {
+	logOption := &corev1.PodLogOptions{}
+	if container != "" {
+		logOption = &corev1.PodLogOptions{Container: "hypershift-addon-agent"}
+	}
+	podLogs := kubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, logOption)
 	r, err := podLogs.Stream(context.TODO())
 
 	if err == nil {
@@ -151,7 +155,7 @@ var _ = ginkgo.Describe("Install", func() {
 					}
 
 					if addonManagerPod != nil {
-						log, err := getPodLogs(addonManagerPod)
+						log, err := getPodLogs(addonManagerPod, "")
 						if err != nil {
 							ginkgo.By(fmt.Sprintf("Error reading pod logs: %v", err.Error()))
 						} else {
@@ -182,7 +186,7 @@ var _ = ginkgo.Describe("Install", func() {
 					}
 
 					if addonAgentPod != nil {
-						log, err := getPodLogs(addonAgentPod)
+						log, err := getPodLogs(addonAgentPod, "hypershift-addon-agent")
 						if err != nil {
 							ginkgo.By(fmt.Sprintf("Error reading agent pod logs: %v", err.Error()))
 						} else {

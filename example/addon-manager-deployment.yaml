@@ -26,7 +26,7 @@ rules:
   verbs: ["approve"]
 - apiGroups: ["cluster.open-cluster-management.io"]
   resources: ["managedclusters"]
-  verbs: ["get", "list", "watch", "patch", "update"]
+  verbs: ["get", "list", "watch", "patch", "update", "delete"]
 - apiGroups: ["rbac.authorization.k8s.io"]
   resources: ["roles", "rolebindings","clusterroles", "clusterrolebindings"]
   verbs: ["get", "list", "watch", "create", "update", "delete"]
