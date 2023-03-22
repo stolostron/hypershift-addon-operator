@@ -20,32 +20,8 @@ import (
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 )
 
-func createAddonDeploymentConfig(ctx context.Context, client addonv1alpha1client.Interface) error {
-	ginkgo.By("Create AddOnDeploymentConfig to disable metrics")
-	addondeploymentconfig := &addonapi.AddOnDeploymentConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "hypershift-addon-deploy-config",
-			Namespace: "multicluster-engine",
-		},
-		Spec: addonapi.AddOnDeploymentConfigSpec{
-			CustomizedVariables: []addonapi.CustomizedVariable{
-				{Name: "disableMetrics", Value: "true"},
-			},
-		},
-	}
-
-	_, err := client.AddonV1alpha1().AddOnDeploymentConfigs("multicluster-engine").Create(ctx, addondeploymentconfig, metav1.CreateOptions{})
-	return err
-}
-
 func createHypershiftAddon(ctx context.Context, client addonv1alpha1client.Interface, namespace, installNamespace string) error {
 	ginkgo.By(fmt.Sprintf("Create hypershift managed cluster addon for %s, installNamespace:%s", namespace, installNamespace))
-	err := createAddonDeploymentConfig(ctx, client)
-
-	if err != nil {
-		return err
-	}
-
 	addon := &addonapi.ManagedClusterAddOn{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hypershift-addon",
@@ -53,22 +29,10 @@ func createHypershiftAddon(ctx context.Context, client addonv1alpha1client.Inter
 		},
 		Spec: addonapi.ManagedClusterAddOnSpec{
 			InstallNamespace: installNamespace,
-			Configs: []addonapi.AddOnConfig{
-				{
-					ConfigGroupResource: addonapi.ConfigGroupResource{
-						Group:    "addon.open-cluster-management.io",
-						Resource: "addondeploymentconfigs",
-					},
-					ConfigReferent: addonapi.ConfigReferent{
-						Namespace: "multicluster-engine",
-						Name:      "hypershift-addon-deploy-config",
-					},
-				},
-			},
 		},
 	}
 
-	_, err = client.AddonV1alpha1().ManagedClusterAddOns(namespace).Create(ctx, addon, metav1.CreateOptions{})
+	_, err := client.AddonV1alpha1().ManagedClusterAddOns(namespace).Create(ctx, addon, metav1.CreateOptions{})
 	return err
 }
 
@@ -101,23 +65,12 @@ func deleteOIDCProviderSecret(ctx context.Context, client kubernetes.Interface, 
 	return client.CoreV1().Secrets(namespace).Delete(ctx, "hypershift-operator-oidc-provider-s3-credentials", metav1.DeleteOptions{})
 }
 
-func getPodLogs(pod *corev1.Pod) (string, error) {
-	podLogs := kubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{Container: "hypershift-addon-agent"})
-	r, err := podLogs.Stream(context.TODO())
-
-	if err == nil {
-		defer r.Close()
-
-		buf := new(bytes.Buffer)
-		_, _ = io.Copy(buf, r)
-		return buf.String(), nil
-	} else {
-		return "", err
+func getPodLogs(pod *corev1.Pod, container string) (string, error) {
+	logOption := &corev1.PodLogOptions{}
+	if container != "" {
+		logOption = &corev1.PodLogOptions{Container: "hypershift-addon-agent"}
 	}
-}
-
-func getManagerPodLogs(pod *corev1.Pod) (string, error) {
-	podLogs := kubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{})
+	podLogs := kubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, logOption)
 	r, err := podLogs.Stream(context.TODO())
 
 	if err == nil {
@@ -202,7 +155,7 @@ var _ = ginkgo.Describe("Install", func() {
 					}
 
 					if addonManagerPod != nil {
-						log, err := getManagerPodLogs(addonManagerPod)
+						log, err := getPodLogs(addonManagerPod, "")
 						if err != nil {
 							ginkgo.By(fmt.Sprintf("Error reading pod logs: %v", err.Error()))
 						} else {
@@ -233,7 +186,7 @@ var _ = ginkgo.Describe("Install", func() {
 					}
 
 					if addonAgentPod != nil {
-						log, err := getPodLogs(addonAgentPod)
+						log, err := getPodLogs(addonAgentPod, "hypershift-addon-agent")
 						if err != nil {
 							ginkgo.By(fmt.Sprintf("Error reading agent pod logs: %v", err.Error()))
 						} else {
