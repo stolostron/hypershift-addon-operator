@@ -120,15 +120,16 @@ kind: Config`)
 	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
 	assert.Nil(t, err, "err nil when reconcile was successfully")
 
-	// Secret for kubconfig and kubeadmin-password are created
+	// Secret for kubconfig is created
 	secret := &corev1.Secret{}
 	kcSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-admin-kubeconfig", hc.Name), Namespace: aCtrl.clusterName}
 	err = aCtrl.hubClient.Get(ctx, kcSecretNN, secret)
 	assert.Nil(t, err, "is nil when the admin kubeconfig secret is found")
 
+	// The hosted cluster does not have status.KubeadminPassword so the kubeadmin-password is not expected to be copied
 	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-kubeadmin-password", hc.Name), Namespace: aCtrl.clusterName}
 	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
-	assert.Nil(t, err, "is nil when the kubeadmin password secret is found")
+	assert.True(t, err != nil && errors.IsNotFound(err), "is true when the kubeadmin-password secret is not copied")
 
 	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-" + hc.Name}
 	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
@@ -141,6 +142,17 @@ kind: Config`)
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.KubeconfigSecretCopyFailureCount))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
+
+	hc.Status.KubeadminPassword = &corev1.LocalObjectReference{Name: "kubeadmin-password"}
+	err = aCtrl.hubClient.Update(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster was updated successfully")
+
+	_, err = aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
+	assert.Nil(t, err, "err nil when reconcile was successfully")
+
+	// The hosted cluster now has status.KubeadminPassword so the kubeadmin-password is expected to be copied
+	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
+	assert.Nil(t, err, "is nil when the kubeadmin-password secret is found")
 
 	// Delete hosted cluster and reconcile
 	aCtrl.hubClient.Delete(ctx, hc)
@@ -762,9 +774,8 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
 			InfraID: "infra-abcdef",
 		},
 		Status: hyperv1beta1.HostedClusterStatus{
-			KubeConfig:        &corev1.LocalObjectReference{Name: "kubeconfig"},
-			KubeadminPassword: &corev1.LocalObjectReference{Name: "kubeadmin"},
-			Conditions:        []metav1.Condition{{Type: string(hyperv1beta1.HostedClusterAvailable), Status: metav1.ConditionTrue, Reason: hyperv1beta1.AsExpectedReason}},
+			KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"},
+			Conditions: []metav1.Condition{{Type: string(hyperv1beta1.HostedClusterAvailable), Status: metav1.ConditionTrue, Reason: hyperv1beta1.AsExpectedReason}},
 			Version: &hyperv1beta1.ClusterVersionStatus{
 				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate}},
 			},
