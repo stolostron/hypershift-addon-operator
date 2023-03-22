@@ -116,6 +116,21 @@ func getPodLogs(pod *corev1.Pod) (string, error) {
 	}
 }
 
+func getManagerPodLogs(pod *corev1.Pod) (string, error) {
+	podLogs := kubeClient.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{})
+	r, err := podLogs.Stream(context.TODO())
+
+	if err == nil {
+		defer r.Close()
+
+		buf := new(bytes.Buffer)
+		_, _ = io.Copy(buf, r)
+		return buf.String(), nil
+	} else {
+		return "", err
+	}
+}
+
 var _ = ginkgo.Describe("Install", func() {
 	var ctx context.Context
 	ginkgo.BeforeEach(func() {
@@ -187,7 +202,7 @@ var _ = ginkgo.Describe("Install", func() {
 					}
 
 					if addonManagerPod != nil {
-						log, err := getPodLogs(addonManagerPod)
+						log, err := getManagerPodLogs(addonManagerPod)
 						if err != nil {
 							ginkgo.By(fmt.Sprintf("Error reading pod logs: %v", err.Error()))
 						} else {
