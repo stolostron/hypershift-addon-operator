@@ -240,6 +240,42 @@ kind: Config`)
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.KubeconfigSecretCopyFailureCount))
 }
 
+func TestReconcileRequeueFromFailedReconcile(t *testing.T) {
+	ctx := context.Background()
+	client := initReconcileErrorClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
+	aCtrl := &agentController{
+		spokeClustersClient: fakeClusterCS,
+		spokeUncachedClient: client,
+		spokeClient:         client,
+		hubClient:           client,
+		log:                 zapr.NewLogger(zapLog),
+	}
+
+	// Create secrets
+	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
+
+	// Create hosted cluster
+	hc := getHostedCluster(hcNN)
+	err := aCtrl.hubClient.Create(ctx, hc)
+	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
+
+	// Reconcile
+	res, err := aCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
+	assert.Nil(t, err, "err nil when reconcile was successfully")
+
+	// Could not generate AddOnPlacementScore so the reconcile should be requeued
+	assert.Equal(t, true, res.Requeue)
+	assert.Equal(t, 1*time.Minute, res.RequeueAfter)
+	// Test that we do not count the klusterlet namespace missing as an error, this just means import has not been
+	// triggered
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
+
+}
+
 func TestReconcileWithAnnotation(t *testing.T) {
 	ctx := context.Background()
 	client := initClient()
@@ -1086,6 +1122,23 @@ func initClient() client.Client {
 	metav1.AddMetaToScheme(scheme)
 	hyperv1beta1.AddToScheme(scheme)
 	clusterv1alpha1.AddToScheme(scheme)
+	clusterv1.AddToScheme(scheme)
+	operatorapiv1.AddToScheme(scheme)
+
+	ncb := fake.NewClientBuilder()
+	ncb.WithScheme(scheme)
+	return ncb.Build()
+
+}
+
+func initReconcileErrorClient() client.Client {
+	scheme := runtime.NewScheme()
+	//corev1.AddToScheme(scheme)
+	appsv1.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
+	metav1.AddMetaToScheme(scheme)
+	hyperv1beta1.AddToScheme(scheme)
+	//clusterv1alpha1.AddToScheme(scheme)
 	clusterv1.AddToScheme(scheme)
 	operatorapiv1.AddToScheme(scheme)
 
