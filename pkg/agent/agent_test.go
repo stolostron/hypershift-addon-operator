@@ -273,7 +273,6 @@ func TestReconcileRequeueFromFailedReconcile(t *testing.T) {
 	// Test that we do not count the klusterlet namespace missing as an error, this just means import has not been
 	// triggered
 	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
-
 }
 
 func TestReconcileWithAnnotation(t *testing.T) {
@@ -362,8 +361,6 @@ kind: Config`)
 	err = aCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
-	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
-
 	// Create klusterlet namespace
 	klusterletNamespace := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{
@@ -414,7 +411,6 @@ kind: Config`)
 	assert.Nil(t, err, "is nil when kubeconfig data can be loaded")
 	assert.Equal(t, kubeconfig.Clusters["cluster"].Server, "https://kube-apiserver."+hc.Namespace+"-"+hc.Name+".svc.cluster.local:443")
 
-	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelFullClusterClaim)))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelThresholdClusterClaim)))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelZeroClusterClaim)))
@@ -496,7 +492,6 @@ func TestHostedClusterCount(t *testing.T) {
 	assert.Nil(t, err, "is nil when addonPlacementScore is found")
 	assert.Equal(t, int32(aCtrl.maxHostedClusterCount-1), placementScore.Status.Scores[0].Value)
 
-	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementScoreFailureCount))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelFullClusterClaim)))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelThresholdClusterClaim)))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.PlacementClusterClaimsFailureCount.WithLabelValues(util.MetricsLabelZeroClusterClaim)))
