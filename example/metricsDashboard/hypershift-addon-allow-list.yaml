@@ -19,3 +19,6 @@ data:
       - acm_managed_cluster_addon_status_condition
       - mce_hs_addon_install_failing_gauge_bool
       - mce_hs_addon_deleted_hosted_clusters_gauge
+      - mce_hs_addon_total_reconcile_count
+      - mce_hs_addon_failed_reconcile_count
+      - mce_hs_addon_reconcile_requeue_count

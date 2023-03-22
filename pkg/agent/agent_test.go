@@ -234,7 +234,7 @@ kind: Config`)
 	err = aCtrl.hubClient.Get(ctx, kcExtSecretNN, secret)
 	assert.NotNil(t, err, "external-managed-kubeconfig secret not found")
 	assert.Equal(t, true, res.Requeue)
-	assert.Equal(t, 30*time.Second, res.RequeueAfter)
+	assert.Equal(t, 1*time.Minute, res.RequeueAfter)
 	// Test that we do not count the klusterlet namespace missing as an error, this just means import has not been
 	// triggered
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.KubeconfigSecretCopyFailureCount))

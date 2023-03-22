@@ -389,8 +389,14 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
-	// Update the AddOnPlacementScore resource, continue reconcile even if error occurred
-	_ = c.SyncAddOnPlacementScore(ctx, false)
+	// Update the AddOnPlacementScore resource, requeue reconcile if error occurred
+	metrics.TotalReconcileCount.Inc() // increase reconcile action count
+	if err := c.SyncAddOnPlacementScore(ctx, false); err != nil {
+		c.log.Info(fmt.Sprintf("failed to create or update ethe AddOnPlacementScore %s, error: %s. Will try again in 30 seconds", util.HostedClusterScoresResourceName, err.Error()))
+		metrics.ReconcileRequeueCount.Inc()
+		metrics.FailedReconcileCount.Inc()
+		return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
+	}
 
 	// Delete HC secrets on the hub using labels for HC and the hosting NS
 	deleteMirrorSecrets := func() error {
@@ -432,12 +438,11 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	if err := c.spokeClient.Get(ctx, req.NamespacedName, hc); err != nil {
 		if apierrors.IsNotFound(err) {
 			c.log.Info(fmt.Sprintf("remove hostedcluster(%s) secrets on hub, since hostedcluster is gone", req.NamespacedName))
-
 			return ctrl.Result{}, deleteMirrorSecrets()
 		}
 
 		c.log.Error(err, "failed to get the hostedcluster")
-		return ctrl.Result{}, nil
+		return ctrl.Result{}, nil // Not hosted cluster reconcile failure
 	}
 
 	if !hc.GetDeletionTimestamp().IsZero() {
@@ -478,6 +483,23 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 			hubMirrorSecret.SetNamespace(c.clusterName)
 			hubMirrorSecret.SetName(fmt.Sprintf("%s-%s", secretName, se.Name))
 
+			if strings.HasSuffix(hubMirrorSecret.Name, "kubeadmin-password") {
+				// This secret is not created by the hypershift operator if the hosted cluster has
+				// a custom identity provider in configuration.oauth.identityProviders
+				if hc.Spec.Configuration != nil &&
+					hc.Spec.Configuration.OAuth != nil &&
+					len(hc.Spec.Configuration.OAuth.IdentityProviders) > 0 {
+					c.log.Info(fmt.Sprintf("the hosted cluster has a custom identiry provider configuration. skip copying secret %s", hubMirrorSecret.Name))
+					continue
+				}
+
+				if hc.Status.KubeadminPassword == nil {
+					// the kubeadmin password secret is not ready yet
+					c.log.Info("cannot find the kubeadmin password secret yet.")
+					continue
+				}
+			}
+
 			se.SetName(fmt.Sprintf("%s-%s", hc.Name, se.Name))
 			if err := c.spokeClient.Get(ctx, client.ObjectKeyFromObject(se), se); err != nil {
 				lastErr = err
@@ -497,11 +519,12 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 				errExt := c.generateExtManagedKubeconfigSecret(ctx, extSecret.Data, *hc)
 
 				if errExt != nil {
-					lastErr = errExt
 					// This is where we avoid counting metrics for certain error conditions
 					// Klusterlet namespace will not exist until import is done
 					if !strings.Contains(errExt.Error(), "failed to find the klusterlet namespace") {
 						metrics.KubeconfigSecretCopyFailureCount.Inc()
+						// it is an error condition only if the klueterlet namespace exists
+						lastErr = errExt
 					}
 
 				} else {
@@ -515,6 +538,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 					updatedKubeconfig, err := c.replaceCertAuthDataInKubeConfig(ctx, kubeconfig, hc.Namespace, servingCert)
 					if err != nil {
+						// it is an error condition if the TLS certificate data cannot be replaced
 						lastErr = err
 						c.log.Info("failed to replace certificate-authority-data from kubeconfig")
 						continue
@@ -550,19 +574,25 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return lastErr
 	}
 
+	metrics.TotalReconcileCount.Inc() // increase reconcile action count
 	if err := createOrUpdateMirrorSecrets(); err != nil {
 		c.log.Info(fmt.Sprintf("failed to create external-managed-kubeconfig and mirror secrets for hostedcluster %s, error: %s. Will try again in 30 seconds", hc.Name, err.Error()))
-		return ctrl.Result{Requeue: true, RequeueAfter: 30 * time.Second}, nil
+		metrics.FailedReconcileCount.Inc()
+		return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
 	}
 
-	if err := c.createHostedClusterClaim(ctx, adminKubeConfigSecretWithCert,
-		generateClusterClientFromSecret); err != nil {
-		// just log the infomation and wait for the next reconcile to retry.
-		// since the hosted cluster may:
-		//   - not available now
-		//   - have not been imported to the hub, and there is no clusterclaim CRD.
-		c.log.Info("unable to create hosted cluster claim, wait for the next retry", "error", err.Error())
-		return ctrl.Result{Requeue: true, RequeueAfter: 1 * time.Minute}, nil
+	if isVersionHistoryStateFound(hc.Status.Version.History, configv1.CompletedUpdate) {
+		if err := c.createHostedClusterClaim(ctx, adminKubeConfigSecretWithCert,
+			generateClusterClientFromSecret); err != nil {
+			// just log the infomation and wait for the next reconcile to retry.
+			// since the hosted cluster may:
+			//   - not available now
+			//   - have not been imported to the hub, and there is no clusterclaim CRD.
+			c.log.Info("unable to create hosted cluster claim, wait for the next retry", "error", err.Error())
+			// this is not critical for managing hosted clusters. don't count as a failed reconcile
+			metrics.ReconcileRequeueCount.Inc()
+			return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
+		}
 	}
 
 	return ctrl.Result{}, nil
