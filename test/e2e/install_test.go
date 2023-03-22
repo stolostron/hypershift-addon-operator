@@ -20,8 +20,32 @@ import (
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 )
 
+func createAddonDeploymentConfig(ctx context.Context, client addonv1alpha1client.Interface) error {
+	ginkgo.By("Create AddOnDeploymentConfig to disable metrics")
+	addondeploymentconfig := &addonapi.AddOnDeploymentConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hypershift-addon-deploy-config",
+			Namespace: "multicluster-engine",
+		},
+		Spec: addonapi.AddOnDeploymentConfigSpec{
+			CustomizedVariables: []addonapi.CustomizedVariable{
+				{Name: "disableMetrics", Value: "true"},
+			},
+		},
+	}
+
+	_, err := client.AddonV1alpha1().AddOnDeploymentConfigs("multicluster-engine").Create(ctx, addondeploymentconfig, metav1.CreateOptions{})
+	return err
+}
+
 func createHypershiftAddon(ctx context.Context, client addonv1alpha1client.Interface, namespace, installNamespace string) error {
 	ginkgo.By(fmt.Sprintf("Create hypershift managed cluster addon for %s, installNamespace:%s", namespace, installNamespace))
+	err := createAddonDeploymentConfig(ctx, client)
+
+	if err != nil {
+		return err
+	}
+
 	addon := &addonapi.ManagedClusterAddOn{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hypershift-addon",
@@ -29,10 +53,22 @@ func createHypershiftAddon(ctx context.Context, client addonv1alpha1client.Inter
 		},
 		Spec: addonapi.ManagedClusterAddOnSpec{
 			InstallNamespace: installNamespace,
+			Configs: []addonapi.AddOnConfig{
+				{
+					ConfigGroupResource: addonapi.ConfigGroupResource{
+						Group:    "addon.open-cluster-management.io",
+						Resource: "addondeploymentconfigs",
+					},
+					ConfigReferent: addonapi.ConfigReferent{
+						Namespace: "multicluster-engine",
+						Name:      "hypershift-addon-deploy-config",
+					},
+				},
+			},
 		},
 	}
 
-	_, err := client.AddonV1alpha1().ManagedClusterAddOns(namespace).Create(ctx, addon, metav1.CreateOptions{})
+	_, err = client.AddonV1alpha1().ManagedClusterAddOns(namespace).Create(ctx, addon, metav1.CreateOptions{})
 	return err
 }
 
