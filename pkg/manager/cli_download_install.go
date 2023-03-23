@@ -26,13 +26,13 @@ import (
 
 func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error {
 	// get the current version of MCE CSV from multicluster-engine namespace
-	
+
 	//Every 2 minutes, try to get csv in case of cluster upgrade (5 attempts)
 	var csv *operatorsv1alpha1.ClusterServiceVersion
 	var err error
 	for try := 1; try <= 5; try++ {
 		if try != 1 {
-			log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace, retrying in 2 minutes (attempt " + strconv.Itoa(try) + "/5)")
+			log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace, retrying in 2 minutes (attempt "+strconv.Itoa(try)+"/5)")
 			time.Sleep(2 * time.Minute)
 		}
 		csv, err = GetMCECSV(hubclient, log)
