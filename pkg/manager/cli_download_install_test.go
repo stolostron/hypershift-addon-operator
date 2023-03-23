@@ -4,19 +4,25 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	consolev1 "github.com/openshift/api/console/v1"
 	routev1 "github.com/openshift/api/route/v1"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
+	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
 func TestEnableHypershiftCLIDownload(t *testing.T) {
@@ -133,6 +139,40 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	assert.Equal(t, "open-cluster-management:hypershift-preview:hypershift-addon-manager", cliDownload.OwnerReferences[0].Name)
 }
 
+func TestRetryCSV(t *testing.T) {
+	controllerContext := &controllercmd.ControllerContext{}
+	client, sch := initCSVErrorClient()
+	zapLog, _ := zap.NewDevelopment()
+	o := &override{
+		Client:            client,
+		log:               zapr.NewLogger(zapLog),
+		operatorNamespace: controllerContext.OperatorNamespace,
+		withOverride:      false,
+	}
+
+	//Channel to read errors from either goroutine
+	c := make(chan error)
+
+	// Create mock multicluster engine
+	newmce := getTestMCE("multiclusterengine", "multicluster-engine")
+	err := o.Client.Create(context.TODO(), newmce)
+	assert.Nil(t, err, "could not create test MCE")
+
+	dep := getTestAddonDeployment()
+	err = o.Client.Create(context.TODO(), dep)
+	assert.Nil(t, err, "err nil when addon deployment is created successfully")
+
+	clusterRole := getTestClusterRole()
+	err = o.Client.Create(context.TODO(), clusterRole)
+	assert.Nil(t, err, "err nil when addon clusterRole is created successfully")
+
+	go asyncEnableHypershiftCLIDownload(client, o.log, c) //Attempt to enable clidownload
+	go asyncClusterRole(o, sch, t)                        //Add permissions after a small period of time
+	result := <-c
+	assert.Nil(t, result, "could not get MCE")
+
+}
+
 func getTestMCECSV(version string, downstream bool) *operatorsv1alpha1.ClusterServiceVersion {
 	csv := &operatorsv1alpha1.ClusterServiceVersion{
 		TypeMeta: metav1.TypeMeta{
@@ -217,4 +257,52 @@ func getTestClusterRole() *rbacv1.ClusterRole {
 		},
 	}
 	return clusterRole
+}
+
+func getTestMCE(name string, namespace string) *mcev1.MultiClusterEngine {
+	mce := &mcev1.MultiClusterEngine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: name,
+		},
+		Spec: mcev1.MultiClusterEngineSpec{
+			TargetNamespace: namespace,
+		},
+	}
+	return mce
+}
+
+func asyncClusterRole(o *override, s *runtime.Scheme, t *testing.T) {
+	//Simulate adding permissions to clusterrole after a delay
+	//Hard to simulate RBAC, add csv to scheme and create it after a delay instead
+	time.Sleep(1 * time.Minute)
+
+	operatorsv1alpha1.AddToScheme(s)
+
+	newcsv := getTestMCECSV("v2.2.1", true)
+	err := o.Client.Create(context.TODO(), newcsv)
+	assert.Nil(t, err, "err nil when mce csv is created successfull")
+
+}
+
+func asyncEnableHypershiftCLIDownload(mockClient client.Client, log logr.Logger, c chan error) {
+	err := EnableHypershiftCLIDownload(mockClient, log)
+	c <- err
+	log.Info("Successfully enabled HypershiftCLIDownload after retrying")
+	if err != nil {
+		log.Error(err, "Could not enable HypershiftCLIDownload after retrying")
+	}
+}
+
+func initCSVErrorClient() (client.Client, *runtime.Scheme) {
+	scheme := runtime.NewScheme()
+	corev1.AddToScheme(scheme)
+	routev1.AddToScheme(scheme)
+	consolev1.AddToScheme(scheme)
+	appsv1.AddToScheme(scheme)
+	rbacv1.AddToScheme(scheme)
+	mcev1.AddToScheme(scheme)
+
+	ncb := fake.NewClientBuilder()
+	ncb.WithScheme(scheme)
+	return ncb.Build(), scheme
 }
