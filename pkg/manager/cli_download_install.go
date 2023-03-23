@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
@@ -24,7 +26,22 @@ import (
 
 func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error {
 	// get the current version of MCE CSV from multicluster-engine namespace
-	csv, err := GetMCECSV(hubclient, log)
+
+	//Every 2 minutes, try to get csv in case of cluster upgrade (5 attempts)
+	var csv *operatorsv1alpha1.ClusterServiceVersion
+	var err error
+	for try := 1; try <= 5; try++ {
+		if try != 1 {
+			log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace, retrying in 2 minutes (attempt "+strconv.Itoa(try)+"/5)")
+			time.Sleep(2 * time.Minute)
+		}
+		csv, err = GetMCECSV(hubclient, log)
+		if err == nil {
+			break
+		}
+	}
+
+	//Failed 5 attempts
 	if err != nil {
 		log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace")
 		return err
