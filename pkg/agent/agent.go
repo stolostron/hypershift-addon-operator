@@ -2,8 +2,10 @@ package agent
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +32,7 @@ import (
 
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"open-cluster-management.io/addon-framework/pkg/lease"
+	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterclientset "open-cluster-management.io/api/client/cluster/clientset/versioned"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
@@ -195,6 +198,16 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 
 	go leaseUpdater.Start(ctx)
 
+	cc, err := addonutils.NewConfigChecker("hypershift-addon-agent", "/var/run/hub/kubeconfig")
+	if err != nil {
+		return fmt.Errorf("unable to create config checker for controller err: %v", err)
+	}
+	go func() {
+		if err = aCtrl.serveHealthProbes(":8000", cc.Check); err != nil {
+			log.Error(err, "unable to serve health probes")
+		}
+	}()
+
 	if err := aCtrl.createManagementClusterClaim(ctx); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to create management cluster claim, err: %w", err)
@@ -246,6 +259,25 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	return mgr.Start(ctrl.SetupSignalHandler())
+}
+
+// serveHealthProbes serves health probes and configchecker.
+func (c *agentController) serveHealthProbes(healthProbeBindAddress string, configCheck healthz.Checker) error {
+	mux := http.NewServeMux()
+	mux.Handle("/healthz", http.StripPrefix("/healthz", &healthz.Handler{Checks: map[string]healthz.Checker{
+		"healthz-ping": healthz.Ping,
+		"configz-ping": configCheck,
+	}}))
+	server := http.Server{
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		Addr:              healthProbeBindAddress,
+		TLSConfig: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		},
+	}
+	c.log.Info("heath probes server is running...")
+	return server.ListenAndServe()
 }
 
 type agentController struct {

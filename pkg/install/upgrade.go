@@ -96,22 +96,22 @@ func (c *UpgradeController) Stop() {
 
 func (c *UpgradeController) installOptionsChanged() bool {
 	// check for changes in AWS S3 bucket secret
-	newBucketSecret := c.getSecretFromHub(util.HypershiftBucketSecretName)
-	if c.secretDataChanged(newBucketSecret, c.bucketSecret, util.HypershiftBucketSecretName) {
+	newBucketSecret, err := c.getSecretFromHub(util.HypershiftBucketSecretName)
+	if err == nil && c.secretDataChanged(newBucketSecret, c.bucketSecret, util.HypershiftBucketSecretName) {
 		c.bucketSecret = newBucketSecret // save the new secret for the next cycle of comparison
 		return true
 	}
 
 	// check for changes in external DNS secret
-	newExtDnsSecret := c.getSecretFromHub(util.HypershiftExternalDNSSecretName)
-	if c.secretDataChanged(newExtDnsSecret, c.extDnsSecret, util.HypershiftExternalDNSSecretName) {
+	newExtDnsSecret, err := c.getSecretFromHub(util.HypershiftExternalDNSSecretName)
+	if err == nil && c.secretDataChanged(newExtDnsSecret, c.extDnsSecret, util.HypershiftExternalDNSSecretName) {
 		c.extDnsSecret = newExtDnsSecret // save the new secret for the next cycle of comparison
 		return true
 	}
 
 	// check for changes in AWS private link secret
-	newPrivateLinkSecret := c.getSecretFromHub(util.HypershiftPrivateLinkSecretName)
-	if c.secretDataChanged(newPrivateLinkSecret, c.privateLinkSecret, util.HypershiftPrivateLinkSecretName) {
+	newPrivateLinkSecret, err := c.getSecretFromHub(util.HypershiftPrivateLinkSecretName)
+	if err == nil && c.secretDataChanged(newPrivateLinkSecret, c.privateLinkSecret, util.HypershiftPrivateLinkSecretName) {
 		c.privateLinkSecret = newPrivateLinkSecret // save the new secret for the next cycle of comparison
 		return true
 	}
@@ -119,15 +119,16 @@ func (c *UpgradeController) installOptionsChanged() bool {
 	return false
 }
 
-func (c *UpgradeController) getSecretFromHub(secretName string) corev1.Secret {
+func (c *UpgradeController) getSecretFromHub(secretName string) (corev1.Secret, error) {
 	secretKey := types.NamespacedName{Name: secretName, Namespace: c.clusterName}
 	newSecret := &corev1.Secret{}
 	if err := c.hubClient.Get(context.TODO(), secretKey, newSecret); err != nil && !errors.IsNotFound(err) {
 		c.log.Error(err, "failed to get secret from the hub: ")
 		// Update hub secret sync metrics count
 		metrics.HubResourceSyncFailureCount.WithLabelValues("secret").Inc()
+		return *newSecret, err
 	}
-	return *newSecret
+	return *newSecret, nil
 }
 
 func (c *UpgradeController) secretDataChanged(oldSecret, newSecret corev1.Secret, secretName string) bool {
@@ -140,10 +141,10 @@ func (c *UpgradeController) secretDataChanged(oldSecret, newSecret corev1.Secret
 
 func (c *UpgradeController) upgradeImageCheck() bool {
 	// Get the image override configmap from the hub and compare it to the controller's cached image override configmap
-	newImageOverrideConfigmap := c.getImageOverrideMapFromHub()
+	newImageOverrideConfigmap, err := c.getImageOverrideMapFromHub()
 
 	// If changed, we want to re-install the operator
-	if !reflect.DeepEqual(c.imageOverrideConfigmap.Data, newImageOverrideConfigmap.Data) {
+	if err == nil && !reflect.DeepEqual(c.imageOverrideConfigmap.Data, newImageOverrideConfigmap.Data) {
 		c.log.Info(fmt.Sprintf("the image override configmap(%s) has changed", util.HypershiftOverrideImagesCM))
 		c.imageOverrideConfigmap = newImageOverrideConfigmap // save the new configmap for the next cycle of comparison
 		return true
@@ -152,13 +153,14 @@ func (c *UpgradeController) upgradeImageCheck() bool {
 	return false
 }
 
-func (c *UpgradeController) getImageOverrideMapFromHub() corev1.ConfigMap {
+func (c *UpgradeController) getImageOverrideMapFromHub() (corev1.ConfigMap, error) {
 	overrideImagesCm := &corev1.ConfigMap{}
 	overrideImagesCmKey := types.NamespacedName{Name: util.HypershiftOverrideImagesCM, Namespace: c.clusterName}
 	if err := c.hubClient.Get(context.TODO(), overrideImagesCmKey, overrideImagesCm); err != nil && !errors.IsNotFound(err) {
 		c.log.Error(err, "failed to get configmap from the hub: ")
 		// Update hub image override configmap sync metrics count
 		metrics.HubResourceSyncFailureCount.WithLabelValues("configmap").Inc()
+		return *overrideImagesCm, err
 	}
-	return *overrideImagesCm
+	return *overrideImagesCm, nil
 }
