@@ -553,7 +553,7 @@ installHypershiftBinary() {
         exit 1
     fi
 
-    mv remote-source/app/bin/linux/amd64/hypershift /bin
+    mv hypershift /bin
     if [ $? -ne 0 ]; then
         echo "$(date) failed to mv extracted hypershift binary to /bin"
         exit 1

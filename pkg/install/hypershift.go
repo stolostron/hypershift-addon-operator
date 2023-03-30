@@ -317,7 +317,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	c.extDnsSecret = *sExtDNS
 
 	// Get the hypershift operator installation flags configmap from the hub
-	installFlagsCM := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
+	installFlagsCM, _ := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
 	c.installFlagsConfigmap = installFlagsCM
 
 	hypershiftImage := c.operatorImage
@@ -715,7 +715,7 @@ func (c *UpgradeController) readInDownstreamOverride() ([]byte, error) {
 
 	// This is the user provided upgrade images configmap
 	// Override the image values in the installer provided imagestream with this
-	imUpgradeConfigMap := c.getConfigMapFromHub(util.HypershiftOverrideImagesCM)
+	imUpgradeConfigMap, _ := c.getConfigMapFromHub(util.HypershiftOverrideImagesCM)
 	if imUpgradeConfigMap.Data != nil {
 		c.log.Info(fmt.Sprintf("found %s configmap, overriding hypershift images in the imagestream", util.HypershiftOverrideImagesCM))
 
