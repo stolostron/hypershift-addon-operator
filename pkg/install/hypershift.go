@@ -611,7 +611,7 @@ func (c *UpgradeController) readInDownstreamOverride() ([]byte, error) {
 
 	// This is the user provided upgrade images configmap
 	// Override the image values in the installer provided imagestream with this
-	imUpgradeConfigMap := c.getImageOverrideMapFromHub()
+	imUpgradeConfigMap, _ := c.getImageOverrideMapFromHub()
 	if imUpgradeConfigMap.Data != nil {
 		c.log.Info(fmt.Sprintf("found %s configmap, overriding hypershift images in the imagestream", util.HypershiftOverrideImagesCM))
 

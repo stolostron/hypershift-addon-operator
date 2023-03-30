@@ -86,6 +86,12 @@ spec:
         volumeMounts:
           - name: hub-config
             mountPath: /var/run/hub
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8000
+          initialDelaySeconds: 2
+          periodSeconds: 10
       volumes:
         - name: hub-config
           secret:
