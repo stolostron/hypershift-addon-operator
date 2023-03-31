@@ -4,6 +4,8 @@ Refer to the ACM documentation on backup and restore for more details. https://a
 
 This documentation provides instructions on how to configure ACM on a service cluster to backup ACM resources so that when the service cluster fails over to a new cluster, ACM can restore manageability of all management clusters and managed guest hypershift hosted clusters. In this service cluster backup and restore example, we are going to configure one service cluster to be the active ACM cluster that backs up necessary resources periodically to a AWS S3 bucket, configure another service cluster to be a passive ACM cluster that continuously restore the backed up resources and stay passive by not trying to connect and manage the management and hypershift hosted clusters. After this active-passive environment is setup, we are going to fail over to the passive service cluster and make it the active service cluster that starts to manage the management and hypershift hosted clusters as well as to continue backing up the resources.
 
+This sample uses an AWS S3 bucket for backup storage but you can use other supported storages. See https://github.com/vmware-tanzu/velero/blob/main/site/content/docs/main/supported-providers.md for other supported backup storage providers.
+
 ## Configuring ACM on active service cluster
 
 1. Enable the backup feature in ACM.
@@ -127,7 +129,7 @@ It is recommended that the passive cluster has identical set of operators and ot
       $ oc create secret generic cloud-credentials --namespace open-cluster-management-backup --from-file cloud=/Users/rokej/.aws/credentials
 ```
 
-4. Create the following `DataProtectionApplication` instance.
+4. Create the following `DataProtectionApplication` instance to connect to the same storage location where the active service cluster had backed up the data.
 
 ```yaml
       apiVersion: oadp.openshift.io/v1alpha1
@@ -217,7 +219,7 @@ It is recommended that the passive cluster has identical set of operators and ot
       $ oc get managedcluster
 ```
 
-4. When everything is restored, delete the Restore resources and create the the following BackupSchedule resource to start backing up and store them in the S3 bucket every hour.
+4. When everything is restored, create the the following BackupSchedule resource to start backing up and store them in the S3 bucket every hour.
 
 ```yaml
       apiVersion: cluster.open-cluster-management.io/v1beta1
