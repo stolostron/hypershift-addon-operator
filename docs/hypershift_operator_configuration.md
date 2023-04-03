@@ -1,4 +1,4 @@
-# Hypershift Operator installation flags
+# Hypershift Operator Configuration Options
 
 If you run `hypershift install --help` [hypershift CLI](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/installing_hypershift_cli.md) command, you can see the hypershift operator installation flags. For example,
 

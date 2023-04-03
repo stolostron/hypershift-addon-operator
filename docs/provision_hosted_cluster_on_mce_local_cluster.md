@@ -118,6 +118,32 @@ If you are planning to create hosted clusters on AWS cloud platform, you must ha
   $ oc label secret hypershift-operator-private-link-credentials -n local-cluster cluster.open-cluster-management.io/backup=true
   ```
 
+### Disconnected Environment Configuration
+
+The `hypershift-addon` managed cluster addon enables the `--enable-uwm-telemetry-remote-write` option in the hypershift operator. This ensures user workload monitoring is enabled and that it is configured to remote write telemetry metrics from control planes. If you installed the multicluster engine operator on Red Hat OpenShift Container Platform clusters that are not connected to the Internet, the user workload monitoring feature of the hypershift operator will fail with the following error.
+
+```
+$ oc get events -n hypershift
+LAST SEEN   TYPE      REASON           OBJECT                MESSAGE
+4m46s       Warning   ReconcileError   deployment/operator   Failed to ensure UWM telemetry remote write: cannot get telemeter client secret: Secret "telemeter-client" not found
+```
+
+You need to disable the user workload monitoring option by creating the following configmap in `local-cluster` namespace before enabling the `hypershift-addon` managed cluster addon. You can also create the configmap after enbling the addon. The addon agent will re-configure the hypershift operator.
+
+```yaml
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: hypershift-operator-install-flags
+  namespace: local-cluster
+data:
+  installFlagsToAdd: ""
+  installFlagsToRemove: "--enable-uwm-telemetry-remote-write"
+```
+
+For more information on the usage of this configmap, see [Hypershift Operator configuration Options](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift_operator_configuration.md).
+
+
 ### Enabling the Hosted Control Plane feature
 
 Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine` with your MCE's instance name:
