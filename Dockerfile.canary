@@ -1,3 +1,5 @@
+ARG FOUNDATION_IMAGE_TAG=latest
+FROM quay.io/stolostron/foundation-e2e:$FOUNDATION_IMAGE_TAG AS foundation-canary
 FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
 
 # Install utils
@@ -23,6 +25,9 @@ COPY ./test/canary/resources /resources
 # Uncomment below to test with upstream
 #COPY ./test/canary/bin/hypershift /bin
 #RUN chmod +x /bin/hypershift
+
+# Copy foundation canary test binary
+COPY --from=foundation-canary /work-e2e /
 
 # run as root
 USER root

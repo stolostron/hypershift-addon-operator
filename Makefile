@@ -114,6 +114,9 @@ rm -rf $$TMP_DIR ;\
 }
 endef
 
+COMPONENT_VERSION = $(shell cat COMPONENT_VERSION)
+FOUNDATION_IMAGE_TAG = backplane-$(basename ${COMPONENT_VERSION})
+
 build-e2e:
 	go test -c ./test/e2e
 
@@ -137,4 +140,4 @@ quickstart:
 
 .PHONY: docker-build-canary
 docker-build-canary:   # Build docker image with the manager.
-	docker build -t ${IMG_CANARY} -f Dockerfile.canary .
+	docker build -t ${IMG_CANARY} -f Dockerfile.canary --build-arg FOUNDATION_IMAGE_TAG=${FOUNDATION_IMAGE_TAG} .

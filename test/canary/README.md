@@ -60,6 +60,11 @@ docker run \
   quay.io/stolostron/hypershift-addon-operator-canary-test:latest
 ```
 
+By running foundation canary along with hypershift canary, foundation features, like ManifestWork, will be verified on both hosting cluster and hosted clusters. Append the environment variable below to the above `docker run` command to enable foundation canary.
+```
+  --env ENABLE_FOUNDATION_CANARY=true \
+```
+
 ## manual cleanup
 
 Run the following:

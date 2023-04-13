@@ -32,6 +32,8 @@ fi
 # The AWS creds
 #export AWS_ACCESS_KEY_ID=
 #export AWS_SECRET_ACCESS_KEY=
+# ENABLE_FOUNDATION_CANARY indicates whether the foundation canary test will be ran along with hypershift canary test. It will be run only when the variable is set to true.
+#export ENABLE_FOUNDATION_CANARY=
 
 # Canary test expects a xml result file in a folder.
 # Default the result to failed until it's successful.
@@ -148,6 +150,12 @@ INFRA_ID_2=$(cat /dev/urandom | env LC_ALL=C tr -dc 'a-z0-9' | fold -w 32 | head
 CLUSTER_UUID_2=$(uuid)
 INFRA_OUTPUT_FILE_2=${CLUSTER_NAME_2}-infraout
 IAM_OUTPUT_FILE_2=${CLUSTER_NAME_2}-iam
+
+# Generate the kubeconfig file of the hub cluster
+HUB_KUBECONFIG="kubeconfig.hub"
+if [ "${ENABLE_FOUNDATION_CANARY}" == "true" ]; then
+    ${KUBECTL_COMMAND} config view --flatten --minify > ./${HUB_KUBECONFIG}
+fi
 
 cleanupAWSResources() {
     ${HYPERSHIFT_COMMAND} destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${INFRA_ID_1}
@@ -346,6 +354,31 @@ cleanup() {
     rm ${clusterName}-managedcluster.yaml-e
 }
 
+verifyHostingCluster() {
+    hubKubeConfigFile=$1
+    hostingClusterName=$2
+    hostingKubeConfigFile=$3
+
+    verifyManifestWorkAPI ${hubKubeConfigFile} ${hostingClusterName} ${hostingKubeConfigFile} "/results"
+}
+
+verifyManifestWorkAPI() {
+    hubKubeConfigFile=$1
+    clusterName=$2
+    managedKubeConfigFile=$3
+    outputDir=$4
+
+    /work-e2e --ginkgo.v --ginkgo.label-filter=sanity-check \
+        --ginkgo.junit-report="${outputDir}/foundation-work-e2e-${clusterName}.xml" \
+        -hub-kubeconfig=${hubKubeConfigFile} -webhook-deployment-name=cluster-manager-work-webhook \
+        -cluster-name=${clusterName} -managed-kubeconfig=${managedKubeConfigFile} -eventually-timeout=180s
+    if [ $? -ne 0 ]; then
+        echo "$(date) failed to verify the ManifestWork API on cluster ${clusterName}"
+        ${KUBECTL_COMMAND} get managedcluster ${clusterName} -o yaml
+        exit 1
+    fi
+}
+
 verifyHostedCluster() {
     FOUND=1
     SECONDS=0
@@ -418,6 +451,13 @@ verifyHostedCluster() {
         sleep 30
         (( SECONDS = SECONDS + 30 ))
     done
+
+    if [ "${ENABLE_FOUNDATION_CANARY}" == "true" ]; then
+        # Verify ManifestWork API on the hosted cluster
+        echo "$(date) ==== Verifying ManifestWork API on hosted cluster  ${infraId} ===="
+        ${KUBECTL_COMMAND} -n ${HOSTING_CLUSTER_NAME} get secret "${infraId}-admin-kubeconfig" -o jsonpath={.data\.kubeconfig} | base64 -d > "kubeconfig.${infraId}"
+        verifyManifestWorkAPI ${HUB_KUBECONFIG} ${infraId} "kubeconfig.${infraId}" "/results"
+    fi
 }
 
 
@@ -597,6 +637,18 @@ fi
 # https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/running_mce_acm_addons_hostedmode.md
 echo "$(date) ==== Enable hosted mode addon configuration ===="
 enableHostedModeAddon
+
+if [ "${ENABLE_FOUNDATION_CANARY}" == "true" ]; then
+    # Only verify the hosting cluster when the hosting cluster is local-cluster.
+    # If other managed cluster is chosen, there is no way to get the kubeconfig of the hosting cluster,
+    # which is required to run the foundation canary test.
+    # TODO: support hosting cluster other than local-cluster
+    if [ "${HOSTING_CLUSTER_NAME}" == "local-cluster" ]; then
+        # Verify hosting cluster
+        echo "$(date) ==== Verifying hosting cluster  ${HOSTING_CLUSTER_NAME} ===="
+        verifyHostingCluster ${HUB_KUBECONFIG} ${HOSTING_CLUSTER_NAME} ${HUB_KUBECONFIG}
+    fi
+fi
 
 # Generate AWS infrastructure and IAM for the first hosted cluster
 # Generate the follwing YAMLs:
