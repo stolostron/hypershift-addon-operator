@@ -212,11 +212,13 @@ func applyAgentPermissionManifestFromFile(file, clusterName, componentName strin
 		ClusterName            string
 		Group                  string
 		RoleAndRolebindingName string
+		ClusterRolebindingName string
 	}{
 		ClusterName: clusterName,
 
 		Group:                  groups[0],
 		RoleAndRolebindingName: fmt.Sprintf("open-cluster-management:%s:agent", componentName),
+		ClusterRolebindingName: fmt.Sprintf("open-cluster-management:%s:%s:agent", componentName, clusterName),
 	}
 
 	results := resourceapply.ApplyDirectly(
