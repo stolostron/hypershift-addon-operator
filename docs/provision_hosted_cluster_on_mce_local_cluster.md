@@ -42,8 +42,21 @@ If you are planning to create hosted clusters on AWS cloud platform, you must ha
   To create the bucket (in us-east-1):
 
   ```bash
-  $ BUCKET_NAME=your-bucket-name
-  $ aws s3api create-bucket --acl public-read --bucket $BUCKET_NAME
+    $ BUCKET_NAME=your-bucket-name
+    $ aws s3api create-bucket --bucket $BUCKET_NAME
+    $ aws s3api delete-public-access-block --bucket $BUCKET_NAME
+    $ echo '{
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "s3:GetObject",
+            "Resource": "arn:aws:s3:::${BUCKET_NAME}/*"
+          }
+        ]
+      }' | envsubst > policy.json
+    $ aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy file://policy.json
   ```
 
   To create the bucket in a region other than us-east-1:
