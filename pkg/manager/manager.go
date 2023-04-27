@@ -65,6 +65,7 @@ func init() {
 const (
 	hypershiftAddonImageName    = "HYPERSHIFT_ADDON_IMAGE_NAME"
 	hypershiftOperatorImageName = "HYPERSHIFT_OPERATOR_IMAGE_NAME"
+	kubeRbacProxyImageName      = "KUBE_RBAC_PROXY_IMAGE_NAME"
 	templatePath                = "manifests/templates"
 )
 
@@ -266,6 +267,11 @@ func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		operatorImage = util.DefaultHypershiftOperatorImage
 	}
 
+	kubeRbacProxyImage := os.Getenv(kubeRbacProxyImageName)
+	if len(kubeRbacProxyImage) == 0 {
+		kubeRbacProxyImage = util.DefaultKubeRbacProxyImage
+	}
+
 	content := ""
 
 	if o.withOverride {
@@ -285,6 +291,7 @@ func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		AddonName                           string
 		AddonInstallNamespace               string
 		HypershiftOperatorImage             string
+		KubeRbacProxyImage                  string
 		Image                               string
 		SpokeRolebindingName                string
 		AgentServiceAccountName             string
@@ -300,6 +307,7 @@ func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		AddonName:                           fmt.Sprintf("%s-agent", addon.Name),
 		Image:                               addonImage,
 		HypershiftOperatorImage:             operatorImage,
+		KubeRbacProxyImage:                  kubeRbacProxyImage,
 		SpokeRolebindingName:                addon.Name,
 		AgentServiceAccountName:             fmt.Sprintf("%s-agent-sa", addon.Name),
 		HyeprshiftImageOverride:             o.withOverride,
