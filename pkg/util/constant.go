@@ -14,6 +14,8 @@ const (
 
 	DefaultHypershiftOperatorImage = "quay.io/hypershift/hypershift-operator:latest"
 
+	DefaultKubeRbacProxyImage = "registry.redhat.io/openshift4/ose-kube-rbac-proxy:v4.10"
+
 	// AgentInstallationNamespace is the namespace on the managed cluster to install the addon agent.
 	AgentInstallationNamespace = "open-cluster-management-agent-addon"
 

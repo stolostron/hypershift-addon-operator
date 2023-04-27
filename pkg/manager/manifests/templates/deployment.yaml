@@ -21,11 +21,7 @@ spec:
       containers:
 {{- if ne .disableMetrics "true" }}
       - name: kube-rbac-proxy
-        {{- if .kubeRbacProxyImage }}
-        image: "{{ .kubeRbacProxyImage }}"
-        {{- else }}
-        image: registry.redhat.io/openshift4/ose-kube-rbac-proxy:v4.10
-        {{- end }}
+        image: {{ .KubeRbacProxyImage }}
         imagePullPolicy: IfNotPresent
         args:
         - --upstream=http://127.0.0.1:8383/
