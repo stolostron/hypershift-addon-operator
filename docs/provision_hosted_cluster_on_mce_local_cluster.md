@@ -44,6 +44,22 @@ If you are planning to create hosted clusters on AWS cloud platform, you must ha
   ```bash
     $ BUCKET_NAME=your-bucket-name
     $ aws s3api create-bucket --bucket $BUCKET_NAME
+  ```
+
+  To create the bucket in a region other than us-east-1:
+
+  ```bash
+  $ BUCKET_NAME=your-bucket-name
+  $ REGION=us-east-2
+  $ aws s3api create-bucket --acl public-read --bucket $BUCKET_NAME \
+    --create-bucket-configuration LocationConstraint=$REGION \
+    --region $REGION
+  ```
+
+  To set ACL on the bucket
+
+  ```bash
+    $ export BUCKET_NAME=your-bucket-name
     $ aws s3api delete-public-access-block --bucket $BUCKET_NAME
     $ echo '{
         "Version": "2012-10-17",
@@ -57,16 +73,6 @@ If you are planning to create hosted clusters on AWS cloud platform, you must ha
         ]
       }' | envsubst > policy.json
     $ aws s3api put-bucket-policy --bucket $BUCKET_NAME --policy file://policy.json
-  ```
-
-  To create the bucket in a region other than us-east-1:
-
-  ```bash
-  $ BUCKET_NAME=your-bucket-name
-  $ REGION=us-east-2
-  $ aws s3api create-bucket --acl public-read --bucket $BUCKET_NAME \
-    --create-bucket-configuration LocationConstraint=$REGION \
-    --region $REGION
   ```
 
 * OIDC S3 credentials secret for the HyperShift operator named `hypershift-operator-oidc-provider-s3-credentials` in `local-cluster` namespace. When the hypershift feature is enabled, the hypershift-addon agent uses this secret for installing the hypershift operator. If this secret is created after enabling the hosted control plane feature, the hypershift-addon agent automatically re-installs the hypershift operator with this OIDC S3 option.
