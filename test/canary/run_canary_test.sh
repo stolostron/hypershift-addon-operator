@@ -375,7 +375,27 @@ verifyManifestWorkAPI() {
     if [ $? -ne 0 ]; then
         echo "$(date) failed to verify the ManifestWork API on cluster ${clusterName}"
         ${KUBECTL_COMMAND} get managedcluster ${clusterName} -o yaml
+        processManifestWorkTestReport "${outputDir}/foundation-work-e2e-${clusterName}.xml"
         exit 1
+    fi
+
+    processManifestWorkTestReport "${outputDir}/foundation-work-e2e-${clusterName}.xml"
+}
+
+processManifestWorkTestReport() {
+    testReport=$1
+
+    if [ -e ${testReport} ]
+    then
+        #set the priority and severity of the test cases
+        sed -i -e 's/\[It\]/Server Foundation: \[P2\]\[Sev2\]\[server-foundation\]/' \
+            -e 's/"\[BeforeSuite\]"/"Server Foundation: \[P2\]\[Sev2\]\[server-foundation\] BeforeSuite"/' \
+            -e 's/"\[AfterSuite\]"/"Server Foundation: \[P2\]\[Sev2\]\[server-foundation\] AfterSuite"/' \
+            ${testReport}
+        if [ $? -ne 0 ]; then
+            echo "$(date) failed to set the priority and severity of the test cases in ${testReport}"
+            exit 1
+        fi
     fi
 }
 
