@@ -338,7 +338,18 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	klusterletNamespace := &corev1.Namespace{}
 	klusterletNamespaceNsn := types.NamespacedName{Name: "klusterlet-" + managedClusterAnnoValue}
 
-	err := c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace)
+	//When klusterlet for imported HC is created, namespace might not exist right away, attempt twice before failing
+	var err error
+	for try := 1; try <= 2; try++ {
+		if try != 1 {
+			c.log.Error(err, fmt.Sprintf("failed to find the klusterlet namespace: %s . Retrying in 1 minute", klusterletNamespaceNsn.Name))
+			time.Sleep(1 * time.Minute)
+		}
+		err = c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace)
+		if err == nil {
+			break
+		}
+	}
 	if err != nil {
 		c.log.Error(err, fmt.Sprintf("failed to find the klusterlet namespace: %s ", klusterletNamespaceNsn.Name))
 		return fmt.Errorf("failed to find the klusterlet namespace: %s", klusterletNamespaceNsn.Name)
@@ -418,6 +429,8 @@ func (c *agentController) getAPIServicePort(hc hyperv1beta1.HostedCluster) (stri
 }
 
 func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	c.log.Info("MY IMAGE")
+	c.log.Info(fmt.Sprintf("Reconciling triggered by %s in namespace %s", req.Name, req.Namespace))
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
@@ -843,10 +856,19 @@ func (c *agentController) deleteManagedCluster(ctx context.Context, hc *hyperv1b
 }
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
-	return ctrl.NewControllerManagedBy(mgr).
+	if err := ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		Complete(c)
+		Complete(c); err != nil {
+			return err
+	}
+	if err := ctrl.NewControllerManagedBy(mgr).
+		For(&operatorapiv1.Klusterlet{}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		Complete(c); err != nil {
+			return err
+	}
+	return nil
 }
 
 func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
