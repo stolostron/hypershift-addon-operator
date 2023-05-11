@@ -249,6 +249,16 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to create agent status controller: %s, err: %w", util.AddonStatusControllerName, err)
 	}
 
+	externalSecretController := &ExternalSecretController{
+		hubClient: hubClient,
+		log:       o.Log.WithName("external-secret-controller"),
+	}
+
+	if err = externalSecretController.SetupWithManager(mgr); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
+		return fmt.Errorf("unable to create external secret controller: %s, err: %w", util.ExternalSecretControllerName, err)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to set up health check, err: %w", err)
@@ -856,19 +866,10 @@ func (c *agentController) deleteManagedCluster(ctx context.Context, hc *hyperv1b
 }
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
-	if err := ctrl.NewControllerManagedBy(mgr).
+	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		Complete(c); err != nil {
-			return err
-	}
-	if err := ctrl.NewControllerManagedBy(mgr).
-		For(&operatorapiv1.Klusterlet{}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		Complete(c); err != nil {
-			return err
-	}
-	return nil
+		Complete(c)
 }
 
 func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
