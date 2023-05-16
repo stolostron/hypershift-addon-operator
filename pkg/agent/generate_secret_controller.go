@@ -8,18 +8,26 @@ import (
 
 	"github.com/go-logr/logr"
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
+	"k8s.io/apimachinery/pkg/types"
 
 	operatorapiv1 "open-cluster-management.io/api/operator/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
+const (
+	klusterletAnnotationFinalizer = "operator.open-cluster-management.io/hc-secret-annotation"
+	hcAnnotation = "create-external-hub-kubeconfig"
+)
+
 type ExternalSecretController struct {
-	hubClient client.Client
-	log       logr.Logger
+	hubClient   client.Client
+	spokeClient client.Client
+	log         logr.Logger
 }
 
 var ExternalSecretPredicateFunctions = predicate.Funcs{
@@ -30,7 +38,7 @@ var ExternalSecretPredicateFunctions = predicate.Funcs{
 		return false
 	},
 	DeleteFunc: func(e event.DeleteEvent) bool {
-		return false
+		return true
 	},
 }
 
@@ -47,9 +55,21 @@ func (c *ExternalSecretController) SetupWithManager(mgr ctrl.Manager) error {
 func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	c.log.Info(fmt.Sprintf("reconciling annotation for %s", req.Name))
 	defer c.log.Info(fmt.Sprintf("done reconciling annotation for %s", req.Name))
+
 	if !strings.Contains(req.Name, "klusterlet-") {
 		c.log.Info("klusterlet not from a managed cluster")
 		return ctrl.Result{}, nil //No need to error
+	}
+
+	//Get klusterlet
+	klusterletNamespaceNsn := types.NamespacedName{
+		Name:      req.Name,
+		Namespace: req.Namespace,
+	}
+	klusterlet := &operatorapiv1.Klusterlet{}
+	if err := c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterlet); err != nil {
+		c.log.Error(err, "Unable to get klusterlet")
+		return ctrl.Result{}, err
 	}
 
 	_, hostedClusterName, _ := strings.Cut(req.Name, "klusterlet-")
@@ -58,16 +78,16 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 	hostedClusters := &hyperv1beta1.HostedClusterList{}
 
 	// List the HostedCluster objects across all namespaces
-	if err := c.hubClient.List(ctx, hostedClusters, lo); err != nil {
+	if err := c.spokeClient.List(ctx, hostedClusters, lo); err != nil {
 		c.log.Error(err, "Unable to list hosted clusters in all namespaces")
 		return ctrl.Result{}, err
 	}
 
-	obj := &hyperv1beta1.HostedCluster{}
+	hostedClusterObj := &hyperv1beta1.HostedCluster{}
 	// Loop over the list of HostedCluster objects and find the one with the specified name
 	for index, hc := range hostedClusters.Items {
 		if hc.Name == hostedClusterName {
-			obj = &hc
+			hostedClusterObj = &hc
 			break
 		}
 		if index == len(hostedClusters.Items) {
@@ -77,15 +97,37 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	if obj.Annotations["create-external-hub-kubeconfig"] == "true" {
-		return ctrl.Result{}, nil // object already annotated, nothing to do
+	if klusterlet.ObjectMeta.DeletionTimestamp.IsZero() {
+
+		// Add finalizer if it doesn't exist
+		if !controllerutil.ContainsFinalizer(klusterlet, klusterletAnnotationFinalizer) {
+			controllerutil.AddFinalizer(klusterlet, klusterletAnnotationFinalizer)
+			c.log.Info(fmt.Sprintf("Added finalizer to %s", klusterlet.Name))
+		}
+
+		// Add the annotation to the hostedcluster if it doesn't exist
+		if _, ok := hostedClusterObj.ObjectMeta.Annotations[hcAnnotation]; !ok {
+			hostedClusterObj.Annotations[hcAnnotation] = "true"
+			c.log.Info(fmt.Sprintf("Annotated %s with %s", hostedClusterObj.Name, hcAnnotation))
+		}
+
+
+	} else {
+		//Remove annotation from hosted cluster
+		delete(hostedClusterObj.Annotations, hcAnnotation)
+		c.log.Info(fmt.Sprintf("Removed annotation %s from %s", hcAnnotation, hostedClusterObj.Name))
+		// Remove finalizer
+		if !controllerutil.ContainsFinalizer(klusterlet, klusterletAnnotationFinalizer) {
+			controllerutil.RemoveFinalizer(klusterlet, klusterletAnnotationFinalizer)
+			c.log.Info(fmt.Sprintf("Removed finalizer from %s", klusterlet.Name))
+		}
+
 	}
 
-	// Add the annotation to the object
-	obj.Annotations["create-external-hub-kubeconfig"] = "true"
-
-	// Update the object in the Kubernetes API server
-	if err := c.hubClient.Update(ctx, obj); err != nil {
+	if err := c.spokeClient.Update(ctx, klusterlet); err != nil { //Add/remove klusterlet finalizer
+		return ctrl.Result{}, err
+	}
+	if err := c.spokeClient.Update(ctx, hostedClusterObj); err != nil { //Add/remove hostedcluster annotation
 		return ctrl.Result{}, err
 	}
 
