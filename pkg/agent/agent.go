@@ -351,7 +351,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 
 	//When klusterlet for imported HC is created, namespace might not exist right away, attempt twice before failing
 	var err error
-	for try := 1; try <= 2; try++ {
+	for try := 1; try <= 5; try++ {
 		if try != 1 {
 			c.log.Error(err, fmt.Sprintf("failed to find the klusterlet namespace: %s . Retrying in 1 minute", klusterletNamespaceNsn.Name))
 			time.Sleep(1 * time.Minute)

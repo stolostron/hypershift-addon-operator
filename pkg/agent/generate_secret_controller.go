@@ -9,6 +9,7 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/klog/v2"
 
 	operatorapiv1 "open-cluster-management.io/api/operator/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -21,7 +22,7 @@ import (
 
 const (
 	klusterletAnnotationFinalizer = "operator.open-cluster-management.io/hc-secret-annotation"
-	hcAnnotation = "create-external-hub-kubeconfig"
+	hcAnnotation                  = "create-external-hub-kubeconfig"
 )
 
 type ExternalSecretController struct {
@@ -32,15 +33,21 @@ type ExternalSecretController struct {
 
 var ExternalSecretPredicateFunctions = predicate.Funcs{
 	CreateFunc: func(e event.CreateEvent) bool {
+		klog.Info("KLOG TRIGERRED BY CREATE")
 		return true
 	},
 	UpdateFunc: func(e event.UpdateEvent) bool {
 		klusterletOld := e.ObjectOld.(*operatorapiv1.Klusterlet)
 		klusterletNew := e.ObjectNew.(*operatorapiv1.Klusterlet)
-		return !klusterletNew.ObjectMeta.DeletionTimestamp.IsZero() && klusterletOld.ObjectMeta.DeletionTimestamp.IsZero()
+		if (klusterletOld.ObjectMeta.DeletionTimestamp.IsZero() != klusterletNew.ObjectMeta.DeletionTimestamp.IsZero()) {
+			klog.Info("TRIGERRED BY UPDATE KLOG true")
+			klog.Info("Old has deletion time stamp?", klusterletOld.ObjectMeta.DeletionTimestamp.IsZero())
+			klog.Info("New has deletion time stamp?", klusterletNew.ObjectMeta.DeletionTimestamp.IsZero())
+		}
+		return klusterletOld.ObjectMeta.DeletionTimestamp.IsZero() != klusterletNew.ObjectMeta.DeletionTimestamp.IsZero()
 	},
 	DeleteFunc: func(e event.DeleteEvent) bool {
-		return true
+		return false
 	},
 }
 
@@ -113,11 +120,13 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 			c.log.Info(fmt.Sprintf("Annotated %s with %s", hostedClusterObj.Name, hcAnnotation))
 		}
 
-
 	} else {
 		//Remove annotation from hosted cluster
-		delete(hostedClusterObj.Annotations, hcAnnotation)
-		c.log.Info(fmt.Sprintf("Removed annotation %s from %s", hcAnnotation, hostedClusterObj.Name))
+		if _, ok := hostedClusterObj.ObjectMeta.Annotations[hcAnnotation]; ok {
+			delete(hostedClusterObj.Annotations, hcAnnotation)
+			c.log.Info(fmt.Sprintf("Removed annotation %s from %s", hcAnnotation, hostedClusterObj.Name))
+		}
+
 		// Remove finalizer
 		if controllerutil.ContainsFinalizer(klusterlet, klusterletAnnotationFinalizer) {
 			controllerutil.RemoveFinalizer(klusterlet, klusterletAnnotationFinalizer)
