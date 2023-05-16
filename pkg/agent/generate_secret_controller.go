@@ -9,15 +9,12 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/klog/v2"
 
 	operatorapiv1 "open-cluster-management.io/api/operator/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 const (
@@ -31,32 +28,32 @@ type ExternalSecretController struct {
 	log         logr.Logger
 }
 
-var ExternalSecretPredicateFunctions = predicate.Funcs{
-	CreateFunc: func(e event.CreateEvent) bool {
-		klog.Info("KLOG TRIGERRED BY CREATE")
-		return true
-	},
-	UpdateFunc: func(e event.UpdateEvent) bool {
-		klusterletOld := e.ObjectOld.(*operatorapiv1.Klusterlet)
-		klusterletNew := e.ObjectNew.(*operatorapiv1.Klusterlet)
-		if (klusterletOld.ObjectMeta.DeletionTimestamp.IsZero() != klusterletNew.ObjectMeta.DeletionTimestamp.IsZero()) {
-			klog.Info("TRIGERRED BY UPDATE KLOG true")
-			klog.Info("Old has deletion time stamp?", klusterletOld.ObjectMeta.DeletionTimestamp.IsZero())
-			klog.Info("New has deletion time stamp?", klusterletNew.ObjectMeta.DeletionTimestamp.IsZero())
-		}
-		return klusterletOld.ObjectMeta.DeletionTimestamp.IsZero() != klusterletNew.ObjectMeta.DeletionTimestamp.IsZero()
-	},
-	DeleteFunc: func(e event.DeleteEvent) bool {
-		return false
-	},
-}
+// var ExternalSecretPredicateFunctions = predicate.Funcs{
+// 	CreateFunc: func(e event.CreateEvent) bool {
+// 		klog.Info("KLOG TRIGERRED BY CREATE")
+// 		return true
+// 	},
+// 	UpdateFunc: func(e event.UpdateEvent) bool {
+// 		klusterletOld := e.ObjectOld.(*operatorapiv1.Klusterlet)
+// 		klusterletNew := e.ObjectNew.(*operatorapiv1.Klusterlet)
+// 		if (klusterletOld.ObjectMeta.DeletionTimestamp.IsZero() != klusterletNew.ObjectMeta.DeletionTimestamp.IsZero()) {
+// 			klog.Info("TRIGERRED BY UPDATE KLOG")
+// 			klog.Info("Old has deletion time stamp?", klusterletOld.ObjectMeta.DeletionTimestamp.IsZero())
+// 			klog.Info("New has deletion time stamp?", klusterletNew.ObjectMeta.DeletionTimestamp.IsZero())
+// 		}
+// 		return klusterletOld.ObjectMeta.DeletionTimestamp.IsZero() != klusterletNew.ObjectMeta.DeletionTimestamp.IsZero()
+// 	},
+// 	DeleteFunc: func(e event.DeleteEvent) bool {
+// 		return false
+// 	},
+// }
 
 // SetupWithManager sets up the controller with the Manager.
 func (c *ExternalSecretController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&operatorapiv1.Klusterlet{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		WithEventFilter(ExternalSecretPredicateFunctions).
+		//WithEventFilter(ExternalSecretPredicateFunctions).
 		Complete(c)
 }
 
