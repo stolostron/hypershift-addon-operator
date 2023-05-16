@@ -35,7 +35,9 @@ var ExternalSecretPredicateFunctions = predicate.Funcs{
 		return true
 	},
 	UpdateFunc: func(e event.UpdateEvent) bool {
-		return false
+		klusterletOld := e.ObjectOld.(*operatorapiv1.Klusterlet)
+		klusterletNew := e.ObjectNew.(*operatorapiv1.Klusterlet)
+		return !klusterletNew.ObjectMeta.DeletionTimestamp.IsZero() && klusterletOld.ObjectMeta.DeletionTimestamp.IsZero()
 	},
 	DeleteFunc: func(e event.DeleteEvent) bool {
 		return true
@@ -117,7 +119,7 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		delete(hostedClusterObj.Annotations, hcAnnotation)
 		c.log.Info(fmt.Sprintf("Removed annotation %s from %s", hcAnnotation, hostedClusterObj.Name))
 		// Remove finalizer
-		if !controllerutil.ContainsFinalizer(klusterlet, klusterletAnnotationFinalizer) {
+		if controllerutil.ContainsFinalizer(klusterlet, klusterletAnnotationFinalizer) {
 			controllerutil.RemoveFinalizer(klusterlet, klusterletAnnotationFinalizer)
 			c.log.Info(fmt.Sprintf("Removed finalizer from %s", klusterlet.Name))
 		}
