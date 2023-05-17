@@ -72,7 +72,7 @@ func TestKlusterletReconcile(t *testing.T) {
 			Finalizers: []string{"operator.open-cluster-management.io/klusterlet-hosted-cleanup"},
 		},
 	}
-	
+
 	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
 
 	err := ESCtrl.hubClient.Create(ctx, apiService)
@@ -90,7 +90,7 @@ func TestKlusterletReconcile(t *testing.T) {
 	//Should create annotation and finalizer
 	_, err = ESCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: klusterletNamespaceNsn})
 	assert.Nil(t, err, "err nil when reconcile is successful")
-	
+
 	//Check finalizer
 	gotKl := &operatorapiv1.Klusterlet{}
 	err = client.Get(ctx, klusterletNamespaceNsn, gotKl)
@@ -104,7 +104,6 @@ func TestKlusterletReconcile(t *testing.T) {
 	assert.Nil(t, err, "err nil if hostedcluster is found")
 	_, ok := gotH.ObjectMeta.Annotations["create-external-hub-kubeconfig"]
 	assert.True(t, ok, "true if annotation exists")
-
 
 	//Add deletion timestamp to klusterlet
 	gotKl.DeletionTimestamp = &metav1.Time{Time: time.Now()}
@@ -128,6 +127,5 @@ func TestKlusterletReconcile(t *testing.T) {
 	assert.Nil(t, err, "err nil if hostedcluster is found")
 	_, ok = gotH.ObjectMeta.Annotations["create-external-hub-kubeconfig"]
 	assert.False(t, ok, "false if annotation doesn't exist")
-
 
 }
