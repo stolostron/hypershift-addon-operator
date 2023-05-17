@@ -93,7 +93,7 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 	// Loop over the list of HostedCluster objects and find the one with the specified name
 	for index, hc := range hostedClusters.Items {
 		if hc.Name == hostedClusterName {
-			hostedClusterObj = &hc
+			hostedClusterObj = &hostedClusters.Items[index]
 			break
 		}
 		if index == len(hostedClusters.Items) {
