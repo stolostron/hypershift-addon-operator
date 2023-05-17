@@ -112,6 +112,10 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 
 		// Add the annotation to the hostedcluster if it doesn't exist
+		    // Create the annotation map if it doesn't exist
+		if hostedClusterObj.ObjectMeta.Annotations == nil {
+			hostedClusterObj.ObjectMeta.Annotations = make(map[string]string)
+		}
 		if _, ok := hostedClusterObj.ObjectMeta.Annotations[hcAnnotation]; !ok {
 			hostedClusterObj.Annotations[hcAnnotation] = "true"
 			c.log.Info(fmt.Sprintf("Annotated %s with %s", hostedClusterObj.Name, hcAnnotation))
