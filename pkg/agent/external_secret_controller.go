@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-logr/logr"
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
-	"k8s.io/klog/v2"
 
 	operatorapiv1 "open-cluster-management.io/api/operator/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -53,11 +52,11 @@ func (c *ExternalSecretController) SetupWithManager(mgr ctrl.Manager) error {
 
 // Reconcile updates the Hypershift addon status based on the Deployment status.
 func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	c.log.Info(fmt.Sprintf("reconciling annotation for %s", req.Name))
-	defer c.log.Info(fmt.Sprintf("done reconciling annotation for %s", req.Name))
+	c.log.Info(fmt.Sprintf("reconciling klusterlet: %s", req.Name))
+	defer c.log.Info(fmt.Sprintf("done reconciling klusterlet: %s", req.Name))
 
 	if !strings.Contains(req.Name, "klusterlet-") {
-		c.log.Info("klusterlet not from a managed cluster")
+		c.log.Info("klusterlet not from a hosted cluster")
 		return ctrl.Result{}, nil //No need to error
 	}
 
@@ -68,7 +67,7 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 
 	// List the HostedCluster objects across all namespaces
 	if err := c.spokeClient.List(ctx, hostedClusters, lo); err != nil {
-		c.log.Error(err, "Unable to list hosted clusters in all namespaces")
+		c.log.Error(err, "unable to list hosted clusters in all namespaces")
 		return ctrl.Result{}, err
 	}
 
@@ -81,7 +80,7 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 		if index == len(hostedClusters.Items) {
 			errh := errors.New("could not retrieve hosted cluster")
-			c.log.Error(errh, fmt.Sprintf("Unable to find hosted clusters with name %s", hostedClusterName))
+			c.log.Error(errh, fmt.Sprintf("unable to find hosted clusters with name %s", hostedClusterName))
 			return ctrl.Result{}, errh
 		}
 	}
@@ -91,11 +90,9 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		hostedClusterObj.ObjectMeta.Annotations = make(map[string]string)
 	}
 
-	
 	currentTime := time.Now()
 	hostedClusterObj.Annotations[hcAnnotation] = currentTime.Format(time.RFC3339)
 	c.log.Info(fmt.Sprintf("Annotated %s with %s", hostedClusterObj.Name, hcAnnotation))
-	
 
 	if err := c.spokeClient.Update(ctx, hostedClusterObj); err != nil { //Add/update hostedcluster annotation
 		return ctrl.Result{}, err

@@ -353,8 +353,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	var err error
 	for try := 1; try <= 5; try++ {
 		if try != 1 {
-			c.log.Error(err, 
-				fmt.Sprintf("failed to find the klusterlet namespace: %s . Retrying in 1 minute", 
+			c.log.V(1).Info(fmt.Sprintf("failed to find the klusterlet namespace: %s . Retrying in 1 minute",
 				klusterletNamespaceNsn.Name))
 			time.Sleep(1 * time.Minute)
 		}
