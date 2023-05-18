@@ -15,7 +15,6 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	operatorapiv1 "open-cluster-management.io/api/operator/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 //Things to test
@@ -84,48 +83,59 @@ func TestKlusterletReconcile(t *testing.T) {
 	err = ESCtrl.hubClient.Create(ctx, hc)
 	assert.Nil(t, err, "err nil when hosted cluster is created successfully")
 
+	//Create klusterlet (import)
 	err = ESCtrl.hubClient.Create(ctx, kl)
 	assert.Nil(t, err, "err nil when klusterlet is created successfully")
 
-	//Should create annotation and finalizer
+	//Should create annotation
 	_, err = ESCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: klusterletNamespaceNsn})
 	assert.Nil(t, err, "err nil when reconcile is successful")
-
-	//Check finalizer
-	gotKl := &operatorapiv1.Klusterlet{}
-	err = client.Get(ctx, klusterletNamespaceNsn, gotKl)
-	assert.Nil(t, err, "err nil if klusterlet is found")
-	hasFinalizer := controllerutil.ContainsFinalizer(gotKl, "operator.open-cluster-management.io/hc-secret-annotation")
-	assert.True(t, hasFinalizer, "true if finalizer exists")
 
 	//Check annotation
 	gotH := &hyperv1beta1.HostedCluster{}
-	err = client.Get(ctx, HCNamespaceNsn, gotH)
+	err = ESCtrl.hubClient.Get(ctx, HCNamespaceNsn, gotH)
 	assert.Nil(t, err, "err nil if hostedcluster is found")
-	_, ok := gotH.ObjectMeta.Annotations["create-external-hub-kubeconfig"]
+	firstTimestamp, ok := gotH.ObjectMeta.Annotations["create-external-hub-kubeconfig"]
 	assert.True(t, ok, "true if annotation exists")
 
-	//Add deletion timestamp to klusterlet
-	gotKl.DeletionTimestamp = &metav1.Time{Time: time.Now()}
-	err = client.Update(ctx, gotKl)
-	assert.Nil(t, err, "err nil if update is successful")
+	//Delete klusterlet
+	kl.ObjectMeta.Finalizers = []string{}
+	err = ESCtrl.hubClient.Update(ctx, kl)
+	assert.Nil(t, err, "err nil if successfully removed finalizers")
+	err = ESCtrl.hubClient.Delete(ctx, kl)
+	assert.Nil(t, err, "err nil if klusterlet is successfully deleted")
 
-	//Should remove annotation and finalizer
+	//Nothing should happen to hosted cluster
 	_, err = ESCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: klusterletNamespaceNsn})
 	assert.Nil(t, err, "err nil when reconcile is successful")
 
-	//Check finalizer
-	gotKl = &operatorapiv1.Klusterlet{}
-	err = client.Get(ctx, klusterletNamespaceNsn, gotKl)
-	assert.Nil(t, err, "err nil if klusterlet is found")
-	hasFinalizer = controllerutil.ContainsFinalizer(gotKl, "operator.open-cluster-management.io/hc-secret-annotation")
-	assert.False(t, hasFinalizer, "false if finalizer doesn't exist")
-
-	//Check annotation
-	gotH = &hyperv1beta1.HostedCluster{}
-	err = client.Get(ctx, HCNamespaceNsn, gotH)
+	//Annotation should still exist and be unchanged
+	err = ESCtrl.hubClient.Get(ctx, HCNamespaceNsn, gotH)
 	assert.Nil(t, err, "err nil if hostedcluster is found")
-	_, ok = gotH.ObjectMeta.Annotations["create-external-hub-kubeconfig"]
-	assert.False(t, ok, "false if annotation doesn't exist")
+	secondTimestamp, found := gotH.ObjectMeta.Annotations["create-external-hub-kubeconfig"]
+	assert.True(t, firstTimestamp == secondTimestamp && found, "true if annotation is unchanged")
+
+	kl = &operatorapiv1.Klusterlet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "klusterlet-hd-1",
+			Finalizers: []string{"operator.open-cluster-management.io/klusterlet-hosted-cleanup"},
+		},
+	}
+
+	time.Sleep(1 * time.Second) //Sleep one second to ensure different timestamp
+
+	//Recreate klusterlet (reimport)
+	err = ESCtrl.hubClient.Create(ctx, kl)
+	assert.Nil(t, err, "err nil when klusterlet is created successfully")
+
+	//Annotation should be updated to current time
+	_, err = ESCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: klusterletNamespaceNsn})
+	assert.Nil(t, err, "err nil when reconcile is successful")
+
+	//Annotation should have newer timestamp
+	err = ESCtrl.hubClient.Get(ctx, HCNamespaceNsn, gotH)
+	assert.Nil(t, err, "err nil if hostedcluster is found")
+	secondTimestamp, found = gotH.ObjectMeta.Annotations["create-external-hub-kubeconfig"]
+	assert.True(t, firstTimestamp != secondTimestamp && found, "true if annotation exists and is changed")
 
 }

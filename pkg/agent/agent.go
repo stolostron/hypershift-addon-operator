@@ -442,7 +442,6 @@ func (c *agentController) getAPIServicePort(hc hyperv1beta1.HostedCluster) (stri
 }
 
 func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	c.log.Info("MY IMAGE")
 	c.log.Info(fmt.Sprintf("Reconciling triggered by %s in namespace %s", req.Name, req.Namespace))
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
