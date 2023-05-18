@@ -19,8 +19,7 @@ import (
 )
 
 const (
-	klusterletAnnotationFinalizer = "operator.open-cluster-management.io/hc-secret-annotation"
-	hcAnnotation                  = "create-external-hub-kubeconfig"
+	hcAnnotation = "create-external-hub-kubeconfig"
 )
 
 type ExternalSecretController struct {
@@ -78,11 +77,13 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 			hostedClusterObj = &hostedClusters.Items[index]
 			break
 		}
-		if index == len(hostedClusters.Items) {
-			errh := errors.New("could not retrieve hosted cluster")
-			c.log.Error(errh, fmt.Sprintf("unable to find hosted clusters with name %s", hostedClusterName))
-			return ctrl.Result{}, errh
-		}
+	}
+
+	//Could not find hosted cluster
+	if hostedClusterObj.Name == "" {
+		errh := errors.New("could not retrieve hosted cluster")
+		c.log.Error(errh, fmt.Sprintf("unable to find hosted cluster with name %s", hostedClusterName))
+		return ctrl.Result{}, errh
 	}
 
 	// Add/update the annotation to the hostedcluster
