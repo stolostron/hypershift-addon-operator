@@ -349,20 +349,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	klusterletNamespace := &corev1.Namespace{}
 	klusterletNamespaceNsn := types.NamespacedName{Name: "klusterlet-" + managedClusterAnnoValue}
 
-	//When klusterlet for imported HC is created, namespace might not exist right away, attempt twice before failing
-	var err error
-	for try := 1; try <= 5; try++ {
-		if try != 1 {
-			c.log.V(1).Info(fmt.Sprintf("failed to find the klusterlet namespace: %s . Retrying in 1 minute",
-				klusterletNamespaceNsn.Name))
-			time.Sleep(1 * time.Minute)
-		}
-		err = c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace)
-		if err == nil {
-			break
-		}
-	}
-	if err != nil {
+	if err := c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace); err != nil {
 		c.log.Error(err, fmt.Sprintf("failed to find the klusterlet namespace: %s ", klusterletNamespaceNsn.Name))
 		return fmt.Errorf("failed to find the klusterlet namespace: %s", klusterletNamespaceNsn.Name)
 	}
@@ -625,7 +612,11 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	metrics.TotalReconcileCount.Inc() // increase reconcile action count
 	if err := createOrUpdateMirrorSecrets(); err != nil {
 		c.log.Info(fmt.Sprintf("failed to create external-managed-kubeconfig and mirror secrets for hostedcluster %s, error: %s. Will try again in 30 seconds", hc.Name, err.Error()))
-		metrics.FailedReconcileCount.Inc()
+
+		//Not failure, namespace is still creating
+		if !strings.Contains(err.Error(), "failed to find the klusterlet namespace") {
+			metrics.FailedReconcileCount.Inc()
+		}
 		return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
 	}
 
