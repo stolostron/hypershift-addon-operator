@@ -25,6 +25,7 @@ const (
 	HypershiftOverrideKey        = "imagestream"
 	AddonControllerName          = "hypershift-addon"
 	AddonStatusControllerName    = "hypershift-addon-status"
+	ExternalSecretControllerName = "external-secret"
 	AgentDeploymentName          = "hypershift-addon-agent"
 
 	HypershiftOverrideImagesCM = "hypershift-override-images"
