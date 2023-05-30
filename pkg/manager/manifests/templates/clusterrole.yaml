@@ -23,7 +23,7 @@ rules:
     verbs: ["get", "list", "create", "patch", "update", "delete"]
   - apiGroups: ["operator.open-cluster-management.io"]
     resources: ["klusterlets"]
-    verbs: ["get", "list", "patch", "update"]    
+    verbs: ["get", "list", "patch", "update", "watch"]    
   - apiGroups: [""]
     resources: ["services", "serviceaccounts", "configmaps", "secrets", "namespaces"]
     verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]     

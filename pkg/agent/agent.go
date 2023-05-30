@@ -249,6 +249,17 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to create agent status controller: %s, err: %w", util.AddonStatusControllerName, err)
 	}
 
+	externalSecretController := &ExternalSecretController{
+		hubClient:   hubClient,
+		spokeClient: spokeKubeClient,
+		log:         o.Log.WithName("external-secret-controller"),
+	}
+
+	if err = externalSecretController.SetupWithManager(mgr); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
+		return fmt.Errorf("unable to create external secret controller: %s, err: %w", util.ExternalSecretControllerName, err)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to set up health check, err: %w", err)
@@ -338,8 +349,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	klusterletNamespace := &corev1.Namespace{}
 	klusterletNamespaceNsn := types.NamespacedName{Name: "klusterlet-" + managedClusterAnnoValue}
 
-	err := c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace)
-	if err != nil {
+	if err := c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace); err != nil {
 		c.log.Error(err, fmt.Sprintf("failed to find the klusterlet namespace: %s ", klusterletNamespaceNsn.Name))
 		return fmt.Errorf("failed to find the klusterlet namespace: %s", klusterletNamespaceNsn.Name)
 	}
@@ -418,6 +428,7 @@ func (c *agentController) getAPIServicePort(hc hyperv1beta1.HostedCluster) (stri
 }
 
 func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	c.log.Info(fmt.Sprintf("Reconciling triggered by %s in namespace %s", req.Name, req.Namespace))
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
@@ -601,7 +612,11 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	metrics.TotalReconcileCount.Inc() // increase reconcile action count
 	if err := createOrUpdateMirrorSecrets(); err != nil {
 		c.log.Info(fmt.Sprintf("failed to create external-managed-kubeconfig and mirror secrets for hostedcluster %s, error: %s. Will try again in 30 seconds", hc.Name, err.Error()))
-		metrics.FailedReconcileCount.Inc()
+
+		//Not failure, namespace is still creating
+		if !strings.Contains(err.Error(), "failed to find the klusterlet namespace") {
+			metrics.FailedReconcileCount.Inc()
+		}
 		return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
 	}
 
