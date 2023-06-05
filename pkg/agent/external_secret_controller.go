@@ -86,6 +86,8 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, errh
 	}
 
+	originalHC := hostedClusterObj.DeepCopy()
+
 	// Add/update the annotation to the hostedcluster
 	if hostedClusterObj.ObjectMeta.Annotations == nil { // Create the annotation map if it doesn't exist
 		hostedClusterObj.ObjectMeta.Annotations = make(map[string]string)
@@ -95,7 +97,7 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 	hostedClusterObj.Annotations[hcAnnotation] = currentTime.Format(time.RFC3339)
 	c.log.Info(fmt.Sprintf("Annotated %s with %s", hostedClusterObj.Name, hcAnnotation))
 
-	if err := c.spokeClient.Update(ctx, hostedClusterObj); err != nil { //Add/update hostedcluster annotation
+	if err := c.spokeClient.Patch(ctx, hostedClusterObj, client.MergeFromWithOptions(originalHC)); err != nil { //Add/update hostedcluster annotation
 		return ctrl.Result{}, err
 	}
 
