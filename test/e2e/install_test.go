@@ -198,7 +198,7 @@ var _ = ginkgo.Describe("Install", func() {
 				}
 
 				return true
-			}, 600, 10).Should(gomega.BeTrue())
+			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue())
 
 			ginkgo.By("Check the hypershift operator installation")
 			gomega.Eventually(func() bool {
@@ -208,11 +208,37 @@ var _ = ginkgo.Describe("Install", func() {
 				}
 
 				if deployment.Status.AvailableReplicas <= 0 {
+
+					var addonAgentPod *corev1.Pod
+					podList, err := kubeClient.CoreV1().Pods(defaultInstallNamespace).List(ctx, metav1.ListOptions{})
+					if err != nil {
+						ginkgo.By("Error getting addon agent pods: " + err.Error())
+						return false
+					}
+
+					for _, p := range podList.Items {
+						if strings.HasPrefix(p.Name, "hypershift-addon-agent") {
+							addonAgentPod = &p
+							ginkgo.By("Found addon agent pod" + p.Name)
+
+							break
+						}
+					}
+
+					if addonAgentPod != nil {
+						log, err := getPodLogs(addonAgentPod, "hypershift-addon-agent")
+						if err != nil {
+							ginkgo.By(fmt.Sprintf("Error reading agent pod logs: %v", err.Error()))
+						} else {
+							ginkgo.By(fmt.Sprintf("Addon agent logs: %v", string(log)))
+						}
+					}
+
 					return false
 				}
 
 				return true
-			}, 600, 10).Should(gomega.BeTrue())
+			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue())
 
 		})
 	})
