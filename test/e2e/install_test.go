@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
@@ -199,7 +198,7 @@ var _ = ginkgo.Describe("Install", func() {
 				}
 
 				return true
-			}, time.Duration(10)*time.Minute, time.Duration(30)*time.Second).Should(gomega.BeTrue())
+			}, 600, 10).Should(gomega.BeTrue())
 
 			ginkgo.By("Check the hypershift operator installation")
 			gomega.Eventually(func() bool {
@@ -213,7 +212,7 @@ var _ = ginkgo.Describe("Install", func() {
 				}
 
 				return true
-			}, time.Duration(10)*time.Minute, time.Duration(30)*time.Second).Should(gomega.BeTrue())
+			}, 600, 10).Should(gomega.BeTrue())
 
 		})
 	})
