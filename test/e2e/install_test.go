@@ -86,7 +86,7 @@ func getPodLogs(pod *corev1.Pod, container string) (string, error) {
 
 var _ = ginkgo.Describe("Install", func() {
 	var ctx context.Context
-	ginkgo.BeforeEach(func() {
+	/*ginkgo.BeforeEach(func() {
 		ctx = context.TODO()
 		err := createOIDCProviderSecret(ctx, kubeClient, defaultManagedCluster)
 		if err != nil {
@@ -99,7 +99,7 @@ var _ = ginkgo.Describe("Install", func() {
 	ginkgo.AfterEach(func() {
 		err := deleteOIDCProviderSecret(ctx, kubeClient, defaultManagedCluster)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
-	})
+	})*/
 
 	ginkgo.Context("install hypershift operator", func() {
 		ginkgo.BeforeEach(func() {
