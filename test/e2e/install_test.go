@@ -86,7 +86,7 @@ func getPodLogs(pod *corev1.Pod, container string) (string, error) {
 
 var _ = ginkgo.Describe("Install", func() {
 	var ctx context.Context
-	/*ginkgo.BeforeEach(func() {
+	ginkgo.BeforeEach(func() {
 		ctx = context.TODO()
 		err := createOIDCProviderSecret(ctx, kubeClient, defaultManagedCluster)
 		if err != nil {
@@ -99,7 +99,7 @@ var _ = ginkgo.Describe("Install", func() {
 	ginkgo.AfterEach(func() {
 		err := deleteOIDCProviderSecret(ctx, kubeClient, defaultManagedCluster)
 		gomega.Expect(err).ToNot(gomega.HaveOccurred())
-	})*/
+	})
 
 	ginkgo.Context("install hypershift operator", func() {
 		ginkgo.BeforeEach(func() {
@@ -231,6 +231,26 @@ var _ = ginkgo.Describe("Install", func() {
 							ginkgo.By(fmt.Sprintf("Error reading agent pod logs: %v", err.Error()))
 						} else {
 							ginkgo.By(fmt.Sprintf("Addon agent logs: %v", string(log)))
+						}
+					}
+
+					var installJobPod *corev1.Pod
+
+					for _, p := range podList.Items {
+						if strings.HasPrefix(p.Name, "hypershift-install-job") {
+							installJobPod = &p
+							ginkgo.By("Found install job pod" + p.Name)
+
+							break
+						}
+					}
+
+					if installJobPod != nil {
+						log, err := getPodLogs(installJobPod, "")
+						if err != nil {
+							ginkgo.By(fmt.Sprintf("Error reading install job pod logs: %v", err.Error()))
+						} else {
+							ginkgo.By(fmt.Sprintf("Install logs: %v", string(log)))
 						}
 					}
 
