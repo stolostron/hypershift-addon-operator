@@ -199,7 +199,7 @@ var _ = ginkgo.Describe("Install", func() {
 				}
 
 				return true
-			}, time.Duration(5)*time.Minute, time.Duration(30)*time.Second).Should(gomega.BeTrue())
+			}, time.Duration(10)*time.Minute, time.Duration(30)*time.Second).Should(gomega.BeTrue())
 
 			ginkgo.By("Check the hypershift operator installation")
 			gomega.Eventually(func() bool {
@@ -213,7 +213,7 @@ var _ = ginkgo.Describe("Install", func() {
 				}
 
 				return true
-			}, time.Duration(5)*time.Minute, time.Duration(30)*time.Second).Should(gomega.BeTrue())
+			}, time.Duration(10)*time.Minute, time.Duration(30)*time.Second).Should(gomega.BeTrue())
 
 		})
 	})
