@@ -8,7 +8,6 @@ import (
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -190,7 +189,7 @@ func (c *UpgradeController) deploymentArgsChanged(oldDeployment, newDeployment a
 	oldArgs := oldDeployment.Spec.Template.Spec.Containers[0].Args
 	newArgs := newDeployment.Spec.Template.Spec.Containers[0].Args
 	if !reflect.DeepEqual(oldArgs, newArgs) {
-		c.log.Info(fmt.Sprintf("the arguments of the deployment(%s) have changed", oldDeployment.Name))
+		c.log.Info(fmt.Sprintf("the arguments of the %s deployment have changed", oldDeployment.Name))
 		return true
 	}
 	return false
@@ -199,9 +198,9 @@ func (c *UpgradeController) deploymentArgsChanged(oldDeployment, newDeployment a
 func (c *UpgradeController) getDeployment() (*appsv1.Deployment, error) {
 	deployment := &appsv1.Deployment{}
 	nsn := types.NamespacedName{Namespace: util.HypershiftOperatorNamespace, Name: util.HypershiftOperatorName}
-	err := c.hubClient.Get(c.ctx, nsn, deployment)
+	err := c.spokeUncachedClient.Get(c.ctx, nsn, deployment)
 	if err != nil {
-		if !apierrors.IsNotFound(err) {
+		if !errors.IsNotFound(err) {
 			return nil, err
 		}
 		return nil, nil

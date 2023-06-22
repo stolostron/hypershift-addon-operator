@@ -174,7 +174,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	}
 
 	// Cache the operator deployment to check for change in args
-	if (operatorDeployment != nil) {
+	if operatorDeployment != nil {
 		c.operatorDeployment = *operatorDeployment
 	}
 
