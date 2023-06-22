@@ -8,9 +8,11 @@ import (
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -36,6 +38,7 @@ type UpgradeController struct {
 	privateLinkSecret         corev1.Secret
 	imageOverrideConfigmap    corev1.ConfigMap
 	installFlagsConfigmap     corev1.ConfigMap
+	operatorDeployment        appsv1.Deployment
 	reinstallNeeded           bool // this is used only for code test
 	awsPlatform               bool // this is used only for code test
 	startup                   bool //
@@ -124,6 +127,12 @@ func (c *UpgradeController) installOptionsChanged() bool {
 		return true
 	}
 
+	// check for changes in hypershift operator deployment arguments
+	newOperatorDeployment, err := c.getDeployment()
+	if err == nil && c.operatorDeployment.ObjectMeta.Name != "" && c.deploymentArgsChanged(c.operatorDeployment, *newOperatorDeployment) {
+		c.operatorDeployment = *newOperatorDeployment
+		return true
+	}
 	return false
 }
 
@@ -174,4 +183,29 @@ func (c *UpgradeController) configmapDataChanged(oldCM, newCM corev1.ConfigMap, 
 		return true
 	}
 	return false
+}
+
+func (c *UpgradeController) deploymentArgsChanged(oldDeployment, newDeployment appsv1.Deployment) bool {
+	// If args changed, we want to re-install the operator with new arguments
+	oldArgs := oldDeployment.Spec.Template.Spec.Containers[0].Args
+	newArgs := newDeployment.Spec.Template.Spec.Containers[0].Args
+	if !reflect.DeepEqual(oldArgs, newArgs) {
+		c.log.Info(fmt.Sprintf("the arguments of the deployment(%s) have changed", oldDeployment.Name))
+		return true
+	}
+	return false
+}
+
+func (c *UpgradeController) getDeployment() (*appsv1.Deployment, error) {
+	deployment := &appsv1.Deployment{}
+	nsn := types.NamespacedName{Namespace: util.HypershiftOperatorNamespace, Name: util.HypershiftOperatorName}
+	err := c.hubClient.Get(c.ctx, nsn, deployment)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			return nil, err
+		}
+		return nil, nil
+	}
+
+	return deployment, nil
 }

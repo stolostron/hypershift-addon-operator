@@ -173,6 +173,11 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		return nil
 	}
 
+	// Cache the operator deployment to check for change in args
+	if (operatorDeployment != nil) {
+		c.operatorDeployment = *operatorDeployment
+	}
+
 	// Initially set this to zero to indicate that the AWS S3 bucket secret is not used for the operator installation
 	metrics.IsAWSS3BucketSecretConfigured.Set(0)
 
