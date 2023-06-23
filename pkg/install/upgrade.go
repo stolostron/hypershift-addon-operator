@@ -128,7 +128,7 @@ func (c *UpgradeController) installOptionsChanged() bool {
 
 	// check for changes in hypershift operator deployment arguments
 	operatorDeployment, err := c.getDeployment()
-	if err == nil && c.operatorArgMismatch(*operatorDeployment) {
+	if err == nil && c.operatorArgMismatch(operatorDeployment) {
 		return true
 	}
 	return false
@@ -183,15 +183,16 @@ func (c *UpgradeController) configmapDataChanged(oldCM, newCM corev1.ConfigMap, 
 	return false
 }
 
-func (c *UpgradeController) getDeployment() (*appsv1.Deployment, error) {
+func (c *UpgradeController) getDeployment() (appsv1.Deployment, error) {
 	deployment := &appsv1.Deployment{}
 	nsn := types.NamespacedName{Namespace: util.HypershiftOperatorNamespace, Name: util.HypershiftOperatorName}
 	err := c.spokeUncachedClient.Get(c.ctx, nsn, deployment)
 	if err != nil {
-		return nil, err
+		c.log.Error(err, "failed to get operater deployment: ")
+		return *deployment, err
 	}
 
-	return deployment, nil
+	return *deployment, nil
 }
 
 func (c *UpgradeController) operatorArgMismatch(dep appsv1.Deployment) bool {
