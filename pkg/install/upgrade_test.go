@@ -660,7 +660,6 @@ func TestDeploymentArgMismatch(t *testing.T) {
 						Name:  "nginx",
 						Image: "nginx:1.14.2",
 						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
-						Args:  []string{"sample-arg-not-oidc"},
 					}},
 				},
 			},
@@ -671,13 +670,7 @@ func TestDeploymentArgMismatch(t *testing.T) {
 	controller.hubClient.Create(ctx, operatorDeployment)
 	defer controller.hubClient.Delete(ctx, operatorDeployment)
 
-	// No oidc secret in deployment args nor does it exist - no mismatch - should not need reinstall
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		fmt.Println(controller.reinstallNeeded)
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The oidc secret doesn't differ from operator args. The hypershift operator doesn't need to be re-installed")
-	controller.Stop()
+	defer deleteAllInstallJobs(ctx, controller.spokeUncachedClient, controller.addonNamespace)
 
 	// create oidc secret
 	controller.hubClient.Create(ctx, localOidcSecret)
@@ -687,12 +680,23 @@ func TestDeploymentArgMismatch(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test oidc secret was created successfully")
 
+	// Installing first time, reinstall needed
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "First time install, \"reinstall\" needed")
+	controller.Stop()
+
+	//Remove args from deployment
+	operatorDeployment.Spec.Template.Spec.Containers[0].Args = []string{"sample-arg-no-oidc"}
+	if err := controller.hubClient.Update(ctx, operatorDeployment); err != nil {
+		fmt.Println("could not update deployment")
+	}
 	// oidc secret exists but not present in deployment args, should reinstall
 	controller.Start()
 	assert.Eventually(t, func() bool {
-		fmt.Println(controller.reinstallNeeded)
 		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The oidc secret differs from operator args. The hypershift operator needs to be re-installed")
+	}, 10*time.Second, 1*time.Second, "The oidc secret exists but not among operator args. The hypershift operator needs to be re-installed")
 	controller.Stop()
 
 }
