@@ -79,6 +79,7 @@ func (c *UpgradeController) Start() {
 				c.log.Error(err, "failed to install hypershift operator")
 
 				c.installfailed = true
+				c.clearCache()
 				metrics.InstallationFailningGaugeBool.Set(float64(1))
 			} else {
 				c.installfailed = false
@@ -174,4 +175,12 @@ func (c *UpgradeController) configmapDataChanged(oldCM, newCM corev1.ConfigMap, 
 		return true
 	}
 	return false
+}
+
+func (c* UpgradeController) clearCache() {
+	c.bucketSecret = corev1.Secret{}
+	c.extDnsSecret = corev1.Secret{}
+	c.privateLinkSecret = corev1.Secret{}    
+	c.imageOverrideConfigmap = corev1.ConfigMap{}
+	c.installFlagsConfigmap = corev1.ConfigMap{}
 }
