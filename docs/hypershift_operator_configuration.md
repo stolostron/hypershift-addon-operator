@@ -72,11 +72,14 @@ If you create the AWS private link secret named `hypershift-operator-private-lin
 
 If you create the external DNS secret named `hypershift-operator-external-dns-credentials` in `local-cluster` namespace, the hypershift addon agent uses this secret to build the following hypershift operator installation flags.
 
+If you want to override the standard external-dns image, you can add the `external-dns-image` installation flag to the hypershift-operator-install-flags ConfigMap (see additional details in the **Customizing the hypershift operator installation flags** section below)
+
 ```
     --external-dns-domain-filter string              Restrict external-dns to changes within the specifed domain.
     --external-dns-provider string                   Provider to use for managing DNS records using external-dns
     --external-dns-secret string                     Name of an existing secret containing the external-dns credentials.
     --external-dns-txt-owner-id string               external-dns TXT registry owner ID.
+    --external-dns-image                             Override default external-dns image.
 ```
 
 ## Other default installation flags
