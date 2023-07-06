@@ -223,24 +223,22 @@ func (c *UpgradeController) getDeployment() (appsv1.Deployment, error) {
 }
 
 func (c *UpgradeController) operatorArgMismatch(dep appsv1.Deployment, mismatched []argObject) bool {
-
 	for i := range mismatched {
+
 		objExists := false
 		current := mismatched[i]
 		nsn := types.NamespacedName{Name: current.name, Namespace: c.clusterName}
 		switch current.obj.(type) {
 		case corev1.Secret:
-			if err := c.hubClient.Get(c.ctx, nsn, current.obj.(*corev1.Secret)); err == nil {
+			secretObj := &corev1.Secret{}
+			if err := c.hubClient.Get(c.ctx, nsn, secretObj); err == nil {
 				objExists = true
-			} else {
-				continue
 			}
 
 		case corev1.ConfigMap:
-			if err := c.hubClient.Get(c.ctx, nsn, current.obj.(*corev1.ConfigMap)); err == nil {
+			configObj := &corev1.ConfigMap{}
+			if err := c.hubClient.Get(c.ctx, nsn, configObj); err == nil {
 				objExists = true
-			} else {
-				continue
 			}
 
 		default:
