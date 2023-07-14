@@ -46,8 +46,7 @@ type UpgradeController struct {
 
 type argObject struct {
 	name string
-	obj  interface{} // Object type i.e. secret, configmap, etc
-	args []string    // The args that should exists if the object exists
+	args []string // The args that should exists if the object exists
 }
 
 func NewUpgradeController(hubClient, spokeClient client.Client, logger logr.Logger, addonName, addonNamespace, clusterName, operatorImage,
@@ -134,23 +133,11 @@ func (c *UpgradeController) installOptionsChanged() bool {
 	var expectArgs = []argObject{
 		{
 			name: util.HypershiftBucketSecretName,
-			obj:  corev1.Secret{},
-			args: []string{"--oidc-storage-provider-s3-bucket-name"},
+			args: []string{"--oidc-storage-provider-s3-bucket-name", "--oidc-storage-provider-s3-region", "--oidc-storage-provider-s3-credentials"},
 		},
 		{
 			name: util.HypershiftPrivateLinkSecretName,
-			obj:  corev1.Secret{},
-			args: []string{"--aws-private-secret"},
-		},
-		{
-			name: util.HypershiftExternalDNSSecretName,
-			obj:  corev1.Secret{},
-			args: []string{"--external-dns-secret"},
-		},
-		{
-			name: util.HypershiftInstallFlagsCM,
-			obj:  corev1.ConfigMap{},
-			args: []string{"--hypershift-image", "--image-refs"},
+			args: []string{"--private-platform=AWS"},
 		},
 	}
 	operatorDeployment, err := c.getDeployment()
@@ -223,45 +210,34 @@ func (c *UpgradeController) getDeployment() (appsv1.Deployment, error) {
 }
 
 func (c *UpgradeController) operatorArgMismatch(dep appsv1.Deployment, mismatched []argObject) bool {
-	for i := range mismatched {
 
+	for i := range mismatched {
 		objExists := false
 		current := mismatched[i]
 		nsn := types.NamespacedName{Name: current.name, Namespace: c.clusterName}
-		switch current.obj.(type) {
-		case corev1.Secret:
-			secretObj := &corev1.Secret{}
-			if err := c.hubClient.Get(c.ctx, nsn, secretObj); err == nil {
-				objExists = true
-			}
 
-		case corev1.ConfigMap:
-			configObj := &corev1.ConfigMap{}
-			if err := c.hubClient.Get(c.ctx, nsn, configObj); err == nil {
-				objExists = true
-			}
-
-		default:
-			c.log.Info(fmt.Sprintf("Cannot check for mismatch with object of type %s", reflect.TypeOf(current.obj)))
-			continue
+		secretObj := &corev1.Secret{}
+		if err := c.hubClient.Get(c.ctx, nsn, secretObj); err == nil {
+			objExists = true
 		}
 
 		//Check for args
-		argExsists := false
 		args := dep.Spec.Template.Spec.Containers[0].Args
-	found:
+		presentArgs := 0
+
 		for i := range current.args {
 			for j := range args {
 				if strings.Contains(args[j], current.args[i]) {
-					argExsists = true
-					break found
+					presentArgs++
+					break
 				}
 			}
 		}
 
-		if argExsists != objExists {
+		// if object exists all related args should exist, otherwise no related args should exist
+		if objExists && presentArgs != len(current.args) || !objExists && presentArgs > 0 {
 			c.log.Info("hypershift operator has argument mismatch, reinstalling operator")
-			return argExsists != objExists
+			return true
 		}
 
 	}
