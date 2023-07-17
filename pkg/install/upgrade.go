@@ -133,7 +133,9 @@ func (c *UpgradeController) installOptionsChanged() bool {
 	var expectArgs = []argObject{
 		{
 			name: util.HypershiftBucketSecretName,
-			args: []string{"--oidc-storage-provider-s3-bucket-name", "--oidc-storage-provider-s3-region", "--oidc-storage-provider-s3-credentials"},
+			args: []string{"--oidc-storage-provider-s3-bucket-name",
+				"--oidc-storage-provider-s3-region",
+				"--oidc-storage-provider-s3-credentials"},
 		},
 		{
 			name: util.HypershiftPrivateLinkSecretName,
