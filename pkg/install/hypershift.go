@@ -253,7 +253,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			return fmt.Errorf("hypershift-operator-oidc-provider-s3-credentials does not contain a bucket key")
 		}
 
-		if err := c.createAwsSpokeSecret(ctx, se, true); err != nil {
+		if err := c.createOrUpdateAwsSpokeSecret(ctx, se, true); err != nil {
 			return err
 		}
 		c.log.Info("oidc s3 bucket, region & credential arguments included")
@@ -270,7 +270,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	}
 
 	if privateLinkCreds { // if private link credentials is found, install hypershift with private secret options
-		if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
+		if err := c.createOrUpdateAwsSpokeSecret(ctx, spl, true); err != nil {
 			return err
 		}
 		c.log.Info("private link region & credential arguments included")
@@ -290,11 +290,11 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		if awsPlatform {
 			// For AWS DNS provider, users can specify either credentials or
 			// aws-access-key-id and aws-secret-access-key
-			if err := c.createAwsSpokeSecret(ctx, sExtDNS, false); err != nil {
+			if err := c.createOrUpdateAwsSpokeSecret(ctx, sExtDNS, false); err != nil {
 				return err
 			}
 		} else {
-			if err := c.createSpokeSecret(ctx, sExtDNS); err != nil {
+			if err := c.createOrUpdateSpokeSecret(ctx, sExtDNS); err != nil {
 				return err
 			}
 		}
@@ -511,7 +511,7 @@ func getParamValue(s []string, e string) string {
 	return ""
 }
 
-func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret, regionRequired bool) error {
+func (c *UpgradeController) createOrUpdateAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret, regionRequired bool) error {
 	spokeSecret := hubSecret.DeepCopy()
 
 	region := hubSecret.Data["region"]
@@ -525,10 +525,10 @@ func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret 
 		}
 	}
 
-	return c.createSpokeSecret(ctx, spokeSecret)
+	return c.createOrUpdateSpokeSecret(ctx, spokeSecret)
 }
 
-func (c *UpgradeController) createSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
+func (c *UpgradeController) createOrUpdateSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
 
 	spokeSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{

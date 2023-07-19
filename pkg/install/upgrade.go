@@ -72,6 +72,9 @@ func (c *UpgradeController) Start() {
 		c.log.Info(fmt.Sprintf("check if HyperShift operator re-installation is required (startup=%v, installfailed=%v)", c.startup, c.installfailed))
 
 		c.reinstallNeeded = false
+		if err := c.syncHypershiftNS(); err != nil {
+			c.log.Error(err, "failed to sync secrets in hypershift namespace with secrets in local-cluster namespace")
+		}
 		if c.startup || c.installfailed || c.installOptionsChanged() || c.upgradeImageCheck() {
 			c.reinstallNeeded = true
 			c.log.Info("hypershift operator re-installation is required")
@@ -174,4 +177,51 @@ func (c *UpgradeController) configmapDataChanged(oldCM, newCM corev1.ConfigMap, 
 		return true
 	}
 	return false
+}
+
+func (c *UpgradeController) syncHypershiftNS() error {
+	//Sync secrets in local-cluster namespace with secrets in hypershift namespace
+	secrets := []string{"hypershift-operator-oidc-provider-s3-credentials", "hypershift-operator-private-link-credentials", "hypershift-operator-external-dns-credentials"}
+	awsPlatform := false
+	ctx := context.TODO()
+
+	for s := range secrets {
+		if secrets[s] == "hypershift-operator-external-dns-credentials" {
+
+			extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
+			sExtDNS := &corev1.Secret{}
+			if err := c.hubClient.Get(ctx, extDNSSecretKey, sExtDNS); err == nil {
+				if awsPlatform {
+					// For AWS DNS provider, users can specify either credentials or
+					// aws-access-key-id and aws-secret-access-key
+					if err := c.createOrUpdateAwsSpokeSecret(ctx, sExtDNS, false); err != nil {
+						return err
+					}
+				} else {
+					if err := c.createOrUpdateSpokeSecret(ctx, sExtDNS); err != nil {
+						return err
+					}
+				}
+			} else {
+				c.log.Info(fmt.Sprintf("external dns secret(%s) was not found", extDNSSecretKey))
+			}
+
+		} else {
+
+			secretKey := types.NamespacedName{Name: secrets[s], Namespace: c.clusterName}
+			se := &corev1.Secret{}
+			if err := c.hubClient.Get(ctx, secretKey, se); err == nil {
+				awsPlatform = true
+				if err := c.createOrUpdateAwsSpokeSecret(ctx, se, true); err != nil {
+					return err
+				}
+			} else {
+				c.log.Info(fmt.Sprintf("secret(%s) not found on the hub.", secretKey))
+
+			}
+
+		}
+
+	}
+	return nil
 }

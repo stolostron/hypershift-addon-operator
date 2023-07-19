@@ -1418,7 +1418,7 @@ func TestCreateSpokeCredential(t *testing.T) {
 		},
 	}
 
-	err := aCtrl.createAwsSpokeSecret(ctx, bucketSecret, true)
+	err := aCtrl.createOrUpdateAwsSpokeSecret(ctx, bucketSecret, true)
 	assert.NotNil(t, err, "is not nil, when secret is not well formed")
 
 }
@@ -1449,7 +1449,7 @@ func TestSpokeCredentialUpdated(t *testing.T) {
 		},
 	}
 
-	err := aCtrl.createSpokeSecret(ctx, hubSecret)
+	err := aCtrl.createOrUpdateSpokeSecret(ctx, hubSecret)
 	assert.Nil(t, err, "expected secret creation to succeed")
 
 	spokeSecret := &corev1.Secret{
@@ -1465,7 +1465,7 @@ func TestSpokeCredentialUpdated(t *testing.T) {
 
 	// now update the hub secret and propagate that change to spoke
 	hubSecret.Data["credentials"] = []byte("February")
-	err = aCtrl.createSpokeSecret(ctx, hubSecret)
+	err = aCtrl.createOrUpdateSpokeSecret(ctx, hubSecret)
 	assert.Nil(t, err, "expected updating secret to succeed")
 
 	aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(spokeSecret), spokeSecret)
