@@ -127,7 +127,8 @@ func (c *UpgradeController) installOptionsChanged() bool {
 		return true
 	}
 
-	return false
+	return c.checkArgs()
+
 }
 
 func (c *UpgradeController) getSecretFromHub(secretName string) (corev1.Secret, error) {
@@ -223,5 +224,56 @@ func (c *UpgradeController) syncHypershiftNS() error {
 		}
 
 	}
+
 	return nil
+}
+
+
+func (c *UpgradeController) populateExpectedArgs(toPopulate *[]expectedConfig) error {
+	//anything with {key} gets replaced with the value of 'key' in the secret
+	tp := *toPopulate
+	for e := range tp {
+		if _, isCM := tp[e].objectType.(corev1.ConfigMap); isCM {
+			newInstallFlagsCM, err := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
+			if err == nil {
+				tp[e].objectArgs = append(tp[e].objectArgs, stringToExpectedArg(c.buildOtherInstallFlags(newInstallFlagsCM))...)
+			}
+		} else {
+
+		}
+	}
+	return nil
+}
+
+func (c *UpgradeController) checkArgs() bool {
+	// Create expected args based on secrets' existence and their values
+	// Compare the expected args to the actual args
+	// If they differ, reinstall
+
+	err := c.populateExpectedArgs(&expected)
+	
+
+	for o := range expected {
+		operatorDeployment, err := c.getDeployment(expected[o].deploymentName)
+		if err != nil {
+			continue
+		}
+		
+		// switch expected[o].objectName {
+		// case util.HypershiftBucketSecretName:
+
+		// case util.HypershiftPrivateLinkSecretName:
+
+		// case util.HypershiftExternalDNSSecretName:
+
+		// case util.HypershiftInstallFlagsCM:
+
+
+		// default:
+		// 	c.log.Info(fmt.Sprintf("unkown object (%s)", expected[o].objectName))
+			
+		// }
+	}
+
+	return false
 }
