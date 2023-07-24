@@ -147,7 +147,6 @@ func TestBucketSecretChanges(t *testing.T) {
 		clusterName:               "cluster1",
 		pullSecret:                "pull-secret",
 		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
-		bucketSecret:              corev1.Secret{},
 	}
 
 	newBucketSecret := &corev1.Secret{
@@ -252,7 +251,6 @@ func TestExtDnsSecretChanges(t *testing.T) {
 		clusterName:               "cluster1",
 		pullSecret:                "pull-secret",
 		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
-		extDnsSecret:              corev1.Secret{},
 	}
 
 	newExtDnsSecret := &corev1.Secret{
@@ -359,7 +357,6 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 		clusterName:               "cluster1",
 		pullSecret:                "pull-secret",
 		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
-		privateLinkSecret:         corev1.Secret{},
 	}
 
 	newPrivateLinkSecret := &corev1.Secret{

@@ -31,9 +31,6 @@ type UpgradeController struct {
 	hypershiftInstallExecutor HypershiftInstallExecutorInterface
 	stopch                    chan struct{}
 	ctx                       context.Context
-	bucketSecret              corev1.Secret
-	extDnsSecret              corev1.Secret
-	privateLinkSecret         corev1.Secret
 	imageOverrideConfigmap    corev1.ConfigMap
 	installFlagsConfigmap     corev1.ConfigMap
 	reinstallNeeded           bool // this is used only for code test
@@ -100,35 +97,33 @@ func (c *UpgradeController) Stop() {
 }
 
 func (c *UpgradeController) installOptionsChanged() bool {
-	// check for changes in AWS S3 bucket secret
-	newBucketSecret, err := c.getSecretFromHub(util.HypershiftBucketSecretName)
-	if err == nil && c.secretDataChanged(newBucketSecret, c.bucketSecret, util.HypershiftBucketSecretName) {
-		c.bucketSecret = newBucketSecret // save the new secret for the next cycle of comparison
-		return true
+	// Create expected args based on secrets' existence and their values
+	// Compare the expected args to the actual args
+	// If they differ, reinstall
+	c.populateExpectedArgs(&expected)
+
+	for _, o := range expected {
+		dep, err := c.getDeployment(o.deploymentName)
+		if err != nil {
+			continue
+		}
+
+		deploymentArgs := dep.Spec.Template.Spec.Containers[0].Args
+
+		if err := c.hubClient.Get(context.TODO(), types.NamespacedName{Name: o.objectName, Namespace: c.clusterName}, &corev1.Secret{}); err == nil {
+			if argMismatch(o.objectArgs, deploymentArgs) {
+				c.log.Info(fmt.Sprintf("Mistmatch with %s args and install options, reinstalling", o.objectName))
+				return true
+			}
+		} else {
+			if argMismatch(o.NoObjectArgs, deploymentArgs) {
+				c.log.Info(fmt.Sprintf("NONE Mistmatch with %s args and install options, reinstalling", o.objectName))
+				return true
+			}
+		}
+
 	}
 
-	// check for changes in external DNS secret
-	newExtDnsSecret, err := c.getSecretFromHub(util.HypershiftExternalDNSSecretName)
-	if err == nil && c.secretDataChanged(newExtDnsSecret, c.extDnsSecret, util.HypershiftExternalDNSSecretName) {
-		c.extDnsSecret = newExtDnsSecret // save the new secret for the next cycle of comparison
-		return true
-	}
-
-	// check for changes in AWS private link secret
-	newPrivateLinkSecret, err := c.getSecretFromHub(util.HypershiftPrivateLinkSecretName)
-	if err == nil && c.secretDataChanged(newPrivateLinkSecret, c.privateLinkSecret, util.HypershiftPrivateLinkSecretName) {
-		c.privateLinkSecret = newPrivateLinkSecret // save the new secret for the next cycle of comparison
-		return true
-	}
-
-	// check for changes in hypershift operator installation flags configmap
-	newInstallFlagsCM, err := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
-	if err == nil && c.configmapDataChanged(newInstallFlagsCM, c.installFlagsConfigmap, util.HypershiftInstallFlagsCM) {
-		c.installFlagsConfigmap = newInstallFlagsCM // save the new configmap for the next cycle of comparison
-		return true
-	}
-
-	//return c.checkArgs()
 	return false
 
 }
@@ -143,14 +138,6 @@ func (c *UpgradeController) getSecretFromHub(secretName string) (corev1.Secret, 
 		return *newSecret, err
 	}
 	return *newSecret, nil
-}
-
-func (c *UpgradeController) secretDataChanged(oldSecret, newSecret corev1.Secret, secretName string) bool {
-	if !reflect.DeepEqual(oldSecret.Data, newSecret.Data) { // compare only the secret data
-		c.log.Info(fmt.Sprintf("secret(%s) has changed", secretName))
-		return true
-	}
-	return false
 }
 
 func (c *UpgradeController) upgradeImageCheck() bool {
@@ -240,7 +227,7 @@ func (c *UpgradeController) populateExpectedArgs(toPopulate *[]expectedConfig) e
 				tp[e].objectArgs = append(tp[e].objectArgs, stringToExpectedArg(c.buildOtherInstallFlags(newInstallFlagsCM))...)
 				c.log.Info("CONFIG MAP ARGUMENTS")
 				for _, a := range tp[e].objectArgs {
-					c.log.Info(fmt.Sprintf("CFMAP ARG %s",a.argument))
+					c.log.Info(fmt.Sprintf("CFMAP ARG %s", a.argument))
 				}
 			}
 		} else {
@@ -249,56 +236,22 @@ func (c *UpgradeController) populateExpectedArgs(toPopulate *[]expectedConfig) e
 				c.log.Info(fmt.Sprintf("secret %s is not present on the hub", tp[e].objectName))
 				continue
 			}
-			for _, a := range tp[e].objectArgs {
+			for i, a := range tp[e].objectArgs {
 				key := matchAndTrim(&a.argument)
 				if key != "" {
 					value := getValueFromKey(secret, key)
-					a.argument += value
+					tp[e].objectArgs[i].argument = a.argument + value
 				}
-				c.log.Info(fmt.Sprintf("ARG %s", a.argument))
 
 			}
-			for _, a := range tp[e].NoObjectArgs {
+			for i, a := range tp[e].NoObjectArgs {
 				key := matchAndTrim(&a.argument)
 				if key != "" {
 					value := getValueFromKey(secret, key)
-					a.argument += value
+					tp[e].NoObjectArgs[i].argument = a.argument + value
 				}
-				c.log.Info(fmt.Sprintf("n ARG %s", a.argument))
 			}
 		}
 	}
 	return nil
 }
-
-// func (c *UpgradeController) checkArgs() bool {
-// 	// Create expected args based on secrets' existence and their values
-// 	// Compare the expected args to the actual args
-// 	// If they differ, reinstall
-
-// 	err := c.populateExpectedArgs(&expected)
-	
-
-// 	for o := range expected {
-// 		operatorDeployment, err := c.getDeployment(expected[o].deploymentName)
-// 		if err != nil {
-// 			continue
-// 		}
-
-// 		// switch expected[o].objectName {
-// 		// case util.HypershiftBucketSecretName:
-
-// 		// case util.HypershiftPrivateLinkSecretName:
-
-// 		// case util.HypershiftExternalDNSSecretName:
-
-// 		// case util.HypershiftInstallFlagsCM:
-
-// 		// default:
-// 		// 	c.log.Info(fmt.Sprintf("unkown object (%s)", expected[o].objectName))
-
-// 		// }
-// 	}
-
-// 	return false
-// }

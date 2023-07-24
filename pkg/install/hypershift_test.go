@@ -1720,8 +1720,6 @@ func TestAWSPlatformDetection(t *testing.T) {
 		clusterName:               "cluster1",
 		pullSecret:                "pull-secret",
 		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
-		privateLinkSecret:         corev1.Secret{},
-		bucketSecret:              corev1.Secret{},
 	}
 
 	privateLinkSecret := &corev1.Secret{
