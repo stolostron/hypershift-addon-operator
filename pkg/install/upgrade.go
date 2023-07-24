@@ -75,6 +75,7 @@ func (c *UpgradeController) Start() {
 		if err := c.syncHypershiftNS(); err != nil {
 			c.log.Error(err, "failed to sync secrets in hypershift namespace with secrets in local-cluster namespace")
 		}
+		c.populateExpectedArgs(&expected)
 		if c.startup || c.installfailed || c.installOptionsChanged() || c.upgradeImageCheck() {
 			c.reinstallNeeded = true
 			c.log.Info("hypershift operator re-installation is required")
@@ -127,7 +128,8 @@ func (c *UpgradeController) installOptionsChanged() bool {
 		return true
 	}
 
-	return c.checkArgs()
+	//return c.checkArgs()
+	return false
 
 }
 
@@ -228,7 +230,6 @@ func (c *UpgradeController) syncHypershiftNS() error {
 	return nil
 }
 
-
 func (c *UpgradeController) populateExpectedArgs(toPopulate *[]expectedConfig) error {
 	//anything with {key} gets replaced with the value of 'key' in the secret
 	tp := *toPopulate
@@ -237,43 +238,67 @@ func (c *UpgradeController) populateExpectedArgs(toPopulate *[]expectedConfig) e
 			newInstallFlagsCM, err := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
 			if err == nil {
 				tp[e].objectArgs = append(tp[e].objectArgs, stringToExpectedArg(c.buildOtherInstallFlags(newInstallFlagsCM))...)
+				c.log.Info("CONFIG MAP ARGUMENTS")
+				for _, a := range tp[e].objectArgs {
+					c.log.Info(fmt.Sprintf("CFMAP ARG %s",a.argument))
+				}
 			}
 		} else {
+			secret, err := c.getSecretFromHub(tp[e].objectName)
+			if err != nil {
+				c.log.Info(fmt.Sprintf("secret %s is not present on the hub", tp[e].objectName))
+				continue
+			}
+			for _, a := range tp[e].objectArgs {
+				key := matchAndTrim(&a.argument)
+				if key != "" {
+					value := getValueFromKey(secret, key)
+					a.argument += value
+				}
+				c.log.Info(fmt.Sprintf("ARG %s", a.argument))
 
+			}
+			for _, a := range tp[e].NoObjectArgs {
+				key := matchAndTrim(&a.argument)
+				if key != "" {
+					value := getValueFromKey(secret, key)
+					a.argument += value
+				}
+				c.log.Info(fmt.Sprintf("n ARG %s", a.argument))
+			}
 		}
 	}
 	return nil
 }
 
-func (c *UpgradeController) checkArgs() bool {
-	// Create expected args based on secrets' existence and their values
-	// Compare the expected args to the actual args
-	// If they differ, reinstall
+// func (c *UpgradeController) checkArgs() bool {
+// 	// Create expected args based on secrets' existence and their values
+// 	// Compare the expected args to the actual args
+// 	// If they differ, reinstall
 
-	err := c.populateExpectedArgs(&expected)
+// 	err := c.populateExpectedArgs(&expected)
 	
 
-	for o := range expected {
-		operatorDeployment, err := c.getDeployment(expected[o].deploymentName)
-		if err != nil {
-			continue
-		}
-		
-		// switch expected[o].objectName {
-		// case util.HypershiftBucketSecretName:
+// 	for o := range expected {
+// 		operatorDeployment, err := c.getDeployment(expected[o].deploymentName)
+// 		if err != nil {
+// 			continue
+// 		}
 
-		// case util.HypershiftPrivateLinkSecretName:
+// 		// switch expected[o].objectName {
+// 		// case util.HypershiftBucketSecretName:
 
-		// case util.HypershiftExternalDNSSecretName:
+// 		// case util.HypershiftPrivateLinkSecretName:
 
-		// case util.HypershiftInstallFlagsCM:
+// 		// case util.HypershiftExternalDNSSecretName:
 
+// 		// case util.HypershiftInstallFlagsCM:
 
-		// default:
-		// 	c.log.Info(fmt.Sprintf("unkown object (%s)", expected[o].objectName))
-			
-		// }
-	}
+// 		// default:
+// 		// 	c.log.Info(fmt.Sprintf("unkown object (%s)", expected[o].objectName))
 
-	return false
-}
+// 		// }
+// 	}
+
+// 	return false
+// }

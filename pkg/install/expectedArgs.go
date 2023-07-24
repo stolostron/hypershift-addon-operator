@@ -2,6 +2,7 @@ package install
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	appsv1 "k8s.io/api/apps/v1"
@@ -89,4 +90,24 @@ func (c *UpgradeController) getDeployment(operatorName string) (appsv1.Deploymen
 	}
 
 	return *deployment, nil
+}
+
+// Match {text} and remove it
+// Returns matched text e.g. --oidc-storage-provider-s3-bucket-name={bucket} will become "--oidc-storage-provider-s3-bucket-name=" and return "bucket"
+func matchAndTrim(s *string) string {
+	i := strings.Index(*s, "{")
+	if i >= 0 {
+		j := strings.Index(*s, "}")
+		if j >= 0 {
+			match := (*s)[i+1 : j]
+			*s = (*s)[:len(*s)-(len(match)+2)]
+			return match
+		}
+	}
+	return ""
+}
+
+func getValueFromKey(secret corev1.Secret, key string) string {
+	value := secret.Data[key]
+	return string(value)
 }
