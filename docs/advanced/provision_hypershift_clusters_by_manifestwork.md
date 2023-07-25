@@ -1,8 +1,14 @@
 # Creating a hosted cluster on a remote hosting cluster without HypershiftDeployment CR
 
-## How HypershiftDeployment creates a hosted cluster on a remote hosting cluster
+## Pre-reqs
 
-When you create a HypershiftDeployment CR, the HypershiftDeployment operator creates a manifestwork CR in the target managed (hypershift hosting) cluster's namespace on the ACM hub cluster. The payload of the manifestwork CR includes:
+1. Enable hypershift-preview feature in MCE. https://github.com/stolostron/hypershift-deployment-controller/blob/main/docs/provision_hypershift_clusters_by_mce.md#enable-the-hosted-control-planes-related-components-on-the-hub-cluster
+
+2. Enable hypershift addon to turn an ACM managed cluster into a hypershift management cluster. https://github.com/stolostron/hypershift-deployment-controller/blob/main/docs/provision_hypershift_clusters_by_mce.md#turn-one-of-the-managed-clusters-into-the-hypershift-management-cluster
+
+## Creating a hosted cluster on a remote hosting cluster
+
+Create one or more manifestwork CRs in the target managed (hypershift hosting) cluster's namespace on the ACM hub cluster. The payload of the manifestwork CR includes:
 
 - the namespace where the hosted cluster is created
 - HostedCluster CR
@@ -308,8 +314,6 @@ spec:
     - apiVersion: hypershift.openshift.io/v1alpha1
       kind: HostedCluster
       metadata:
-        annotations:
-          cluster.open-cluster-management.io/hypershiftdeployment: default/my-hosted-cluster
         name: my-hosted-cluster
         namespace: clusters
       spec:
@@ -466,9 +470,9 @@ The payload resources are under `spec.workload.manifests`. Once these resources 
 
 **Important:** You must set the `HostedCluster.spec.clusterID` with an UUID to avoid a race condition between the manifestwork controller and the hypershift operator on this causing the HostedCluster and cluster version operator deployment to have a high and increasing .generation number. You can use an online UUID generator tool or programming language specific UUID API to generate one. 
 
-## How a hosted cluster is automatically imported into ACM hub cluster as a managed cluster
+## Importing the hosted cluster into ACM hub cluster as a managed cluster
 
-When you create a HypershiftDeployment CR, the HypershiftDeployment operator also creates a ManagedCluster CR on the ACM hub cluster.
+Create a ManagedCluster CR on the ACM hub cluster.
 
 ```YAML
 apiVersion: cluster.open-cluster-management.io/v1
@@ -478,6 +482,8 @@ metadata:
     import.open-cluster-management.io/hosting-cluster-name: my-hosting-cluster
     import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
     addon.open-cluster-management.io/enable-hosted-mode-addons: "true"
+    cluster.open-cluster-management.io/provisioner: "HypershiftDeployment.cluster.open-cluster-management.io"
+    import.open-cluster-management.io/klusterlet-namespace: open-cluster-management-agent-<hosted_cluster_name>
     open-cluster-management/created-via: other
   labels:
     cloud: auto-detect
@@ -490,35 +496,13 @@ spec:
   leaseDurationSeconds: 60
 ```
 
-**NOTE:** The following three annotations in the `ManagedCluster` causes the work manager and policy managed cluster addons to be enabled in hosted mode running along side with the OpenShift hosted control plane and all other managed cluster addons to be disabled.
+- `import.open-cluster-management.io/klusterlet-deploy-mode: true` annotation deploys the policy and work addon agents in hosted mode to causes the work manager and policy managed cluster addons to be enabled in hosted mode running along side with the hosted control plane.
+- `cluster.open-cluster-management.io/provisioner: HypershiftDeployment.cluster.open-cluster-management.io` annotation is used to disable all other addons.
+- Set `import.open-cluster-management.io/klusterlet-namespace` annotation with `open-cluster-management-agent-` prefix and then <hosted_cluster_name> to get the hosted cluster's klusterlet installed in the specified non-default namespace. 
 
-The name of the managed cluster is the `infra ID` of the hosted cluster. `hubAcceptsClient: true` means that the ACM hub accepts or approves this managed cluster.
+The name of the managed cluster is the `infraID` of the hosted cluster. `hubAcceptsClient: true` means that the ACM hub accepts or approves this managed cluster.
 
-In the manifestwork YAML sample above, there is this annotation in the HostedCluster payload.
-
-```YAML
-        annotations:
-          cluster.open-cluster-management.io/hypershiftdeployment: default/my-hosted-cluster
-```
-
-The ACM hypershift addon agent on the hosting cluster uses this annotation to know that once a hosted cluster is created with this annotation, it needs to complete the managed cluster registration from the agent side.
-
-## Creating a hosted cluster on a remote hosting cluster without HypershiftDeployment CR
-
-1. Enable hypershift-preview feature in MCE. https://github.com/stolostron/hypershift-deployment-controller/blob/main/docs/provision_hypershift_clusters_by_mce.md#enable-the-hosted-control-planes-related-components-on-the-hub-cluster
-
-2. Enable hypershift addon to turn an ACM managed cluster into a hypershift management cluster. https://github.com/stolostron/hypershift-deployment-controller/blob/main/docs/provision_hypershift_clusters_by_mce.md#turn-one-of-the-managed-clusters-into-the-hypershift-management-cluster
-
-3. Create a manifestwork CR in the hypershift management cluster's (ACM managed cluster's) namespace on the ACM hub cluster. Do not forget to add the following annotation to the HostedCluster resource. The value can be anything.
-
-```YAML
-        annotations:
-          cluster.open-cluster-management.io/hypershiftdeployment: default/my-hosted-cluster
-```
-
-4. Create a ManagedCluster CR on ACM hub cluster.
-
-## How HostedCluster and NodePools status are reported back to the manifestwork from the hosting cluster
+## Getting HostedCluster and NodePools status report back to the manifestwork from the hosting cluster
 
 Under the manifestwork's `spec.manifestConfigs`, you can specify feedback rules to periodically get the latest states of the resources. This example configures manifestwork to collect the entire status of the hosted cluster and both nodepools from the hosting cluster.
 

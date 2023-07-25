@@ -268,10 +268,9 @@ You can also import the hosted cluster into MCE using custom resources in comman
 
   Note: If you specified `--namespace` parameter in `hypershift create cluster` command, replace `clusters` namespace with that.
 
-  Then add the following annotations to the HostedCluster custom resource
+  Then add the following annotation to the HostedCluster custom resource
 
   ```bash
-  cluster.open-cluster-management.io/hypershiftdeployment: local-cluster/$CLUSTER_NAME
   cluster.open-cluster-management.io/managedcluster-name: $CLUSTER_NAME
   ```
 
