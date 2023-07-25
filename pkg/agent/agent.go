@@ -225,7 +225,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	if err != nil {
 		// AddOnPlacementScore must be created initially
 		metrics.AddonAgentFailedToStartBool.Set(1)
-		//return fmt.Errorf("failed to create AddOnPlacementScore, err: %w", err)
+		return fmt.Errorf("failed to create AddOnPlacementScore, err: %w", err)
 	}
 
 	log.Info("starting manager")
@@ -438,7 +438,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		c.log.Info(fmt.Sprintf("failed to create or update ethe AddOnPlacementScore %s, error: %s. Will try again in 30 seconds", util.HostedClusterScoresResourceName, err.Error()))
 		metrics.ReconcileRequeueCount.Inc()
 		metrics.FailedReconcileCount.Inc()
-		//return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
+		return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
 	}
 
 	// Delete HC secrets on the hub using labels for HC and the hosting NS
