@@ -321,7 +321,6 @@ spec:
       kind: HostedCluster
       metadata:
         annotations:
-          cluster.open-cluster-management.io/hypershiftdeployment: ignore/ignore
           cluster.open-cluster-management.io/managedcluster-name: __INFRA_ID__
           hypershift.openshift.io/cleanup-cloud-resources: "true"
         name: __CLUSTER_NAME__

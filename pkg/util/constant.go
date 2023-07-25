@@ -54,7 +54,6 @@ const (
 	HypershiftBucketSecretName      = "hypershift-operator-oidc-provider-s3-credentials"
 	HypershiftPrivateLinkSecretName = "hypershift-operator-private-link-credentials"
 	HypershiftExternalDNSSecretName = "hypershift-operator-external-dns-credentials"
-	HypershiftDeploymentAnnoKey     = "cluster.open-cluster-management.io/hypershiftdeployment"
 	ManagedClusterAnnoKey           = "cluster.open-cluster-management.io/managedcluster-name"
 
 	// HyperShift install job
