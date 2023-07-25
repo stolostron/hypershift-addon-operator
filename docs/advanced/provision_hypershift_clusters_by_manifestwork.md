@@ -8,7 +8,7 @@
 
 ## Creating a hosted cluster on a remote hosting cluster
 
-Creates one or more manifestwork CRs in the target managed (hypershift hosting) cluster's namespace on the ACM hub cluster. The payload of the manifestwork CR includes:
+Create one or more manifestwork CRs in the target managed (hypershift hosting) cluster's namespace on the ACM hub cluster. The payload of the manifestwork CR includes:
 
 - the namespace where the hosted cluster is created
 - HostedCluster CR
@@ -496,9 +496,9 @@ spec:
   leaseDurationSeconds: 60
 ```
 
-`import.open-cluster-management.io/klusterlet-deploy-mode: true` annotation deploys the policy and work addon agents in hosted mode to causes the work manager and policy managed cluster addons to be enabled in hosted mode running along side with the hosted control plane.
-`cluster.open-cluster-management.io/provisioner: HypershiftDeployment.cluster.open-cluster-management.io` annotation is used to disable all other addons.
-Set `import.open-cluster-management.io/klusterlet-namespace` annotation with `open-cluster-management-agent-` prefix and then <hosted_cluster_name> to get the hosted cluster's klusterlet installed in the specified non-default namespace. 
+- `import.open-cluster-management.io/klusterlet-deploy-mode: true` annotation deploys the policy and work addon agents in hosted mode to causes the work manager and policy managed cluster addons to be enabled in hosted mode running along side with the hosted control plane.
+- `cluster.open-cluster-management.io/provisioner: HypershiftDeployment.cluster.open-cluster-management.io` annotation is used to disable all other addons.
+- Set `import.open-cluster-management.io/klusterlet-namespace` annotation with `open-cluster-management-agent-` prefix and then <hosted_cluster_name> to get the hosted cluster's klusterlet installed in the specified non-default namespace. 
 
 The name of the managed cluster is the `infraID` of the hosted cluster. `hubAcceptsClient: true` means that the ACM hub accepts or approves this managed cluster.
 
