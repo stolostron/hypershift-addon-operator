@@ -330,6 +330,18 @@ func getConsoleDownload(routeUrl string, log logr.Logger) (*consolev1.ConsoleCLI
 			Href: "https://" + routeUrl + "/darwin/arm64/hypershift.tar.gz",
 			Text: "Download hypershift CLI for Mac for ARM 64",
 		},
+		{
+			Href: "https://" + routeUrl + "/linux/ppc64/hypershift.tar.gz",
+			Text: "Download hypershift CLI for Linux for IBM Power",
+		},
+		{
+			Href: "https://" + routeUrl + "/linux/ppc64le/hypershift.tar.gz",
+			Text: "Download hypershift CLI for Linux for IBM Power, little endian",
+		},
+		{
+			Href: "https://" + routeUrl + "/linux/s390x/hypershift.tar.gz",
+			Text: "Download hypershift CLI for Linux for IBM Z",
+		},
 	}
 	cliDownload.Spec.Links = links
 
