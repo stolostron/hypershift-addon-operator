@@ -309,28 +309,48 @@ func getConsoleDownload(routeUrl string, log logr.Logger) (*consolev1.ConsoleCLI
 		return nil, err
 	}
 
-	links := []consolev1.CLIDownloadLink{
-		{
-			Href: "https://" + routeUrl + "/linux/amd64/hypershift.tar.gz",
-			Text: "Download hypershift CLI for Linux for x86_64",
-		},
-		{
-			Href: "https://" + routeUrl + "/darwin/amd64/hypershift.tar.gz",
-			Text: "Download hypershift CLI for Mac for x86_64",
-		},
-		{
-			Href: "https://" + routeUrl + "/windows/amd64/hypershift.tar.gz",
-			Text: "Download hypershift CLI for Windows for x86_64",
-		},
-		{
-			Href: "https://" + routeUrl + "/linux/arm64/hypershift.tar.gz",
-			Text: "Download hypershift CLI for Linux for ARM 64",
-		},
-		{
-			Href: "https://" + routeUrl + "/darwin/arm64/hypershift.tar.gz",
-			Text: "Download hypershift CLI for Mac for ARM 64",
-		},
-	}
+	links := []consolev1.CLIDownloadLink{}
+
+	links = append(links, consolev1.CLIDownloadLink{
+		Href: "https://" + routeUrl + "/linux/amd64/hypershift.tar.gz",
+		Text: "Download hypershift CLI for Linux for x86_64",
+	})
+
+	links = append(links, consolev1.CLIDownloadLink{
+		Href: "https://" + routeUrl + "/darwin/amd64/hypershift.tar.gz",
+		Text: "Download hypershift CLI for Mac for x86_64",
+	})
+
+	links = append(links, consolev1.CLIDownloadLink{
+		Href: "https://" + routeUrl + "/windows/amd64/hypershift.tar.gz",
+		Text: "Download hypershift CLI for Windows for x86_64",
+	})
+
+	links = append(links, consolev1.CLIDownloadLink{
+		Href: "https://" + routeUrl + "/linux/arm64/hypershift.tar.gz",
+		Text: "Download hypershift CLI for Linux for ARM 64",
+	})
+
+	links = append(links, consolev1.CLIDownloadLink{
+		Href: "https://" + routeUrl + "/darwin/arm64/hypershift.tar.gz",
+		Text: "Download hypershift CLI for Mac for ARM 64",
+	})
+
+	links = append(links, consolev1.CLIDownloadLink{
+		Href: "https://" + routeUrl + "/linux/ppc64/hypershift.tar.gz",
+		Text: "Download hypershift CLI for Linux for IBM Power",
+	})
+
+	links = append(links, consolev1.CLIDownloadLink{
+		Href: "https://" + routeUrl + "/linux/ppc64le/hypershift.tar.gz",
+		Text: "Download hypershift CLI for Linux for IBM Power, little endian",
+	})
+
+	links = append(links, consolev1.CLIDownloadLink{
+		Href: "https://" + routeUrl + "/linux/s390x/hypershift.tar.gz",
+		Text: "Download hypershift CLI for Linux for IBM Z",
+	})
+
 	cliDownload.Spec.Links = links
 
 	return cliDownload, nil
