@@ -62,23 +62,8 @@ var (
 			},
 			deploymentName: util.HypershiftOperatorExternalDNSName,
 		},
-		// {
-		// 	objectName:     util.HypershiftInstallFlagsCM,
-		// 	objectType:     corev1.ConfigMap{},
-		// 	objectArgs:     []expectedArg{}, // fill out directly from config map
-		// 	NoObjectArgs:   []expectedArg{}, // fill out directly from config map
-		// 	deploymentName: util.HypershiftOperatorName,
-		// },
 	}
 )
-
-func stringToExpectedArg(toAdd []string) []expectedArg {
-	var result []expectedArg
-	for s := range toAdd {
-		result = append(result, expectedArg{shouldExist: true, argument: toAdd[s]})
-	}
-	return result
-}
 
 func (c *UpgradeController) getDeployment(operatorName string) (appsv1.Deployment, error) {
 	deployment := &appsv1.Deployment{}
@@ -115,7 +100,6 @@ func getValueFromKey(secret corev1.Secret, key string) string {
 func argMismatch(args []expectedArg, deployArgs []string) bool {
 	for _, a := range args {
 		if argInList(a.argument, deployArgs) != a.shouldExist {
-			fmt.Printf("MISMATCH WITH ARG %s %t\n", a.argument, a.shouldExist)
 			return true
 		}
 	}
@@ -124,7 +108,6 @@ func argMismatch(args []expectedArg, deployArgs []string) bool {
 
 func argInList(arg string, list []string) bool {
 	for _, a := range list {
-		//fmt.Printf("comparing %s WITH %s\n", a, arg)
 		if strings.Contains(a, arg) {
 			return true
 		}

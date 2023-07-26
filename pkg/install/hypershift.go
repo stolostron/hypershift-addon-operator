@@ -220,7 +220,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		oidcBucket = false
 	}
 
-
 	//Attempt to retrieve private link creds
 	privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
 	spl := &corev1.Secret{}
@@ -327,11 +326,10 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		args = append(args, "--image-refs", filepath.Join(os.TempDir(), util.HypershiftDownstreamOverride))
 
 		// compare installed operator images to the new image stream
-		// compare locally saved secrets to the hub secrets as well
 		// If they are the same, skip re-install.
 		if reinstallCheckRequired &&
-			!(c.operatorImagesUpdated(im, *operatorDeployment)) {
-			c.log.Info("no change in hypershift operator images, secrets and install flags, skipping hypershift operator installation")
+			!(c.operatorImagesUpdated(im, *operatorDeployment) || c.configmapDataUpdated(util.HypershiftInstallFlagsCM, installFlagsCM)) {
+			c.log.Info("no change in hypershift operator images and install flags, skipping hypershift operator installation")
 			return nil
 		}
 	} else {
@@ -379,6 +377,10 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	// Reset the number of hypershift operator installation failures
 	// since the last successful installation
 	metrics.InstallationOrUpgradeFailedCount.Set(0)
+
+	if err := c.saveConfigmapLocally(ctx, &installFlagsCM); err != nil { // hypershift operator installation flags
+		return err
+	}
 
 	// Add label and update image pull secret in Hypershift deployment
 	err = c.updateHyperShiftDeployment(ctx)
@@ -523,23 +525,23 @@ func (c *UpgradeController) createOrUpdateSpokeSecret(ctx context.Context, hubSe
 	return err
 }
 
-// func (c *UpgradeController) saveConfigmapLocally(ctx context.Context, hubConfigmap *corev1.ConfigMap) error {
-// 	if hubConfigmap.Name != "" {
-// 		spokeConfigmap := &corev1.ConfigMap{
-// 			ObjectMeta: metav1.ObjectMeta{
-// 				Name:      hubConfigmap.Name,
-// 				Namespace: c.addonNamespace,
-// 			},
-// 		}
-// 		c.log.Info(fmt.Sprintf("save the configmap (%s/%s) locally on cluster %s", c.addonNamespace, hubConfigmap.Name, c.clusterName))
-// 		_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeConfigmap, func() error {
-// 			spokeConfigmap.Data = hubConfigmap.Data
-// 			return nil
-// 		})
-// 		return err
-// 	}
-// 	return nil
-// }
+func (c *UpgradeController) saveConfigmapLocally(ctx context.Context, hubConfigmap *corev1.ConfigMap) error {
+	if hubConfigmap.Name != "" {
+		spokeConfigmap := &corev1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      hubConfigmap.Name,
+				Namespace: c.addonNamespace,
+			},
+		}
+		c.log.Info(fmt.Sprintf("save the configmap (%s/%s) locally on cluster %s", c.addonNamespace, hubConfigmap.Name, c.clusterName))
+		_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeConfigmap, func() error {
+			spokeConfigmap.Data = hubConfigmap.Data
+			return nil
+		})
+		return err
+	}
+	return nil
+}
 
 func (c *UpgradeController) ensurePullSecret(ctx context.Context) error {
 	mcePullSecret := &corev1.Secret{}
@@ -798,7 +800,6 @@ func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
 	}
 	return ""
 }
-
 
 func (c *UpgradeController) configmapDataUpdated(cmName string, cm corev1.ConfigMap) bool {
 	c.log.Info(fmt.Sprintf("comparing hypershift operator installation flags configmap(%s) to the locally saved configmap", cmName))

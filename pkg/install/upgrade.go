@@ -97,6 +97,13 @@ func (c *UpgradeController) Stop() {
 }
 
 func (c *UpgradeController) installOptionsChanged() bool {
+
+	// check for changes in hypershift operator installation flags configmap
+	newInstallFlagsCM, err := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
+	if err == nil && c.configmapDataChanged(newInstallFlagsCM, c.installFlagsConfigmap, util.HypershiftInstallFlagsCM) {
+		c.installFlagsConfigmap = newInstallFlagsCM // save the new configmap for the next cycle of comparison
+		return true
+	}
 	// Create expected args based on secrets' existence and their values
 	// Compare the expected args to the actual args
 	// If they differ, reinstall
@@ -112,12 +119,12 @@ func (c *UpgradeController) installOptionsChanged() bool {
 
 		if err := c.hubClient.Get(context.TODO(), types.NamespacedName{Name: o.objectName, Namespace: c.clusterName}, &corev1.Secret{}); err == nil {
 			if argMismatch(o.objectArgs, deploymentArgs) {
-				c.log.Info(fmt.Sprintf("Mistmatch with %s args and install options, reinstalling", o.objectName))
+				c.log.Info(fmt.Sprintf("Mismatch between %s args and install options", o.objectName))
 				return true
 			}
 		} else {
 			if argMismatch(o.NoObjectArgs, deploymentArgs) {
-				c.log.Info(fmt.Sprintf("NONE Mistmatch with %s args and install options, reinstalling", o.objectName))
+				c.log.Info(fmt.Sprintf("Mismatch between %s args and install options", o.objectName))
 				return true
 			}
 		}
@@ -221,37 +228,27 @@ func (c *UpgradeController) populateExpectedArgs(toPopulate *[]expectedConfig) e
 	//anything with {key} gets replaced with the value of 'key' in the secret
 	tp := *toPopulate
 	for e := range tp {
-		if _, isCM := tp[e].objectType.(corev1.ConfigMap); isCM {
-			newInstallFlagsCM, err := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
-			if err == nil {
-				tp[e].objectArgs = append(tp[e].objectArgs, stringToExpectedArg(c.buildOtherInstallFlags(newInstallFlagsCM))...)
-				c.log.Info("CONFIG MAP ARGUMENTS")
-				for _, a := range tp[e].objectArgs {
-					c.log.Info(fmt.Sprintf("CFMAP ARG %s", a.argument))
-				}
+		secret, err := c.getSecretFromHub(tp[e].objectName)
+		if err != nil {
+			c.log.Info(fmt.Sprintf("secret %s is not present on the hub", tp[e].objectName))
+			continue
+		}
+		for i, a := range tp[e].objectArgs {
+			key := matchAndTrim(&a.argument)
+			if key != "" {
+				value := getValueFromKey(secret, key)
+				tp[e].objectArgs[i].argument = a.argument + value
 			}
-		} else {
-			secret, err := c.getSecretFromHub(tp[e].objectName)
-			if err != nil {
-				c.log.Info(fmt.Sprintf("secret %s is not present on the hub", tp[e].objectName))
-				continue
-			}
-			for i, a := range tp[e].objectArgs {
-				key := matchAndTrim(&a.argument)
-				if key != "" {
-					value := getValueFromKey(secret, key)
-					tp[e].objectArgs[i].argument = a.argument + value
-				}
 
-			}
-			for i, a := range tp[e].NoObjectArgs {
-				key := matchAndTrim(&a.argument)
-				if key != "" {
-					value := getValueFromKey(secret, key)
-					tp[e].NoObjectArgs[i].argument = a.argument + value
-				}
+		}
+		for i, a := range tp[e].NoObjectArgs {
+			key := matchAndTrim(&a.argument)
+			if key != "" {
+				value := getValueFromKey(secret, key)
+				tp[e].NoObjectArgs[i].argument = a.argument + value
 			}
 		}
+
 	}
 	return nil
 }
