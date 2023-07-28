@@ -160,7 +160,31 @@ func TestBucketSecretChanges(t *testing.T) {
 			"credentials": []byte(`myCredential`),
 		},
 	}
+	operatorDeployment := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "operator",
+			Namespace: "hypershift",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "nginx",
+						Image: "nginx:1.14.2",
+						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+						Args:  []string{"--private-platform=None"},
+					}},
+				},
+			},
+		},
+	}
+
 	controller.hubClient.Create(ctx, newBucketSecret)
+	controller.hubClient.Create(ctx, operatorDeployment)
 
 	assert.Eventually(t, func() bool {
 		theSecret := &corev1.Secret{}
@@ -173,6 +197,12 @@ func TestBucketSecretChanges(t *testing.T) {
 		return controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "The bucket secret has changed. The hypershift operator needs to be re-installed")
 	controller.Stop()
+
+	operatorDeployment.Spec.Template.Spec.Containers[0].Args = append(operatorDeployment.Spec.Template.Spec.Containers[0].Args, []string{
+		"--oidc-storage-provider-s3-bucket-name=my-bucket",
+		"--oidc-storage-provider-s3-region=us-east-1",
+		"--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials"}...)
+	controller.hubClient.Update(ctx, operatorDeployment)
 
 	controller.Start()
 	assert.Eventually(t, func() bool {
@@ -187,8 +217,8 @@ func TestBucketSecretChanges(t *testing.T) {
 		},
 		Data: map[string][]byte{
 			"bucket":      []byte(`my-bucket`),
-			"region":      []byte(`us-east-1`),
-			"credentials": []byte(`myNewCredential`),
+			"region":      []byte(`us-east-2`),
+			"credentials": []byte(`myCredential`),
 		},
 	}
 
@@ -198,7 +228,7 @@ func TestBucketSecretChanges(t *testing.T) {
 		theSecret := &corev1.Secret{}
 		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftBucketSecretName}, theSecret)
 		if err == nil {
-			return string(theSecret.Data["credentials"]) == "myNewCredential"
+			return string(theSecret.Data["region"]) == "us-east-2"
 		}
 		return false
 	}, 10*time.Second, 1*time.Second, "The bucket secret was updated successfully")
@@ -222,6 +252,9 @@ func TestBucketSecretChanges(t *testing.T) {
 		return controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "The bucket secret was removed. The hypershift operator needs to be re-installed")
 	controller.Stop()
+
+	operatorDeployment.Spec.Template.Spec.Containers[0].Args = []string{"--private-platform=None"}
+	controller.hubClient.Update(ctx, operatorDeployment)
 
 	controller.Start()
 	assert.Eventually(t, func() bool {
@@ -265,6 +298,30 @@ func TestExtDnsSecretChanges(t *testing.T) {
 			"credentials":   []byte(`myCredential`),
 		},
 	}
+	extDeployment := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "external-dns",
+			Namespace: "hypershift",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "nginx",
+						Image: "nginx:1.14.2",
+						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+						Args:  []string{"--private-platform=None"},
+					}},
+				},
+			},
+		},
+	}
+
+	controller.hubClient.Create(ctx, extDeployment)
 	controller.hubClient.Create(ctx, newExtDnsSecret)
 
 	assert.Eventually(t, func() bool {
@@ -279,6 +336,11 @@ func TestExtDnsSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "The external DNS secret has changed. The hypershift operator needs to be re-installed")
 	controller.Stop()
 
+	extDeployment.Spec.Template.Spec.Containers[0].Args = append(extDeployment.Spec.Template.Spec.Containers[0].Args, []string{
+		"--domain-filter=my.domain.filter",
+		"--provider=aws"}...)
+	controller.hubClient.Update(ctx, extDeployment)
+
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return !controller.reinstallNeeded
@@ -291,10 +353,10 @@ func TestExtDnsSecretChanges(t *testing.T) {
 			Namespace: controller.clusterName,
 		},
 		Data: map[string][]byte{
-			"domain-filter": []byte(`my.domain.filter`),
+			"domain-filter": []byte(`my.domain.filter2`),
 			"provider":      []byte(`aws`),
 			"txt-owner-id":  []byte(`my-txt-owner-id`),
-			"credentials":   []byte(`myNewCredential`),
+			"credentials":   []byte(`myCredential`),
 		},
 	}
 
@@ -304,7 +366,7 @@ func TestExtDnsSecretChanges(t *testing.T) {
 		theSecret := &corev1.Secret{}
 		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftExternalDNSSecretName}, theSecret)
 		if err == nil {
-			return string(theSecret.Data["credentials"]) == "myNewCredential"
+			return string(theSecret.Data["domain-filter"]) == "my.domain.filter2"
 		}
 		return false
 	}, 10*time.Second, 1*time.Second, "The external DNS secret was updated successfully")
@@ -328,6 +390,9 @@ func TestExtDnsSecretChanges(t *testing.T) {
 		return controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "The external DNS secret was removed. The hypershift operator needs to be re-installed")
 	controller.Stop()
+
+	extDeployment.Spec.Template.Spec.Containers[0].Args = []string{"--private-platform=None"}
+	controller.hubClient.Update(ctx, extDeployment)
 
 	controller.Start()
 	assert.Eventually(t, func() bool {
@@ -369,6 +434,32 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 			"credentials": []byte(`my-credential-file`),
 		},
 	}
+
+	dp := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "operator",
+			Namespace: "hypershift",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "nginx",
+						Image: "nginx:1.14.2",
+						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+						Args:  []string{"--private-platform=None"},
+					}},
+				},
+			},
+		},
+	}
+	controller.hubClient.Create(ctx, dp)
+	defer controller.hubClient.Delete(ctx, dp)
+
 	controller.hubClient.Create(ctx, newPrivateLinkSecret)
 
 	assert.Eventually(t, func() bool {
@@ -383,8 +474,10 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "The private link secret has changed. The hypershift operator needs to be re-installed")
 	controller.Stop()
 
-	//Add test to check successful installation
+	dp.Spec.Template.Spec.Containers[0].Args = []string{"--private-platform=AWS"}
+	controller.hubClient.Update(ctx, dp)
 
+	//Add test to check successful installation
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return !controller.reinstallNeeded
@@ -398,38 +491,6 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "Nothing has changed, but Startup=true. The hypershift operator needs to be re-installed")
-
-	controller.Stop()
-
-	changedPrivateLinkSecret := &corev1.Secret{
-		ObjectMeta: v1.ObjectMeta{
-			Name:      util.HypershiftPrivateLinkSecretName,
-			Namespace: controller.clusterName,
-		},
-		Data: map[string][]byte{
-			"region":      []byte(`us-west-1`),
-			"credentials": []byte(`my-credential-file`),
-		},
-	}
-
-	controller.hubClient.Update(ctx, changedPrivateLinkSecret)
-
-	assert.Eventually(t, func() bool {
-		theSecret := &corev1.Secret{}
-		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftPrivateLinkSecretName}, theSecret)
-		if err == nil {
-			return string(theSecret.Data["region"]) == "us-west-1"
-		}
-		return false
-	}, 10*time.Second, 1*time.Second, "The private link secret was updated successfully")
-
-	controller.startup = false
-	controller.installfailed = false
-	controller.Start()
-
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The private link secret was updated. The hypershift operator needs to be re-installed")
 
 	controller.Stop()
 
@@ -448,6 +509,9 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "The private link secret was removed. The hypershift operator needs to be re-installed")
 
 	controller.Stop()
+
+	dp.Spec.Template.Spec.Containers[0].Args = []string{"--private-platform=None"}
+	controller.hubClient.Update(ctx, dp)
 
 	controller.startup = false
 	controller.installfailed = false
@@ -544,6 +608,7 @@ func TestInstallFlagChanges(t *testing.T) {
 						Name:  "nginx",
 						Image: "nginx:1.14.2",
 						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+						Args:  []string{"--private-platform=None"},
 					}},
 				},
 			},

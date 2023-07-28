@@ -248,9 +248,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			return fmt.Errorf("hypershift-operator-oidc-provider-s3-credentials does not contain a bucket key")
 		}
 
-		// if err := c.createOrUpdateAwsSpokeSecret(ctx, se, true); err != nil {
-		// 	return err
-		// }
 		c.log.Info("oidc s3 bucket, region & credential arguments included")
 		awsArgs := []string{
 			"--oidc-storage-provider-s3-bucket-name", bucketName,
@@ -265,9 +262,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	}
 
 	if privateLinkCreds { // if private link credentials is found, install hypershift with private secret options
-		// if err := c.createOrUpdateAwsSpokeSecret(ctx, spl, true); err != nil {
-		// 	return err
-		// }
 		c.log.Info("private link region & credential arguments included")
 		awsArgs := []string{
 			"--aws-private-secret", util.HypershiftPrivateLinkSecretName,
@@ -282,17 +276,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
 	sExtDNS := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, extDNSSecretKey, sExtDNS); err == nil {
-		// if awsPlatform {
-		// 	// For AWS DNS provider, users can specify either credentials or
-		// 	// aws-access-key-id and aws-secret-access-key
-		// 	if err := c.createOrUpdateAwsSpokeSecret(ctx, sExtDNS, false); err != nil {
-		// 		return err
-		// 	}
-		// } else {
-		// 	if err := c.createOrUpdateSpokeSecret(ctx, sExtDNS); err != nil {
-		// 		return err
-		// 	}
-		// }
 
 		c.log.Info("external dns provider & domain-filter arguments included")
 		awsArgs := []string{

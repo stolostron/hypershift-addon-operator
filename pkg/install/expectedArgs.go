@@ -23,54 +23,12 @@ type expectedArg struct {
 	argument    string
 }
 
-var (
-	expected = []expectedConfig{
-		{
-			objectName: util.HypershiftBucketSecretName,
-			objectType: corev1.Secret{},
-			objectArgs: []expectedArg{
-				{argument: "--oidc-storage-provider-s3-bucket-name={bucket}", shouldExist: true},
-				{argument: "--oidc-storage-provider-s3-region={region}", shouldExist: true},
-				{argument: "--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials", shouldExist: true},
-			},
-			NoObjectArgs: []expectedArg{
-				{argument: "--oidc-storage-provider-s3-bucket-name=", shouldExist: false},
-				{argument: "--oidc-storage-provider-s3-region=", shouldExist: false},
-				{argument: "--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials", shouldExist: false},
-			},
-			deploymentName: util.HypershiftOperatorName,
-		},
-		{
-			objectName: util.HypershiftPrivateLinkSecretName,
-			objectType: corev1.Secret{},
-			objectArgs: []expectedArg{
-				{argument: "--private-platform=AWS", shouldExist: true},
-				{argument: "--private-platform=None", shouldExist: false},
-			},
-			NoObjectArgs: []expectedArg{
-				{argument: "--private-platform=None", shouldExist: true},
-				{argument: "--private-platform=AWS", shouldExist: false},
-			},
-			deploymentName: util.HypershiftOperatorName,
-		},
-		{
-			objectName: util.HypershiftExternalDNSSecretName,
-			objectType: corev1.Secret{},
-			objectArgs: []expectedArg{
-				{argument: "--domain-filter={domain-filter}", shouldExist: true},
-				{argument: "--provider={provider}", shouldExist: true},
-			},
-			deploymentName: util.HypershiftOperatorExternalDNSName,
-		},
-	}
-)
-
 func (c *UpgradeController) getDeployment(operatorName string) (appsv1.Deployment, error) {
 	deployment := &appsv1.Deployment{}
 	nsn := types.NamespacedName{Namespace: util.HypershiftOperatorNamespace, Name: operatorName}
 	err := c.spokeUncachedClient.Get(c.ctx, nsn, deployment)
 	if err != nil {
-		c.log.Error(err, fmt.Sprintf("failed to get %s deployment: ", operatorName))
+		c.log.Info(fmt.Sprintf("failed to get %s deployment", operatorName))
 		return *deployment, err
 	}
 

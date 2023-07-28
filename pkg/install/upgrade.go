@@ -72,7 +72,7 @@ func (c *UpgradeController) Start() {
 		if err := c.syncHypershiftNS(); err != nil {
 			c.log.Error(err, "failed to sync secrets in hypershift namespace with secrets in local-cluster namespace")
 		}
-		c.populateExpectedArgs(&expected)
+
 		if c.startup || c.installfailed || c.installOptionsChanged() || c.upgradeImageCheck() {
 			c.reinstallNeeded = true
 			c.log.Info("hypershift operator re-installation is required")
@@ -107,9 +107,52 @@ func (c *UpgradeController) installOptionsChanged() bool {
 	// Create expected args based on secrets' existence and their values
 	// Compare the expected args to the actual args
 	// If they differ, reinstall
-	c.populateExpectedArgs(&expected)
+	expectedInstance := []expectedConfig{
+		{
+			objectName: util.HypershiftBucketSecretName,
+			objectType: corev1.Secret{},
+			objectArgs: []expectedArg{
+				{argument: "--oidc-storage-provider-s3-bucket-name={bucket}", shouldExist: true},
+				{argument: "--oidc-storage-provider-s3-region={region}", shouldExist: true},
+				{argument: "--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials", shouldExist: true},
+			},
+			NoObjectArgs: []expectedArg{
+				{argument: "--oidc-storage-provider-s3-bucket-name=", shouldExist: false},
+				{argument: "--oidc-storage-provider-s3-region=", shouldExist: false},
+				{argument: "--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials", shouldExist: false},
+			},
+			deploymentName: util.HypershiftOperatorName,
+		},
+		{
+			objectName: util.HypershiftPrivateLinkSecretName,
+			objectType: corev1.Secret{},
+			objectArgs: []expectedArg{
+				{argument: "--private-platform=AWS", shouldExist: true},
+				{argument: "--private-platform=None", shouldExist: false},
+			},
+			NoObjectArgs: []expectedArg{
+				{argument: "--private-platform=None", shouldExist: true},
+				{argument: "--private-platform=AWS", shouldExist: false},
+			},
+			deploymentName: util.HypershiftOperatorName,
+		},
+		{
+			objectName: util.HypershiftExternalDNSSecretName,
+			objectType: corev1.Secret{},
+			objectArgs: []expectedArg{
+				{argument: "--domain-filter={domain-filter}", shouldExist: true},
+				{argument: "--provider={provider}", shouldExist: true},
+			},
+			NoObjectArgs: []expectedArg{
+				{argument: "--domain-filter={domain-filter}", shouldExist: false},
+				{argument: "--provider={provider}", shouldExist: false},
+			},
+			deploymentName: util.HypershiftOperatorExternalDNSName,
+		},
+	}
+	c.populateExpectedArgs(&expectedInstance)
 
-	for _, o := range expected {
+	for _, o := range expectedInstance {
 		dep, err := c.getDeployment(o.deploymentName)
 		if err != nil {
 			continue
@@ -119,12 +162,16 @@ func (c *UpgradeController) installOptionsChanged() bool {
 
 		if err := c.hubClient.Get(context.TODO(), types.NamespacedName{Name: o.objectName, Namespace: c.clusterName}, &corev1.Secret{}); err == nil {
 			if argMismatch(o.objectArgs, deploymentArgs) {
+				fmt.Println(deploymentArgs)
 				c.log.Info(fmt.Sprintf("Mismatch between %s args and install options", o.objectName))
+				fmt.Println(o.objectArgs)
 				return true
 			}
 		} else {
 			if argMismatch(o.NoObjectArgs, deploymentArgs) {
+				fmt.Println(deploymentArgs)
 				c.log.Info(fmt.Sprintf("Mismatch between %s args and install options", o.objectName))
+				fmt.Println(o.objectArgs)
 				return true
 			}
 		}
