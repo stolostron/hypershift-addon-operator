@@ -446,6 +446,9 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = installHyperShiftOperator(t, ctx, aCtrl, true)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 
+	err = aCtrl.syncHypershiftNS()
+	assert.Nil(t, err, "is nil if sync NS is successful")
+
 	// Hypershift NS is created (with OIDc secret)
 	err = aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Name: "hypershift"}, hypershiftNs)
 	assert.Nil(t, err, "is nil if the hypershift namespace was created")
@@ -460,19 +463,6 @@ func TestRunHypershiftInstall(t *testing.T) {
 	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(oidcSecret), oidcSecret)
 	assert.Nil(t, err, "is nil when oidc secret is found")
 	assert.Equal(t, []byte(`myCredential`), oidcSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
-
-	// Check hypershift-operator-oidc-provider-s3-credentials secret exists in the addon namespace
-	localOidcSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      util.HypershiftBucketSecretName,
-			Namespace: aCtrl.addonNamespace,
-		},
-	}
-	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(localOidcSecret), localOidcSecret)
-	assert.Nil(t, err, "is nil when locally saved oidc secret is found")
-	assert.Equal(t, []byte(`myCredential`), localOidcSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
-	assert.Equal(t, []byte(`my-bucket`), localOidcSecret.Data["bucket"], "the bucket should be equal if the copy was a success")
-	assert.Equal(t, []byte(`us-east-1`), localOidcSecret.Data["region"], "the resion should be equal if the copy was a success")
 
 	// Check hypershift-operator-private-link-credentials secret does NOT exist
 	plSecret := &corev1.Secret{
@@ -823,6 +813,9 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	defer deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
 	assert.Nil(t, err, "is nil if install HyperShift is successful")
 
+	err = aCtrl.syncHypershiftNS()
+	assert.Nil(t, err, "is nil if sync NS is successful")
+
 	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
 	oidcSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -880,28 +873,6 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 			assert.Equal(t, expectArgs, installJob.Spec.Template.Spec.Containers[0].Args, "mismatched container arguments")
 		}
 	}
-
-	// Check hypershift-operator-private-link-credentials secret exists in the addon namespace
-	localPrivateLinkSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      util.HypershiftPrivateLinkSecretName,
-			Namespace: aCtrl.addonNamespace,
-		},
-	}
-	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(localPrivateLinkSecret), localPrivateLinkSecret)
-	assert.Nil(t, err, "is nil when locally saved private link secret is found")
-	assert.Equal(t, []byte(`us-east-1`), localPrivateLinkSecret.Data["region"], "the region should be equal if the copy was a success")
-
-	// Check hypershift-operator-private-link-credentials secret exists in the addon namespace
-	localExtDnsSecret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      util.HypershiftExternalDNSSecretName,
-			Namespace: aCtrl.addonNamespace,
-		},
-	}
-	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(localExtDnsSecret), localExtDnsSecret)
-	assert.Nil(t, err, "is nil when locally saved external DNS secret is found")
-	assert.Equal(t, []byte(`my.house.com`), localExtDnsSecret.Data["domain-filter"], "the domain-filter should be equal if the copy was a success")
 
 	// Cleanup
 	err = aCtrl.RunHypershiftCmdWithRetires(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)
@@ -1094,6 +1065,9 @@ func TestRunHypershiftInstallExternalDNSDifferentSecret(t *testing.T) {
 
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InInstallationOrUpgradeBool))
 	assert.Equal(t, float64(0), testutil.ToFloat64(metrics.InstallationOrUpgradeFailedCount))
+
+	err = aCtrl.syncHypershiftNS()
+	assert.Nil(t, err, "is nil if sync NS is successful")
 
 	// Check hypershift-operator-oidc-provider-s3-credentials secret exists
 	oidcSecret := &corev1.Secret{
@@ -1743,6 +1717,30 @@ func TestAWSPlatformDetection(t *testing.T) {
 			"credentials": []byte(`myCredential`),
 		},
 	}
+
+	operatorDeployment := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "operator",
+			Namespace: "hypershift",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "nginx",
+						Image: "nginx:1.14.2",
+						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+						Args:  []string{"--private-platform=None"},
+					}},
+				},
+			},
+		},
+	}
+	controller.hubClient.Create(ctx, operatorDeployment)
 
 	controller.Start()
 	assert.Eventually(t, func() bool {
