@@ -311,7 +311,8 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		// compare installed operator images to the new image stream
 		// If they are the same, skip re-install.
 		if reinstallCheckRequired &&
-			!(c.operatorImagesUpdated(im, *operatorDeployment) || c.configmapDataUpdated(util.HypershiftInstallFlagsCM, installFlagsCM)) {
+			!(c.operatorImagesUpdated(im, *operatorDeployment) ||
+				c.configmapDataUpdated(util.HypershiftInstallFlagsCM, installFlagsCM)) {
 			c.log.Info("no change in hypershift operator images and install flags, skipping hypershift operator installation")
 			return nil
 		}
@@ -471,7 +472,8 @@ func getParamValue(s []string, e string) string {
 	return ""
 }
 
-func (c *UpgradeController) createOrUpdateAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret, regionRequired bool) error {
+func (c *UpgradeController) createOrUpdateAwsSpokeSecret(
+	ctx context.Context, hubSecret *corev1.Secret, regionRequired bool) error {
 	spokeSecret := hubSecret.DeepCopy()
 
 	region := hubSecret.Data["region"]

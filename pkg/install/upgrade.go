@@ -114,12 +114,14 @@ func (c *UpgradeController) installOptionsChanged() bool {
 			objectArgs: []expectedArg{
 				{argument: "--oidc-storage-provider-s3-bucket-name={bucket}", shouldExist: true},
 				{argument: "--oidc-storage-provider-s3-region={region}", shouldExist: true},
-				{argument: "--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials", shouldExist: true},
+				{argument: "--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials",
+					shouldExist: true},
 			},
 			NoObjectArgs: []expectedArg{
 				{argument: "--oidc-storage-provider-s3-bucket-name=", shouldExist: false},
 				{argument: "--oidc-storage-provider-s3-region=", shouldExist: false},
-				{argument: "--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials", shouldExist: false},
+				{argument: "--oidc-storage-provider-s3-credentials=/etc/oidc-storage-provider-s3-creds/credentials",
+					shouldExist: false},
 			},
 			deploymentName: util.HypershiftOperatorName,
 		},
@@ -160,18 +162,17 @@ func (c *UpgradeController) installOptionsChanged() bool {
 
 		deploymentArgs := dep.Spec.Template.Spec.Containers[0].Args
 
-		if err := c.hubClient.Get(context.TODO(), types.NamespacedName{Name: o.objectName, Namespace: c.clusterName}, &corev1.Secret{}); err == nil {
+		if err := c.hubClient.Get(
+			context.TODO(), types.NamespacedName{Name: o.objectName, Namespace: c.clusterName},
+			&corev1.Secret{}); err == nil {
+
 			if argMismatch(o.objectArgs, deploymentArgs) {
-				fmt.Println(deploymentArgs)
 				c.log.Info(fmt.Sprintf("Mismatch between %s args and install options", o.objectName))
-				fmt.Println(o.objectArgs)
 				return true
 			}
 		} else {
 			if argMismatch(o.NoObjectArgs, deploymentArgs) {
-				fmt.Println(deploymentArgs)
 				c.log.Info(fmt.Sprintf("Mismatch between %s args and install options", o.objectName))
-				fmt.Println(o.objectArgs)
 				return true
 			}
 		}
@@ -225,45 +226,18 @@ func (c *UpgradeController) configmapDataChanged(oldCM, newCM corev1.ConfigMap, 
 
 func (c *UpgradeController) syncHypershiftNS() error {
 	//Sync secrets in local-cluster namespace with secrets in hypershift namespace
-	secrets := []string{"hypershift-operator-oidc-provider-s3-credentials", "hypershift-operator-private-link-credentials", "hypershift-operator-external-dns-credentials"}
-	awsPlatform := false
+	secrets := []string{util.HypershiftBucketSecretName,
+		util.HypershiftPrivateLinkSecretName,
+		util.HypershiftExternalDNSSecretName}
 	ctx := context.TODO()
 
 	for s := range secrets {
-		if secrets[s] == "hypershift-operator-external-dns-credentials" {
-
-			extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
-			sExtDNS := &corev1.Secret{}
-			if err := c.hubClient.Get(ctx, extDNSSecretKey, sExtDNS); err == nil {
-				if awsPlatform {
-					// For AWS DNS provider, users can specify either credentials or
-					// aws-access-key-id and aws-secret-access-key
-					if err := c.createOrUpdateAwsSpokeSecret(ctx, sExtDNS, false); err != nil {
-						return err
-					}
-				} else {
-					if err := c.createOrUpdateSpokeSecret(ctx, sExtDNS); err != nil {
-						return err
-					}
-				}
-			} else {
-				c.log.Info(fmt.Sprintf("external dns secret(%s) was not found", extDNSSecretKey))
-			}
-
-		} else {
-
-			secretKey := types.NamespacedName{Name: secrets[s], Namespace: c.clusterName}
-			se := &corev1.Secret{}
-			if err := c.hubClient.Get(ctx, secretKey, se); err == nil {
-				awsPlatform = true
-				if err := c.createOrUpdateAwsSpokeSecret(ctx, se, true); err != nil {
-					return err
-				}
-			} else {
-				c.log.Info(fmt.Sprintf("secret(%s) not found on the hub.", secretKey))
-
-			}
-
+		secretKey := types.NamespacedName{Name: secrets[s], Namespace: c.clusterName}
+		se := &corev1.Secret{}
+		if err := c.hubClient.Get(ctx, secretKey, se); err != nil {
+			c.log.Info(fmt.Sprintf("secret(%s) not found on the hub.", secretKey))
+		} else if err := c.createOrUpdateSecret(ctx, se); err != nil {
+			return err
 		}
 
 	}
@@ -271,7 +245,7 @@ func (c *UpgradeController) syncHypershiftNS() error {
 	return nil
 }
 
-func (c *UpgradeController) populateExpectedArgs(toPopulate *[]expectedConfig) error {
+func (c *UpgradeController) populateExpectedArgs(toPopulate *[]expectedConfig) {
 	//anything with {key} gets replaced with the value of 'key' in the secret
 	tp := *toPopulate
 	for e := range tp {
@@ -294,6 +268,21 @@ func (c *UpgradeController) populateExpectedArgs(toPopulate *[]expectedConfig) e
 				value := getValueFromKey(secret, key)
 				tp[e].NoObjectArgs[i].argument = a.argument + value
 			}
+		}
+
+	}
+}
+
+func (c *UpgradeController) createOrUpdateSecret(ctx context.Context, secret *corev1.Secret) error {
+	if secret.Name == util.HypershiftExternalDNSSecretName && !c.awsPlatform {
+		if err := c.createOrUpdateSpokeSecret(ctx, secret); err != nil {
+			return err
+		}
+	} else {
+		c.awsPlatform = true
+		if err := c.createOrUpdateAwsSpokeSecret(ctx, secret,
+			secret.Name != util.HypershiftExternalDNSSecretName); err != nil {
+			return err
 		}
 
 	}

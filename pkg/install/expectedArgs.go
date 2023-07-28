@@ -36,7 +36,8 @@ func (c *UpgradeController) getDeployment(operatorName string) (appsv1.Deploymen
 }
 
 // Match {text} and remove it
-// Returns matched text e.g. --oidc-storage-provider-s3-bucket-name={bucket} will become "--oidc-storage-provider-s3-bucket-name=" and return "bucket"
+// Returns matched text e.g. --oidc-storage-provider-s3-bucket-name={bucket} will become
+// "--oidc-storage-provider-s3-bucket-name=" and return "bucket"
 func matchAndTrim(s *string) string {
 	i := strings.Index(*s, "{")
 	if i >= 0 {
