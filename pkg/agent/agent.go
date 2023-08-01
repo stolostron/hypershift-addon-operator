@@ -260,6 +260,17 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to create external secret controller: %s, err: %w", util.ExternalSecretControllerName, err)
 	}
 
+	autoImportController := &AutoImportController{
+		//hubClient:   hubClient,
+		spokeClient: spokeKubeClient,
+		log:         o.Log.WithName("auto-import-controller"),
+	}
+
+	if err = autoImportController.SetupWithManager(mgr); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
+		return fmt.Errorf("unable to create auto-import controller: %s, err: %w", util.AutoImportControllerName, err)
+	}
+
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to set up health check, err: %w", err)
