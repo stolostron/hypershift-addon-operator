@@ -11,7 +11,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
-	operatorapiv1 "open-cluster-management.io/api/operator/v1"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -25,7 +25,7 @@ const (
 )
 
 type AutoImportController struct {
-	//hubClient   client.Client
+	hubClient   client.Client
 	spokeClient client.Client
 	log         logr.Logger
 }
@@ -45,9 +45,9 @@ var AutoImportPredicateFunctions = predicate.Funcs{
 // SetupWithManager sets up the controller with the Manager.
 func (c *AutoImportController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&operatorapiv1.Klusterlet{}).
+		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		WithEventFilter(ExternalSecretPredicateFunctions).
+		WithEventFilter(AutoImportPredicateFunctions).
 		Complete(c)
 }
 
@@ -58,10 +58,9 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 	adc := &addonv1alpha1.AddOnDeploymentConfig{}
 	adcNsn := types.NamespacedName{Namespace: "multicluster-engine", Name: addOnDeploymentConfigName}
 	if err := c.spokeClient.Get(ctx, adcNsn, adc); err != nil {
-		c.log.Info(fmt.Sprintf("Could not get AddonDeploymentConfig (%s/%s)", adcNsn.Name, adcNsn.Namespace))
-	} else if containsFlag("autoImportDisabled", adc.Spec.CustomizedVariables) == "true" {
-		autoImportDisabled = true
-		c.log.Info("FOUND FLAG")
+		c.log.Error(err, fmt.Sprintf("Could not get AddonDeploymentConfig (%s/%s)", adcNsn.Name, adcNsn.Namespace))
+	} else {
+		autoImportDisabled = containsFlag("autoImportDisabled", adc.Spec.CustomizedVariables) == "true"
 	}
 
 	if autoImportDisabled {
@@ -69,23 +68,24 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	//Over here, check if controlplane is available, if not requeue
 	hc := &hyperv1beta1.HostedCluster{}
 	if err := c.spokeClient.Get(ctx, req.NamespacedName, hc); err != nil {
 		if apierrors.IsNotFound(err) {
-			//Delete managed cluster over here if it exists
-
 			return ctrl.Result{}, nil
 		}
 
-		c.log.Error(err, "failed to get the hostedcluster")
+		c.log.Error(err, fmt.Sprintf("failed to get the hostedcluster %s/%s", req.NamespacedName.Name, req.NamespacedName.Namespace))
 		return ctrl.Result{}, nil
 	}
 
+	//Over here, check if controlplane is available, if not then requeue until it is
 	if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || !c.isHostedControlPlaneAvailable(hc.Status) {
 		// Wait for cluster to become available, check again in a minute
+		c.log.Info(fmt.Sprintf("Hosted control plane of %s is unavailable, retrying in 1 minute", req.NamespacedName))
 		return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
 	}
+	//Once available, create managed cluster
+	c.createManagedCluster(*hc, ctx)
 
 	return ctrl.Result{}, nil
 }
@@ -93,9 +93,7 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 // Returns string if flag is found in list, otherwise ""
 func containsFlag(flagToFind string, list []addonv1alpha1.CustomizedVariable) string {
 	for _, flag := range list {
-		fmt.Printf("Checking flag %s", flag.Name)
 		if flag.Name == flagToFind {
-
 			return flag.Value
 		}
 	}
@@ -109,4 +107,24 @@ func (c *AutoImportController) isHostedControlPlaneAvailable(status hyperv1beta1
 		}
 	}
 	return false
+}
+
+// ensureManagedCluster creates the managed cluster
+func (c *AutoImportController) createManagedCluster(hc hyperv1beta1.HostedCluster, ctx context.Context) {
+	mc := clusterv1.ManagedCluster{}
+	mcName := hc.Name
+	err := c.spokeClient.Get(ctx, types.NamespacedName{Name: mcName}, &mc)
+	if apierrors.IsNotFound(err) {
+		c.log.Info(fmt.Sprintf("Creating managed cluster %s", mcName))
+		mc.Name = mcName
+		mc.Spec.HubAcceptsClient = true
+		fmt.Println(mc)
+		// ensureManagedClusterObjectMeta(&mc, hydNamespaceName, managedClusterSetName, managementClusterName)
+		// if err = r.Create(ctx, &mc, &client.CreateOptions{}); err != nil {
+		// 	log.V(ERROR).Info("Could not create ManagedCluster resource", "error", err)
+		// 	return nil, err
+		// }
+
+		// return &mc, nil
+	}
 }

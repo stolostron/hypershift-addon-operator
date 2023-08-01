@@ -261,7 +261,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	autoImportController := &AutoImportController{
-		//hubClient:   hubClient,
+		hubClient:   hubClient,
 		spokeClient: spokeKubeClient,
 		log:         o.Log.WithName("auto-import-controller"),
 	}
