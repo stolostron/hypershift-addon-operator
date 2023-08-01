@@ -123,7 +123,7 @@ func (c *AutoImportController) createManagedCluster(hc hyperv1beta1.HostedCluste
 		
 		populateManagedClusterData(&mc)
 		fmt.Println(mc)
-		if err = c.hubClient.Create(ctx, &mc, &client.CreateOptions{}); err != nil {
+		if err = c.spokeClient.Create(ctx, &mc, &client.CreateOptions{}); err != nil {
 			c.log.Error(err, fmt.Sprintf("Failed at creating managed cluster %s", mc.Name))
 			return err
 		}
