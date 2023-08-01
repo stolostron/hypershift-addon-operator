@@ -22,6 +22,10 @@ import (
 const (
 	autoImportAnnotation      = "auto-imported"
 	addOnDeploymentConfigName = "hypershift-addon-deploy-config"
+	hostingClusterNameAnno    = "import.open-cluster-management.io/hosting-cluster-name"
+	klueterletDeployMode      = "import.open-cluster-management.io/klusterlet-deploy-mode"
+	createdViaAnno            = "open-cluster-management/created-via"
+	clusterSetLabel           = "cluster.open-cluster-management.io/clusterset"
 )
 
 type AutoImportController struct {
@@ -35,7 +39,7 @@ var AutoImportPredicateFunctions = predicate.Funcs{
 		return true
 	},
 	UpdateFunc: func(e event.UpdateEvent) bool {
-		return false
+		return true
 	},
 	DeleteFunc: func(e event.DeleteEvent) bool {
 		return false
@@ -110,15 +114,19 @@ func (c *AutoImportController) isHostedControlPlaneAvailable(status hyperv1beta1
 }
 
 // ensureManagedCluster creates the managed cluster
-func (c *AutoImportController) createManagedCluster(hc hyperv1beta1.HostedCluster, ctx context.Context) {
+func (c *AutoImportController) createManagedCluster(hc hyperv1beta1.HostedCluster, ctx context.Context) error {
 	mc := clusterv1.ManagedCluster{}
-	mcName := hc.Name
-	err := c.spokeClient.Get(ctx, types.NamespacedName{Name: mcName}, &mc)
+	mc.Name = hc.Name
+	err := c.spokeClient.Get(ctx, types.NamespacedName{Name: mc.Name}, &mc)
 	if apierrors.IsNotFound(err) {
-		c.log.Info(fmt.Sprintf("Creating managed cluster %s", mcName))
-		mc.Name = mcName
-		mc.Spec.HubAcceptsClient = true
+		c.log.Info(fmt.Sprintf("Creating managed cluster %s", mc.Name))
+		
+		populateManagedClusterData(&mc)
 		fmt.Println(mc)
+		if err = c.hubClient.Create(ctx, &mc, &client.CreateOptions{}); err != nil {
+			c.log.Error(err, fmt.Sprintf("Failed at creating managed cluster %s", mc.Name))
+			return err
+		}
 		// ensureManagedClusterObjectMeta(&mc, hydNamespaceName, managedClusterSetName, managementClusterName)
 		// if err = r.Create(ctx, &mc, &client.CreateOptions{}); err != nil {
 		// 	log.V(ERROR).Info("Could not create ManagedCluster resource", "error", err)
@@ -127,4 +135,42 @@ func (c *AutoImportController) createManagedCluster(hc hyperv1beta1.HostedCluste
 
 		// return &mc, nil
 	}
+	return nil
+}
+
+func populateManagedClusterData(mc *clusterv1.ManagedCluster) error {
+	mc.Spec.HubAcceptsClient = true
+	mc.Spec.LeaseDurationSeconds = 60
+	if mc.Labels == nil {
+		mc.Labels = make(map[string]string)
+	}
+	labels := map[string]string{
+		"name":   mc.Name,
+		"vendor": "OpenShift",   // This is always true
+		"cloud":  "auto-detect", // Work addon will use this to detect cloud provider, like: GCP,AWS
+		//clusterSetLabel:         "default",
+	}
+	for key, value := range labels {
+		if v, ok := mc.Labels[key]; !ok || len(v) == 0 {
+			mc.Labels[key] = value
+		}
+	}
+
+	if mc.Annotations == nil {
+		mc.Annotations = make(map[string]string)
+	}
+	annotations := map[string]string{
+		klueterletDeployMode:   "Hosted",
+		hostingClusterNameAnno: "local-cluster",
+		createdViaAnno:         "other", // maybe change for auto-import?
+		//"auto-import-time": time.Now().Format(time.RFC3339),
+	}
+
+	for key, value := range annotations {
+		if v, ok := mc.Annotations[key]; !ok || len(v) == 0 {
+			mc.Annotations[key] = value
+		}
+	}
+
+	return nil
 }
