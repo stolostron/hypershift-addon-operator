@@ -8,7 +8,7 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
-	agent "github.com/stolostron/klusterlet-addon-controller/pkg/apis/agent/v1"
+	agentv1 "github.com/stolostron/klusterlet-addon-controller/pkg/apis/agent/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -63,7 +63,7 @@ func (c *AutoImportController) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	
+
 	// check if addon deployment exists
 	autoImportDisabled := false
 	adc := &addonv1alpha1.AddOnDeploymentConfig{}
@@ -97,7 +97,7 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err := c.createManagedCluster(*hc, ctx); err != nil {
 		c.log.Error(err, fmt.Sprintf("could not create managed cluster for hosted cluster (%s)", hc.Name))
 
-		// Ccntinue with klusterletaddonconfig creation if managedcluster already exists
+		// continue with klusterletaddonconfig creation if managedcluster already exists
 		if !apierrors.IsAlreadyExists(err) {
 			return ctrl.Result{}, nil
 		}
@@ -149,9 +149,7 @@ func (c *AutoImportController) createManagedCluster(hc hyperv1beta1.HostedCluste
 	err := c.spokeClient.Get(ctx, types.NamespacedName{Name: mc.Name}, &mc)
 	if apierrors.IsNotFound(err) {
 		c.log.Info(fmt.Sprintf("creating managed cluster (%s)", mc.Name))
-
 		populateManagedClusterData(&mc)
-		fmt.Println(mc)
 		if err = c.spokeClient.Create(ctx, &mc, &client.CreateOptions{}); err != nil {
 			c.log.Error(err, fmt.Sprintf("failed at creating managed cluster (%s)", mc.Name))
 			return err
@@ -161,17 +159,17 @@ func (c *AutoImportController) createManagedCluster(hc hyperv1beta1.HostedCluste
 }
 
 // populate managed cluster data for creation
-func populateManagedClusterData(mc *clusterv1.ManagedCluster) error {
+func populateManagedClusterData(mc *clusterv1.ManagedCluster) {
 	mc.Spec.HubAcceptsClient = true
 	mc.Spec.LeaseDurationSeconds = 60
 	if mc.Labels == nil {
 		mc.Labels = make(map[string]string)
 	}
 	labels := map[string]string{
-		"name":   mc.Name,
-		"vendor": "OpenShift",   // This is always true
-		"cloud":  "auto-detect", // Work addon will use this to detect cloud provider, like: GCP,AWS
-		//clusterSetLabel:         "default",
+		"name":          mc.Name,
+		"vendor":        "OpenShift",   // This is always true
+		"cloud":         "auto-detect", // Work addon will use this to detect cloud provider, like: GCP,AWS
+		clusterSetLabel: "default",
 	}
 	for key, value := range labels {
 		if v, ok := mc.Labels[key]; !ok || len(v) == 0 {
@@ -185,8 +183,7 @@ func populateManagedClusterData(mc *clusterv1.ManagedCluster) error {
 	annotations := map[string]string{
 		klueterletDeployMode:   "Hosted",
 		hostingClusterNameAnno: "local-cluster",
-		createdViaAnno:         "other", // maybe change for auto-import?
-		//"auto-import-time": time.Now().Format(time.RFC3339),
+		createdViaAnno:         "other",
 	}
 	for key, value := range annotations {
 		if v, ok := mc.Annotations[key]; !ok || len(v) == 0 {
@@ -194,7 +191,6 @@ func populateManagedClusterData(mc *clusterv1.ManagedCluster) error {
 		}
 	}
 
-	return nil
 }
 
 // check if acm is installed by looking for operator
@@ -210,16 +206,16 @@ func (c *AutoImportController) isACMInstalled(ctx context.Context) bool {
 
 // populate and create klusterletaddonconfig
 func (c *AutoImportController) createKlusterletAddonConfig(hcName string, ctx context.Context) error {
-	kac := agent.KlusterletAddonConfig{ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcName}}
+	kac := agentv1.KlusterletAddonConfig{ObjectMeta: metav1.ObjectMeta{Name: hcName, Namespace: hcName}}
 	kac.Spec.ClusterName = hcName
 	kac.Spec.ClusterNamespace = hcName
 	if kac.Spec.ClusterLabels == nil {
 		kac.Spec.ClusterLabels = make(map[string]string)
 	}
-	kac.Spec.ClusterLabels["cloud"] = "Amazon" // is this always true?
+	kac.Spec.ClusterLabels["cloud"] = "Amazon"
 	kac.Spec.ClusterLabels["vendor"] = "Openshift"
 
-	// better way to do this?
+	
 	kac.Spec.ApplicationManagerConfig.Enabled = true
 	kac.Spec.SearchCollectorConfig.Enabled = true
 	kac.Spec.CertPolicyControllerConfig.Enabled = true
