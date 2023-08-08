@@ -243,7 +243,42 @@ Check the status of your hosted cluster via:
     $ oc get hostedclusters -n local-cluster
     ```
 
-## Importing the Hosted cluster into MCE via UI
+## Importing the Hosted cluster into MCE
+
+Hosted clusters are automatically imported into MCE once the control plane becomes available. All ACM addons are also enabled if ACM is installed. 
+
+#### Disabling automatic import
+
+1. On the hub cluster, edit the `AddonDeploymentConfig` resource  `hypershift-addon-deploy-config` in the `hypershift` namespace.
+   ```bash
+    $ oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
+    ```
+
+2. Set the `autoImportDisabled` customized variable to `"true"`. Leave the other customized variables intact and save. 
+    ```bash
+    $ oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
+    ```
+
+
+    ```yaml
+    apiVersion: addon.open-cluster-management.io/v1alpha1
+    kind: AddOnDeploymentConfig
+    metadata:
+      name: hypershift-addon-deploy-config
+      namespace: multicluster-engine
+    spec:
+      customizedVariables:
+      - name: hcMaxNumber
+        value: "80"
+      - name: hcThresholdNumber
+        value: "60"
+      - name: autoImportDisabled
+        value: "true"
+    ```
+
+Only newly created Hosted clusters will not be automatically imported. Hosted clusters that have already been imported will not be affected. Hosted clusters can still be manually imported via the UI or CLI. 
+
+### Importing the Hosted cluster into MCE via UI
 
 After creating the hosted cluster, import the hosted cluster into MCE so that MCE can manage the life-cycle of the hosted cluster.
 
@@ -253,7 +288,7 @@ You can import do this from the MCE Console UI:
   2. Click the $CLUSTER_NAME in the cluster list 
   3. Click `Import hosted cluster` link
 
-## Importing the Hosted Cluster into MCE via CLI
+### Importing the Hosted Cluster into MCE via CLI
 
 You can also import the hosted cluster into MCE using custom resources in command line.
 
