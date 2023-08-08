@@ -14,6 +14,7 @@ import (
 	configv1 "github.com/openshift/api/config/v1"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/spf13/cobra"
+	agent "github.com/stolostron/klusterlet-addon-controller/pkg/apis"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -31,6 +32,10 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
+	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
+	"github.com/stolostron/hypershift-addon-operator/pkg/install"
+	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"open-cluster-management.io/addon-framework/pkg/lease"
 	addonutils "open-cluster-management.io/addon-framework/pkg/utils"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
@@ -38,10 +43,6 @@ import (
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
 	operatorapiv1 "open-cluster-management.io/api/operator/v1"
-
-	"github.com/stolostron/hypershift-addon-operator/pkg/install"
-	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
-	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 )
 
 var (
@@ -55,6 +56,8 @@ func init() {
 	utilruntime.Must(clusterv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(clusterv1.AddToScheme(scheme))
 	utilruntime.Must(operatorapiv1.AddToScheme(scheme))
+	utilruntime.Must(operatorv1.AddToScheme(scheme))
+	utilruntime.Must(agent.AddToScheme(scheme))
 
 	//+kubebuilder:scaffold:scheme
 }
@@ -164,10 +167,8 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	aCtrl := &agentController{
-		hubClient:           hubClient,
-		spokeUncachedClient: spokeKubeClient,
-		spokeClient:         mgr.GetClient(),
-		spokeClustersClient: spokeClusterClient,
+		hubClient: hubClient, spokeUncachedClient: spokeKubeClient,
+		spokeClient: mgr.GetClient(), spokeClustersClient: spokeClusterClient,
 	}
 
 	o.Log = o.Log.WithName("agent-reconciler")
@@ -191,9 +192,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 
 	// create a lease updater
 	leaseUpdater := lease.NewLeaseUpdater(
-		leaseClient,
-		o.AddonName,
-		o.AddonNamespace,
+		leaseClient, o.AddonName, o.AddonNamespace,
 	)
 
 	go leaseUpdater.Start(ctx)
@@ -237,9 +236,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	addonStatusController := &AddonStatusController{
-		spokeClient: spokeKubeClient,
-		hubClient:   hubClient,
-		log:         o.Log.WithName("addon-status-controller"),
+		spokeClient: spokeKubeClient, hubClient: hubClient, log: o.Log.WithName("addon-status-controller"),
 		addonNsn:    types.NamespacedName{Namespace: o.SpokeClusterName, Name: util.AddonControllerName},
 		clusterName: o.SpokeClusterName,
 	}
@@ -250,14 +247,21 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	externalSecretController := &ExternalSecretController{
-		hubClient:   hubClient,
-		spokeClient: spokeKubeClient,
-		log:         o.Log.WithName("external-secret-controller"),
+		hubClient: hubClient, spokeClient: spokeKubeClient, log: o.Log.WithName("external-secret-controller"),
 	}
 
 	if err = externalSecretController.SetupWithManager(mgr); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to create external secret controller: %s, err: %w", util.ExternalSecretControllerName, err)
+	}
+
+	autoImportController := &AutoImportController{
+		hubClient: hubClient, spokeClient: spokeKubeClient, log: o.Log.WithName("auto-import-controller"),
+	}
+
+	if err = autoImportController.SetupWithManager(mgr); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
+		return fmt.Errorf("unable to create auto-import controller: %s, err: %w", util.AutoImportControllerName, err)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
