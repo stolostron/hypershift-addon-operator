@@ -293,8 +293,6 @@ You can import do this from the MCE Console UI:
 
 You can also import the hosted cluster into MCE using custom resources in command line.
 
-* The $CLUSTER_NAME listed below will be the registered managed cluster name in ACM/MCE that matches the HostedCluster Infra-ID.
-
 1. Create the managed cluster resource.
 
     ```bash
