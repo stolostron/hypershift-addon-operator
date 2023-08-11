@@ -209,11 +209,11 @@ After setting up the hypershift command line and enabling `local-cluster` cluste
     export BUCKET_NAME=acmqe-hypershift
     export BUCKET_REGION=us-east-1
     ```
-    
-    For description of each variable, run 
-    
+
+    For description of each variable, run:
+
     ```bash
-    $ hypershift create cluster aws --help
+    hypershift create cluster aws --help
     ```
 
 2. Ensure you are logged into your hub (`local-cluster`) cluster.
@@ -240,25 +240,26 @@ That's all! Your hosted cluster is now created.
 Check the status of your hosted cluster via:
 
     ```bash
-    $ oc get hostedclusters -n local-cluster
+    oc get hostedclusters -n local-cluster
     ```
 
 ## Importing the Hosted cluster into MCE
 
-Hosted clusters are automatically imported into MCE once the control plane becomes available. All ACM addons are also enabled if ACM is installed. 
+Hosted clusters are automatically imported into MCE once the control plane becomes available. All ACM addons are also enabled if ACM is installed.
 
-#### Disabling automatic import
+### Disabling automatic import
 
 1. On the hub cluster, edit the `AddonDeploymentConfig` resource  `hypershift-addon-deploy-config` in the `hypershift` namespace.
+
    ```bash
-    $ oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
+    oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
     ```
 
 2. Set the `autoImportDisabled` customized variable to `"true"`. Leave the other customized variables intact and save. 
-    ```bash
-    $ oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
-    ```
 
+    ```bash
+    oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
+    ```
 
     ```yaml
     apiVersion: addon.open-cluster-management.io/v1alpha1
@@ -284,33 +285,16 @@ After creating the hosted cluster, import the hosted cluster into MCE so that MC
 
 You can import do this from the MCE Console UI:
   
-  1. Navigate to Infrastructure > Clusters 
-  2. Click the $CLUSTER_NAME in the cluster list 
+  1. Navigate to Infrastructure > Clusters
+  2. Click the $CLUSTER_NAME in the cluster list
   3. Click `Import hosted cluster` link
 
 ### Importing the Hosted Cluster into MCE via CLI
 
 You can also import the hosted cluster into MCE using custom resources in command line.
 
-* The $CLUSTER_NAME listed below will be the registred managed cluster name in ACM/MCE.  
-* If the annotation and `ManagedCluster` name do not match, the console will display the cluster as `Pending import`, and it can not be used by ACM/MCE. The same state will occur when the annotation is not present and the `ManagedCluster` name does not equal the `HostedCluster` Infra-ID value.
+1. Create the managed cluster resource.
 
-1. Add a required annotation to the HostedCluster custom resource by doing:
-
-  ```bash
-  $ oc edit hostedcluster $CLUSTER_NAME -n clusters
-  ```
-
-  Note: If you specified `--namespace` parameter in `hypershift create cluster` command, replace `clusters` namespace with that.
-
-  Then add the following annotation to the HostedCluster custom resource
-
-  ```bash
-  cluster.open-cluster-management.io/managedcluster-name: $CLUSTER_NAME
-  ```
-
-2. Create the managed cluster resource.
-    
     ```bash
     $ cat <<EOF | oc apply -f -
     apiVersion: cluster.open-cluster-management.io/v1
@@ -332,7 +316,7 @@ You can also import the hosted cluster into MCE using custom resources in comman
     EOF
     ```
 
-3. Create the `KlusterletAddonConfig` resource to enable all ACM addons. This is applicable only in ACM hub. If you have installed MCE only, this is not applicable.
+2. Create the `KlusterletAddonConfig` resource to enable all ACM addons. This is applicable only in ACM hub. If you have installed MCE only, this is not applicable.
 
     ```bash
     $ cat <<EOF | oc apply -f -
@@ -360,22 +344,22 @@ You can also import the hosted cluster into MCE using custom resources in comman
     EOF
     ```
 
-4. After the hosted cluster is created, it will be imported into MCE. You can check the status by running
+3. After the hosted cluster is created, it will be imported into MCE. You can check the status by running
   
     ```bash
-     $ oc get managedcluster $CLUSTER_NAME
+     oc get managedcluster $CLUSTER_NAME
      ```
-    
-    ```
+
+    ```bash
     NAME                               HUB ACCEPTED   MANAGED CLUSTER URLS                                                  JOINED   AVAILABLE   AGE
     $CLUSTER_NAME                      true           https://api.app-aws-411ga-hub-bhbj8.dev06.red-chesterfield.com:6443   True     True        25h
     ```
 
     ```bash
-     $ oc get managedclusteraddon -n $CLUSTER_NAME
+     oc get managedclusteraddon -n $CLUSTER_NAME
      ```
-    
-    ```
+
+    ```bash
     NAME                          AVAILABLE   DEGRADED   PROGRESSING
     application-manager           True                   
     cert-policy-controller        True                   
@@ -399,7 +383,7 @@ The formats of the secrets name are:
 You can also use the following command to generate a kubeconfig file for a specific hosted cluster.
 
   ```bash
-  $ hypershift create kubeconfig --name $CLUSTER_NAME
+  hypershift create kubeconfig --name $CLUSTER_NAME
   ```
 
   Use `--namespace` parameter if you specified it when creating the hosted cluster.
@@ -411,13 +395,13 @@ You can also use the following command to generate a kubeconfig file for a speci
 1. Delete the managed cluster resource on MCE:
 
     ```bash
-    $ oc delete managedcluster $CLUSTER_NAME
+    oc delete managedcluster $CLUSTER_NAME
     ```
 
 2. Delete the hosted cluster and its cloud resources
 
     ```bash
-    $ hypershift destroy cluster aws --name $CLUSTER_NAME --infra-id $INFRA_ID --aws-creds $AWS_CREDS --base-domain $BASE_DOMAIN --destroy-cloud-resources
+    hypershift destroy cluster aws --name $CLUSTER_NAME --infra-id $INFRA_ID --aws-creds $AWS_CREDS --base-domain $BASE_DOMAIN --destroy-cloud-resources
     ```
 
 ### Disabling the hypershift-addon and uninstalling the hypershift operator
@@ -425,7 +409,7 @@ You can also use the following command to generate a kubeconfig file for a speci
 If you want to uninstall the hypershift operator and disable the hypershift-addon managed cluster addon from `local-cluster`, ensure that there is no hosted cluster first by running
 
   ```bash
-  $ oc get hostedcluster -A
+  oc get hostedcluster -A
   ```
 
 If there is a hosted cluster, the hypershift operator will not be uninstalled even if the hypershift-addon managed cluster addon is disabled.
@@ -433,7 +417,7 @@ If there is a hosted cluster, the hypershift operator will not be uninstalled ev
 Disable the hypershift-addon managed cluster addon.
 
   ```bash
-  $ oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-local-hosting","enabled": false}]}}}'
+  oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-local-hosting","enabled": false}]}}}'
   ```
 
 ### Disabling the hosted control plane feature from MCE
@@ -441,5 +425,5 @@ Disable the hypershift-addon managed cluster addon.
 Before disabling the hosted control plane feature from MCE, ensure that the hypershift-addon is disabled first. 
 
   ```bash
-  $ oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": false}]}}}'
+  oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": false}]}}}'
   ```
