@@ -201,8 +201,6 @@ func TestNoHCReconcile(t *testing.T) {
 	assert.Nil(t, err, "err nil if klusterlet is successfully deleted")
 	hyperv1beta1.AddToScheme(sch)
 
-
-
 	//-----No associated hosted cluster (mismatched klusterlet and HC name)-----
 	hcNN := types.NamespacedName{Name: "hd-2", Namespace: "clusters"}
 
