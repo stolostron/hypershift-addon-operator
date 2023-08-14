@@ -458,14 +458,21 @@ func (c *UpgradeController) buildOtherInstallFlags(installFlagsCM corev1.ConfigM
 		}
 		args = append(args, rhobsArgs...)
 	} else {
+		// Self Managed specific args. These are set when RHOBS_MONITORING is not in use
+		//
 		// add --enable-uwm-telemetry-remote-write only if RHOBS monitoring is not enabled
-		uwmArgs := []string{
+		// add --enable-defaulting-webhook when in self managed mode
+		selfManagedArgs := []string{
 			"--enable-uwm-telemetry-remote-write",
+			"--enable-defaulting-webhook",
 		}
-		if contains(flagsToRemove, "--enable-uwm-telemetry-remote-write") {
-			c.log.Info("installFlagsToRemove contains --enable-uwm-telemetry-remote-write, removing it from the install flag list")
-		} else {
-			args = append(args, uwmArgs...)
+		for _, flag := range selfManagedArgs {
+			if contains(flagsToRemove, flag) {
+				// skip this arg if in the flagsToRemove list.
+				c.log.Info(fmt.Sprintf("installFlagsToRemove contains %s, removing it from the install flag list", flag))
+			} else {
+				args = append(args, flag)
+			}
 		}
 	}
 
