@@ -215,7 +215,6 @@ func (c *AutoImportController) createKlusterletAddonConfig(hcName string, ctx co
 	kac.Spec.ClusterLabels["cloud"] = "Amazon"
 	kac.Spec.ClusterLabels["vendor"] = "Openshift"
 
-	
 	kac.Spec.ApplicationManagerConfig.Enabled = true
 	kac.Spec.SearchCollectorConfig.Enabled = true
 	kac.Spec.CertPolicyControllerConfig.Enabled = true
