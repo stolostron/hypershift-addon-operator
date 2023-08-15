@@ -251,15 +251,11 @@ Hosted clusters are automatically imported into MCE once the control plane becom
 
 1. On the hub cluster, edit the `AddonDeploymentConfig` resource  `hypershift-addon-deploy-config` in the `hypershift` namespace.
 
-   ```bash
-    oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
-    ```
-
-2. Set the `autoImportDisabled` customized variable to `"true"`. Leave the other customized variables intact and save. 
-
     ```bash
     oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
     ```
+
+2. Under `spec.customizedVariables`, add the `autoImportDisabled` variable with value `"true"`. Leave the other customized variables intact and save.
 
     ```yaml
     apiVersion: addon.open-cluster-management.io/v1alpha1
@@ -276,8 +272,16 @@ Hosted clusters are automatically imported into MCE once the control plane becom
       - name: autoImportDisabled
         value: "true"
     ```
+  
+Alternatively, if the value does not exist yet in the `AddonDeploymentConfig` resource, you can patch it with this command:
 
-Only newly created Hosted clusters will not be automatically imported. Hosted clusters that have already been imported will not be affected. Hosted clusters can still be manually imported via the UI or CLI. 
+    ```bash
+    oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=json -p='[{"op": "add", "path": "/spec/customizedVariables/-","value":{"name":"autoImportDisabled","value":"true"}}]'
+    ```
+
+**NOTE:** Only newly created Hosted clusters will not be automatically imported. Hosted clusters that have already been imported will not be affected. Hosted clusters can still be manually imported via the UI or CLI.
+
+To re-enable auto-import, simply remove the `autoImportDisabled` variable in the resource `AddonDeploymentConfig` resource.
 
 ### Importing the Hosted cluster into MCE via UI
 
