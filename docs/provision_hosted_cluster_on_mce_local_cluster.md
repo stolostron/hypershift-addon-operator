@@ -1,8 +1,8 @@
 # Provisioning hosted clusters on MCE (Without Hypershift Deployment)
 
-As per the [Hypershift Docs](https://hypershift-docs.netlify.app/), configuring hosted control planes requires a hosting cluster and a hosted cluster. By deploying the HyperShift operator on an existing managed cluster via the `hypershift-addon` managed cluster addon, you can turn that cluster into a hosting cluster and start the creation of the hosted cluster. MCE 2.2 only supports the default `local-cluster` managed cluster, the hub cluster, to be the hosting cluster. 
+As per the [Hypershift Docs](https://hypershift-docs.netlify.app/), configuring hosted control planes requires a hosting cluster and a hosted cluster. By deploying the HyperShift operator on an existing managed cluster via the `hypershift-addon` managed cluster addon, you can turn that cluster into a hosting cluster and start the creation of the hosted cluster. MCE 2.2+ only supports the default `local-cluster` managed cluster, the hub cluster, to be the hosting cluster.
 
-Hosted control planes is a Technology Preview feature, so the related components are disabled by default. In Multicluster engine operator (MCE) 2.1, this was done using HypershiftDeployment. As of MCE 2.2, HypershiftDeployment is now obsolete and this guide will show how we can enable the feature followed by deploying a hosted cluster on Amazon Web Services via MCE using the Hypershift command line.
+Hosted control planes is now a General Available (GA) feature starting in Multicluster engine operator (MCE) 2.4. Previously with MCE 2.1, this was done using HypershiftDeployment. As of MCE 2.2, HypershiftDeployment is now obsolete and this guide will show how we can deploy a hosted cluster on Amazon Web Services via MCE using the Hypershift command line tool included in MCE.
 
 ## Configuring the hosting cluster
 
@@ -12,7 +12,7 @@ You can deploy hosted control planes by configuring an existing cluster to funct
 
 You must have the following prerequisites to deploy the hosted cluster:
 
-* MCE v2.2 installed on a OCP cluster
+* MCE v2.2+ installed on a OCP cluster
 * Openshift `oc` command
 * The Hypershift binary as a plugin to `oc`. This binary plugin is required in order to create and manage the hosted cluster in MCE. Get this binary by one of the following ways:
   1. Go to your Openshift cluster's console command line tools page. Select the Hosted Control Plane CLI tool and follow the instructions to set up `oc` plugin.
@@ -21,7 +21,7 @@ You must have the following prerequisites to deploy the hosted cluster:
 * MCE has at least one managed OCP cluster. We will make this OCP managed cluster a hypershift management cluster. In this example, we will use the MCE hub cluster as the hypershift management cluster. In MCE 2.2, local-cluster is now imported automatically. You can check the status of your hub cluster using the following `oc` command:
 
     ```bash
-    $ oc get managedclusters local-cluster
+    oc get managedclusters local-cluster
     ```
 
 ### Prerequisites for creating hosted clusters on AWS cloud platform
@@ -162,21 +162,23 @@ data:
 
 For more information on the usage of this configmap, see [Hypershift Operator configuration Options](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift_operator_configuration.md).
 
+### Verifying the Hosted Control Plane feature is healthy
 
-### Enabling the Hosted Control Plane feature
+By default, the Hosted Control Plane feature is enabled starting in MCE 2.4.
 
-Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine` with your MCE's instance name:
+If the feature is disabled, run the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine` with your MCE's instance name:
 
   ```bash
-  $ oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+  oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift","enabled": true}]}}}'
   ```
 
-By enabling this feature, it enables the `hypershift-addon` managed cluster addon for `local-cluster` managed cluster and the managed cluster addon agent installs the hypershift operator on the MCE hub cluster. 
+By enabling this feature, the `hypershift-addon` managed cluster addon is installed on the `local-cluster` managed cluster, and then the addon agent installs the hypershift operator on the MCE hub cluster.
 
 Confirm that the `hypershift-addon` is installed by running the following command:
   
     ```bash
-    $ oc get managedclusteraddons -n local-cluster hypershift-addon
+    oc get managedclusteraddons -n local-cluster hypershift-addon
+    
     NAME               AVAILABLE   DEGRADED   PROGRESSING
     hypershift-addon   True        False
     ```
@@ -184,8 +186,8 @@ Confirm that the `hypershift-addon` is installed by running the following comman
 You run the following wait commands to wait for the addon to reach this state with a timeout:
 
     ```bash
-    $ oc wait --for=condition=Degraded=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
-    $ oc wait --for=condition=Available=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
+    oc wait --for=condition=Degraded=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
+    oc wait --for=condition=Available=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
     ```
 Once complete, the `hypershift-addon` and the hypershift operator are installed and `local-cluster` is available to host and manage hosted clusters.
 
@@ -251,15 +253,11 @@ Hosted clusters are automatically imported into MCE once the control plane becom
 
 1. On the hub cluster, edit the `AddonDeploymentConfig` resource  `hypershift-addon-deploy-config` in the `hypershift` namespace.
 
-   ```bash
-    oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
-    ```
-
-2. Set the `autoImportDisabled` customized variable to `"true"`. Leave the other customized variables intact and save. 
-
     ```bash
     oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
     ```
+
+2. Under `spec.customizedVariables`, add the `autoImportDisabled` variable with value `"true"`. Leave the other customized variables intact and save.
 
     ```yaml
     apiVersion: addon.open-cluster-management.io/v1alpha1
@@ -276,8 +274,16 @@ Hosted clusters are automatically imported into MCE once the control plane becom
       - name: autoImportDisabled
         value: "true"
     ```
+  
+Alternatively, if the value does not exist yet in the `AddonDeploymentConfig` resource, you can patch it with this command:
 
-Only newly created Hosted clusters will not be automatically imported. Hosted clusters that have already been imported will not be affected. Hosted clusters can still be manually imported via the UI or CLI. 
+    ```bash
+    oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=json -p='[{"op": "add", "path": "/spec/customizedVariables/-","value":{"name":"autoImportDisabled","value":"true"}}]'
+    ```
+
+**NOTE:** Only newly created Hosted clusters will not be automatically imported. Hosted clusters that have already been imported will not be affected. Hosted clusters can still be manually imported via the UI or CLI.
+
+To re-enable auto-import, simply remove the `autoImportDisabled` variable in the resource `AddonDeploymentConfig` resource.
 
 ### Importing the Hosted cluster into MCE via UI
 
@@ -422,8 +428,8 @@ Disable the hypershift-addon managed cluster addon.
 
 ### Disabling the hosted control plane feature from MCE
 
-Before disabling the hosted control plane feature from MCE, ensure that the hypershift-addon is disabled first. 
+Before disabling the hosted control plane feature from MCE, ensure that the hypershift-addon is disabled first.
 
   ```bash
-  oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": false}]}}}'
+  oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift","enabled": false}]}}}'
   ```
