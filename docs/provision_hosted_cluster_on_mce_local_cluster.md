@@ -162,21 +162,23 @@ data:
 
 For more information on the usage of this configmap, see [Hypershift Operator configuration Options](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/hypershift_operator_configuration.md).
 
+### Verifying the Hosted Control Plane feature is healthy
 
-### Enabling the Hosted Control Plane feature
+By default, the Hosted Control Plane feature is enabled starting in MCE 2.4.
 
-Enter the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine` with your MCE's instance name:
+If the feature is disabled, run the following command to ensure that the hosted control planes feature is enabled, replacing `multiclusterengine` with your MCE's instance name:
 
   ```bash
-  $ oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+  oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift","enabled": true}]}}}'
   ```
 
-By enabling this feature, it enables the `hypershift-addon` managed cluster addon for `local-cluster` managed cluster and the managed cluster addon agent installs the hypershift operator on the MCE hub cluster. 
+By enabling this feature, the `hypershift-addon` managed cluster addon is installed on the `local-cluster` managed cluster, and then the addon agent installs the hypershift operator on the MCE hub cluster.
 
 Confirm that the `hypershift-addon` is installed by running the following command:
   
     ```bash
-    $ oc get managedclusteraddons -n local-cluster hypershift-addon
+    oc get managedclusteraddons -n local-cluster hypershift-addon
+    
     NAME               AVAILABLE   DEGRADED   PROGRESSING
     hypershift-addon   True        False
     ```
@@ -184,8 +186,8 @@ Confirm that the `hypershift-addon` is installed by running the following comman
 You run the following wait commands to wait for the addon to reach this state with a timeout:
 
     ```bash
-    $ oc wait --for=condition=Degraded=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
-    $ oc wait --for=condition=Available=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
+    oc wait --for=condition=Degraded=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
+    oc wait --for=condition=Available=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
     ```
 Once complete, the `hypershift-addon` and the hypershift operator are installed and `local-cluster` is available to host and manage hosted clusters.
 
@@ -426,8 +428,8 @@ Disable the hypershift-addon managed cluster addon.
 
 ### Disabling the hosted control plane feature from MCE
 
-Before disabling the hosted control plane feature from MCE, ensure that the hypershift-addon is disabled first. 
+Before disabling the hosted control plane feature from MCE, ensure that the hypershift-addon is disabled first.
 
   ```bash
-  oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": false}]}}}'
+  oc patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift","enabled": false}]}}}'
   ```
