@@ -1,8 +1,8 @@
 # Provisioning hosted clusters on MCE (Without Hypershift Deployment)
 
-As per the [Hypershift Docs](https://hypershift-docs.netlify.app/), configuring hosted control planes requires a hosting cluster and a hosted cluster. By deploying the HyperShift operator on an existing managed cluster via the `hypershift-addon` managed cluster addon, you can turn that cluster into a hosting cluster and start the creation of the hosted cluster. MCE 2.2 only supports the default `local-cluster` managed cluster, the hub cluster, to be the hosting cluster. 
+As per the [Hypershift Docs](https://hypershift-docs.netlify.app/), configuring hosted control planes requires a hosting cluster and a hosted cluster. By deploying the HyperShift operator on an existing managed cluster via the `hypershift-addon` managed cluster addon, you can turn that cluster into a hosting cluster and start the creation of the hosted cluster. MCE 2.2+ only supports the default `local-cluster` managed cluster, the hub cluster, to be the hosting cluster.
 
-Hosted control planes is a Technology Preview feature, so the related components are disabled by default. In Multicluster engine operator (MCE) 2.1, this was done using HypershiftDeployment. As of MCE 2.2, HypershiftDeployment is now obsolete and this guide will show how we can enable the feature followed by deploying a hosted cluster on Amazon Web Services via MCE using the Hypershift command line.
+Hosted control planes is now a General Available (GA) feature starting in Multicluster engine operator (MCE) 2.4. Previously with MCE 2.1, this was done using HypershiftDeployment. As of MCE 2.2, HypershiftDeployment is now obsolete and this guide will show how we can deploy a hosted cluster on Amazon Web Services via MCE using the Hypershift command line tool included in MCE.
 
 ## Configuring the hosting cluster
 
@@ -12,7 +12,7 @@ You can deploy hosted control planes by configuring an existing cluster to funct
 
 You must have the following prerequisites to deploy the hosted cluster:
 
-* MCE v2.2 installed on a OCP cluster
+* MCE v2.2+ installed on a OCP cluster
 * Openshift `oc` command
 * The Hypershift binary as a plugin to `oc`. This binary plugin is required in order to create and manage the hosted cluster in MCE. Get this binary by one of the following ways:
   1. Go to your Openshift cluster's console command line tools page. Select the Hosted Control Plane CLI tool and follow the instructions to set up `oc` plugin.
@@ -21,7 +21,7 @@ You must have the following prerequisites to deploy the hosted cluster:
 * MCE has at least one managed OCP cluster. We will make this OCP managed cluster a hypershift management cluster. In this example, we will use the MCE hub cluster as the hypershift management cluster. In MCE 2.2, local-cluster is now imported automatically. You can check the status of your hub cluster using the following `oc` command:
 
     ```bash
-    $ oc get managedclusters local-cluster
+    oc get managedclusters local-cluster
     ```
 
 ### Prerequisites for creating hosted clusters on AWS cloud platform
