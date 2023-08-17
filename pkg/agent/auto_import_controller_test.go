@@ -144,7 +144,7 @@ func TestACMAutoImport(t *testing.T) {
 
 	// create acm operator
 	acmOperator := operatorv1.Operator{
-		ObjectMeta: metav1.ObjectMeta{Name: acmOperatorName}}
+		ObjectMeta: metav1.ObjectMeta{Name: acmOperatorNamePrefix + "ocm"}}
 	err = AICtrl.hubClient.Create(ctx, &acmOperator)
 	assert.Nil(t, err, "err nil when acm operator is created successfully")
 
@@ -219,7 +219,7 @@ func TestToggleAutoImport(t *testing.T) {
 
 	// create acm operator
 	acmOperator := operatorv1.Operator{
-		ObjectMeta: metav1.ObjectMeta{Name: acmOperatorName}}
+		ObjectMeta: metav1.ObjectMeta{Name: acmOperatorNamePrefix + ".ocm"}}
 	err = AICtrl.hubClient.Create(ctx, &acmOperator)
 	assert.Nil(t, err, "err nil when acm operator is created successfully")
 

@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -23,7 +24,7 @@ import (
 )
 
 const (
-	acmOperatorName           = "advanced-cluster-management.open-cluster-management"
+	acmOperatorNamePrefix     = "advanced-cluster-management."
 	autoImportAnnotation      = "auto-imported"
 	addOnDeploymentConfigName = "hypershift-addon-deploy-config"
 	hostingClusterNameAnno    = "import.open-cluster-management.io/hosting-cluster-name"
@@ -195,13 +196,20 @@ func populateManagedClusterData(mc *clusterv1.ManagedCluster) {
 
 // check if acm is installed by looking for operator
 func (c *AutoImportController) isACMInstalled(ctx context.Context) bool {
-	acmOperator := operatorv1.Operator{}
-	acmOperatorNsn := types.NamespacedName{Name: acmOperatorName}
-	if err := c.spokeClient.Get(ctx, acmOperatorNsn, &acmOperator); err != nil {
-		c.log.Error(err, "could not get acm operator")
+	listopts := &client.ListOptions{}
+	operatorList := &operatorv1.OperatorList{}
+	if err := c.spokeClient.List(context.TODO(), operatorList, listopts); err != nil {
+		c.log.Error(err, "could not get operator list")
 		return false
 	}
-	return true
+
+	for _, operator := range operatorList.Items {
+		if strings.HasPrefix(operator.Name, acmOperatorNamePrefix) {
+			c.log.Info(fmt.Sprintf("found the ACM operator %s", operator.Name))
+			return true
+		}
+	}
+	return false
 }
 
 // populate and create klusterletaddonconfig
