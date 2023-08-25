@@ -20,11 +20,13 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/tools/clientcmd"
+	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clustercsfake "open-cluster-management.io/api/client/cluster/clientset/versioned/fake"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	clusterv1alpha1 "open-cluster-management.io/api/cluster/v1alpha1"
@@ -826,6 +828,70 @@ func TestRunControllerManager(t *testing.T) {
 	assert.NotNil(t, err, "err it not nil if the controller fail to run")
 }
 
+func TestInitialAddonStatus(t *testing.T) {
+	ctx := context.Background()
+	hubclient := initClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	spokeClusterName := "local-cluster"
+
+	managedClusterNs := corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: spokeClusterName,
+		},
+	}
+
+	err := hubclient.Create(ctx, &managedClusterNs)
+	assert.Nil(t, err, "err nil when local-cluster namespace is created successfully")
+
+	addon := addonv1alpha1.ManagedClusterAddOn{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: spokeClusterName,
+			Name:      util.AddonControllerName,
+		},
+	}
+
+	err = hubclient.Create(ctx, &addon)
+	assert.Nil(t, err, "err nil when hypershift-addon ManagedClusterAddOn is created successfully for local-cluster")
+
+	addonCondition1 := metav1.Condition{
+		Type:    "testType1",
+		Status:  metav1.ConditionTrue,
+		Reason:  "no specific reason",
+		Message: "test message 123",
+	}
+
+	meta.SetStatusCondition(&addon.Status.Conditions, addonCondition1)
+
+	err = hubclient.Status().Update(ctx, &addon, &client.UpdateOptions{})
+	assert.Nil(t, err, "err nil when hypershift-addon ManagedClusterAddOn test condition is set successfully for local-cluster")
+
+	addonStatusController := &AddonStatusController{
+		hubclient, hubclient, zapr.NewLogger(zapLog),
+		types.NamespacedName{Namespace: spokeClusterName, Name: util.AddonControllerName},
+		spokeClusterName,
+	}
+
+	err = addonStatusController.UpdateInitialStatus(ctx)
+	assert.Nil(t, err, "err nil when the initial hypershift-addon ManagedClusterAddOn status is set successfully for local-cluster")
+
+	err = hubclient.Get(ctx, types.NamespacedName{Name: util.AddonControllerName, Namespace: spokeClusterName}, &addon)
+	assert.Nil(t, err, "is nil when hypershift addon is found")
+
+	// At the initial startup time of the addon agent, there is no hypershift operator deployment.
+	// The addon status conditions should have hypershift operator deployment degraded=True
+	var degraded bool = false
+	for _, condition := range addon.Status.Conditions {
+		if condition.Reason == degradedReasonHypershiftDeployed &&
+			condition.Status == metav1.ConditionTrue &&
+			condition.Type == string(addonv1alpha1.ManagedClusterAddOnConditionDegraded) {
+			degraded = true
+			break
+		}
+	}
+	assert.True(t, degraded, "the hypershift addon condition HO degraded is set to True when there is no HO deployment")
+}
+
 func Test_agentController_deleteManagedCluster(t *testing.T) {
 	ctx := context.Background()
 	client := initClient()
@@ -1131,6 +1197,7 @@ func initClient() client.Client {
 	clusterv1alpha1.AddToScheme(scheme)
 	clusterv1.AddToScheme(scheme)
 	operatorapiv1.AddToScheme(scheme)
+	addonv1alpha1.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
 	ncb.WithScheme(scheme)

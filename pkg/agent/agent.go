@@ -246,6 +246,12 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to create agent status controller: %s, err: %w", util.AddonStatusControllerName, err)
 	}
 
+	// Set the initial addon status to be degraded
+	err = addonStatusController.UpdateInitialStatus(ctx)
+	if err != nil {
+		return fmt.Errorf("unable to update initial addon status: err: %w", err)
+	}
+
 	externalSecretController := &ExternalSecretController{
 		hubClient: hubClient, spokeClient: spokeKubeClient, log: o.Log.WithName("external-secret-controller"),
 	}

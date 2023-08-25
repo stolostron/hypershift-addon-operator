@@ -103,6 +103,43 @@ func (c *AddonStatusController) Reconcile(ctx context.Context, req ctrl.Request)
 	return ctrl.Result{}, nil
 }
 
+func (c *AddonStatusController) UpdateInitialStatus(ctx context.Context) error {
+	hypershiftAddon := &addonv1alpha1.ManagedClusterAddOn{}
+	err := c.hubClient.Get(ctx, c.addonNsn, hypershiftAddon)
+
+	if err != nil {
+		return err
+	}
+
+	oldStatus := &hypershiftAddon.Status
+
+	initializeStatus := true
+	for _, condition := range oldStatus.Conditions {
+		if condition.Reason == degradedReasonHypershiftDeployed &&
+			(condition.Status == metav1.ConditionTrue || condition.Status == metav1.ConditionFalse) &&
+			condition.Type == string(addonv1alpha1.ManagedClusterAddOnConditionDegraded) {
+			initializeStatus = false
+		}
+	}
+
+	if initializeStatus {
+		// If ManagedClusterAddOnConditionDegraded condition type has no status value, initialize it with Degraded=true
+		initialAddonStatus := metav1.Condition{
+			Type:    addonv1alpha1.ManagedClusterAddOnConditionDegraded,
+			Status:  metav1.ConditionTrue,
+			Reason:  degradedReasonHypershiftDeployed,
+			Message: degradedReasonOperatorNotFound,
+		}
+
+		_, err = c.updateStatus(ctx, updateConditionFn(&initialAddonStatus))
+		if err != nil {
+			return fmt.Errorf("unable to update initial addon status: err: %w", err)
+		}
+	}
+
+	return nil
+}
+
 func (c *AddonStatusController) shouldCheckExternalDNSDeployment(ctx context.Context) (bool, error) {
 	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
 	sExtDNS := &corev1.Secret{}
