@@ -91,6 +91,10 @@ func TestNoACMAutoImport(t *testing.T) {
 	err = AICtrl.hubClient.Get(ctx, types.NamespacedName{Name: hcNN.Name}, gotMC)
 	assert.Nil(t, err, "err nil if managed cluster is found")
 
+	// Check that the created-by annotation is set to hypershift
+	annotations := gotMC.GetAnnotations()
+	assert.Equal(t, createdViaHypershift, annotations[createdViaAnno])
+
 	//check klusterletaddonconfing doesnt exist
 	gotKAC := &agentv1.KlusterletAddonConfig{}
 	err = AICtrl.hubClient.Get(ctx, types.NamespacedName{Name: hcNN.Name, Namespace: hcNN.Name}, gotKAC)
@@ -165,6 +169,10 @@ func TestACMAutoImport(t *testing.T) {
 	gotMC := &clusterv1.ManagedCluster{}
 	err = AICtrl.hubClient.Get(ctx, types.NamespacedName{Name: hcNN.Name}, gotMC)
 	assert.Nil(t, err, "err nil if managed cluster is found")
+
+	// Check that the created-by annotation is set to hypershift
+	annotations := gotMC.GetAnnotations()
+	assert.Equal(t, createdViaHypershift, annotations[createdViaAnno])
 
 	//check klusterletaddonconfing exists
 	gotKAC := &agentv1.KlusterletAddonConfig{}

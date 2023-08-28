@@ -31,6 +31,7 @@ const (
 	klueterletDeployMode      = "import.open-cluster-management.io/klusterlet-deploy-mode"
 	createdViaAnno            = "open-cluster-management/created-via"
 	clusterSetLabel           = "cluster.open-cluster-management.io/clusterset"
+	createdViaHypershift      = "hypershift"
 )
 
 type AutoImportController struct {
@@ -184,7 +185,7 @@ func populateManagedClusterData(mc *clusterv1.ManagedCluster) {
 	annotations := map[string]string{
 		klueterletDeployMode:   "Hosted",
 		hostingClusterNameAnno: "local-cluster",
-		createdViaAnno:         "other",
+		createdViaAnno:         createdViaHypershift,
 	}
 	for key, value := range annotations {
 		if v, ok := mc.Annotations[key]; !ok || len(v) == 0 {
