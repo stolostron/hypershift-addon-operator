@@ -1,10 +1,10 @@
 apiVersion: console.openshift.io/v1
 kind: ConsoleCLIDownload
 metadata:
-  name: hypershift-cli-download
+  name: hcp-cli-download
 spec:
   description: |
-    With the Hosted Openshift Control Plane command line interface, you can create and manage hosted OpenShift control planes.
+    With the Hosted Control Plane command line interface, you can create and manage OpenShift hosted clusters.
 
 
-  displayName: hypershift - Hosted Openshift Control Plane (HyperShift) Command Line Interface (CLI)
+  displayName: hcp - Hosted Control Plane Command Line Interface (CLI)
