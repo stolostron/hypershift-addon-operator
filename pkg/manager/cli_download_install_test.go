@@ -119,7 +119,7 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 
 	// Check hypershift CLI deployment
 	cliDeployment := &appsv1.Deployment{}
-	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hypershift-cli-download"}
+	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
 	err = o.Client.Get(context.TODO(), cliDeploymentNN, cliDeployment)
 	assert.Nil(t, err, "err nil when hypershift CLI download deployment exists")
 	assert.Equal(t, "hypershift-addon-manager", cliDeployment.OwnerReferences[0].Name)
@@ -132,21 +132,21 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 
 	// Check hypershift CLI service
 	cliService := &corev1.Service{}
-	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hypershift-cli-download"}
+	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
 	err = o.Client.Get(context.TODO(), cliServiceNN, cliService)
 	assert.Nil(t, err, "err nil when hypershift CLI download service exists")
 	assert.Equal(t, "hypershift-addon-manager", cliService.OwnerReferences[0].Name)
 
 	// Check hypershift CLI route
 	cliRoute := &routev1.Route{}
-	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hypershift-cli-download"}
+	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
 	err = o.Client.Get(context.TODO(), cliRouteNN, cliRoute)
 	assert.Nil(t, err, "err nil when hypershift CLI download route exists")
 	assert.Equal(t, "hypershift-addon-manager", cliRoute.OwnerReferences[0].Name)
 
 	// Check hypershift CLI ConsoleCLIDownload
 	cliDownload := &consolev1.ConsoleCLIDownload{}
-	cliDownloadNN := types.NamespacedName{Name: "hypershift-cli-download"}
+	cliDownloadNN := types.NamespacedName{Name: "hcp-cli-download"}
 	err = o.Client.Get(context.TODO(), cliDownloadNN, cliDownload)
 	assert.Nil(t, err, "err nil when hypershift CLI download ConsoleCLIDownload exists")
 	assert.Equal(t, "open-cluster-management:hypershift-preview:hypershift-addon-manager", cliDownload.OwnerReferences[0].Name)
@@ -238,7 +238,7 @@ func TestEnableHypershiftCLIDownloadNoConsole(t *testing.T) {
 
 	// Check hypershift CLI deployment
 	cliDeployment := &appsv1.Deployment{}
-	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hypershift-cli-download"}
+	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
 	err = o.Client.Get(context.TODO(), cliDeploymentNN, cliDeployment)
 	assert.Nil(t, err, "err nil when hypershift CLI download deployment exists")
 	assert.Equal(t, "hypershift-addon-manager", cliDeployment.OwnerReferences[0].Name)
@@ -251,23 +251,23 @@ func TestEnableHypershiftCLIDownloadNoConsole(t *testing.T) {
 
 	// Check hypershift CLI service
 	cliService := &corev1.Service{}
-	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hypershift-cli-download"}
+	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
 	err = o.Client.Get(context.TODO(), cliServiceNN, cliService)
 	assert.Nil(t, err, "err nil when hypershift CLI download service exists")
 	assert.Equal(t, "hypershift-addon-manager", cliService.OwnerReferences[0].Name)
 
 	// Check hypershift CLI route
 	cliRoute := &routev1.Route{}
-	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hypershift-cli-download"}
+	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
 	err = o.Client.Get(context.TODO(), cliRouteNN, cliRoute)
 	assert.Nil(t, err, "err nil when hypershift CLI download route exists")
 	assert.Equal(t, "hypershift-addon-manager", cliRoute.OwnerReferences[0].Name)
 
 	// Check hypershift CLI ConsoleCLIDownload
 	cliDownload := &consolev1.ConsoleCLIDownload{}
-	cliDownloadNN := types.NamespacedName{Name: "hypershift-cli-download"}
+	cliDownloadNN := types.NamespacedName{Name: "hcp-cli-download"}
 	err = o.Client.Get(context.TODO(), cliDownloadNN, cliDownload)
-	assert.EqualError(t, err, "consoleclidownloads.console.openshift.io \"hypershift-cli-download\" not found")
+	assert.EqualError(t, err, "consoleclidownloads.console.openshift.io \"hcp-cli-download\" not found")
 }
 
 func TestRetryCSV(t *testing.T) {

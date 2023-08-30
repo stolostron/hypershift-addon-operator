@@ -2,8 +2,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: hypershift-cli-download
-  name: hypershift-cli-download
+    app: hcp-cli-download
+  name: hcp-cli-download
   namespace: multicluster-engine
 spec:
   progressDeadlineSeconds: 600
@@ -11,13 +11,13 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      app: hypershift-cli-download
+      app: hcp-cli-download
   template:
     metadata:
       creationTimestamp: null
       labels:
-        app: hypershift-cli-download
-        ocm-antiaffinity-selector: hypershift-cli-download
+        app: hcp-cli-download
+        ocm-antiaffinity-selector: hcp-cli-download
     spec:
       affinity:
         nodeAffinity:
@@ -45,7 +45,7 @@ spec:
                 - key: ocm-antiaffinity-selector
                   operator: In
                   values:
-                  - hypershift-cli-download
+                  - hcp-cli-download
               topologyKey: topology.kubernetes.io/zone
             weight: 70
           - podAffinityTerm:
@@ -54,13 +54,13 @@ spec:
                 - key: ocm-antiaffinity-selector
                   operator: In
                   values:
-                  - hypershift-cli-download
+                  - hcp-cli-download
               topologyKey: kubernetes.io/hostname
             weight: 35
       containers:
       - image: docker.io/rokejung/hypershift-addon-operator:1130f
         imagePullPolicy: IfNotPresent
-        name: hypershift-cli-download
+        name: hcp-cli-download
         ports:
         - containerPort: 8080
           name: file-server

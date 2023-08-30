@@ -1,7 +1,7 @@
 apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
-  name: hypershift-cli-download
+  name: hcp-cli-download
   namespace: multicluster-engine
 spec:
   port:
@@ -11,6 +11,6 @@ spec:
     termination: edge
   to:
     kind: Service
-    name: hypershift-cli-download
+    name: hcp-cli-download
     weight: 100
   wildcardPolicy: None

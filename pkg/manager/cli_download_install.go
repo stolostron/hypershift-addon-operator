@@ -50,8 +50,8 @@ func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error
 	// check if the CSV has hypershift_cli image, which is the downstream case
 	cliDownloadImage := getHypershiftCLIDownloadImage(csv, log)
 	if cliDownloadImage == "" {
-		// in upstream build, there is no hypershift CLI download image
-		log.Info("the hypershift CLI download image was not found in the CSV. Skip enabling the hypershift CLI download")
+		// in upstream build, there is no hcp CLI download image
+		log.Info("the hcp CLI download image was not found in the CSV. Skip enabling the hcp CLI download")
 		return nil
 	}
 
@@ -111,7 +111,7 @@ func GetMCECSV(hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.Clu
 func getHypershiftCLIDownloadImage(csv *operatorsv1alpha1.ClusterServiceVersion, log logr.Logger) string {
 	for _, relatedImage := range csv.Spec.RelatedImages {
 		if strings.EqualFold(relatedImage.Name, "hypershift_cli") && relatedImage.Image != "" {
-			log.Info("the hypershift CLI download image was found in the CSV " + relatedImage.Image)
+			log.Info("the hcp CLI download image was found in the CSV " + relatedImage.Image)
 			return relatedImage.Image
 		}
 	}
@@ -124,61 +124,61 @@ func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log l
 	// is uninstalled
 	ownerRef, envVars, installNamespace, err := getOwnerRef(hubclient, log)
 	if err != nil {
-		log.Error(err, "failed to get owner reference for hypershift-cli-download. abort.")
+		log.Error(err, "failed to get owner reference for hcp-cli-download. abort.")
 		return err
 	}
 
-	log.Info("deploying hypershift CLI download in namespace " + installNamespace)
+	log.Info("deploying hcp CLI download in namespace " + installNamespace)
 
 	// Deployment
 	deployment, err := getCLIDeployment(cliImage, envVars, log, installNamespace)
 	if err != nil {
-		log.Error(err, "failed to prepare hypershift-cli-download deployment")
+		log.Error(err, "failed to prepare hcp-cli-download deployment")
 		return err
 	}
 	// set ownerRef for garbage collection after the hypershift feature is disabled
 	deployment.SetOwnerReferences([]metav1.OwnerReference{*ownerRef})
 	_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, deployment, func() error { return nil })
 	if err != nil {
-		log.Error(err, "failed to create or update hypershift-cli-download deployment")
+		log.Error(err, "failed to create or update hcp-cli-download deployment")
 		return err
 	}
-	log.Info("hypershift-cli-download deployment was applied successfully")
+	log.Info("hcp-cli-download deployment was applied successfully")
 
 	// Service
 	service, err := getService(log, installNamespace)
 	if err != nil {
-		log.Error(err, "failed to prepare hypershift-cli-download service")
+		log.Error(err, "failed to prepare hcp-cli-download service")
 		return err
 	}
 	// set ownerRef for garbage collection after the hypershift feature is disabled
 	service.SetOwnerReferences([]metav1.OwnerReference{*ownerRef})
 	_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, service, func() error { return nil })
 	if err != nil {
-		log.Error(err, "failed to create or update hypershift-cli-download service")
+		log.Error(err, "failed to create or update hcp-cli-download service")
 		return err
 	}
-	log.Info("hypershift-cli-download service was applied successfully")
+	log.Info("hcp-cli-download service was applied successfully")
 
 	// Route
 	route, err := getRoute(log, installNamespace)
 	if err != nil {
-		log.Error(err, "failed to prepare hypershift-cli-download route")
+		log.Error(err, "failed to prepare hcp-cli-download route")
 		return err
 	}
 	// set ownerRef for garbage collection after the hypershift feature is disabled
 	route.SetOwnerReferences([]metav1.OwnerReference{*ownerRef})
 	_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, route, func() error { return nil })
 	if err != nil {
-		log.Error(err, "failed to create or update hypershift-cli-download route")
+		log.Error(err, "failed to create or update hcp-cli-download route")
 		return err
 	}
-	log.Info("hypershift-cli-download route was applied successfully")
+	log.Info("hcp-cli-download route was applied successfully")
 
 	// Get the route to get the URL
 	err = hubclient.Get(context.TODO(), types.NamespacedName{Namespace: route.Namespace, Name: route.Name}, route)
 	if err != nil {
-		log.Error(err, "failed to get hypershift-cli-download route")
+		log.Error(err, "failed to get hcp-cli-download route")
 		return err
 	}
 
@@ -186,7 +186,7 @@ func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log l
 	// The hypershift addon cluster role is a cluster scroped.
 	clusterScopedOwnerRef, err := getClusterScopedOwnerRef(hubclient, log)
 	if err != nil {
-		log.Error(err, "failed to get cluster scoped owner reference for hypershift-cli-download. abort.")
+		log.Error(err, "failed to get cluster scoped owner reference for hcp-cli-download. abort.")
 		return err
 	}
 
@@ -194,7 +194,7 @@ func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log l
 	cliDownloadList := &consolev1.ConsoleCLIDownloadList{}
 	err = hubclient.List(context.TODO(), cliDownloadList)
 	if err != nil {
-		log.Error(err, "failed to get cliDownloadList. Skip installing the hypershift CLI download.")
+		log.Error(err, "failed to get cliDownloadList. Skip installing the hcp CLI download.")
 	} else {
 		if len(cliDownloadList.Items) > 0 {
 			log.Info("found at least one ConsoleCLIDownload resource. Enabling the hypershift ConsoleCLIDownload")
@@ -206,17 +206,17 @@ func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log l
 		// Construct and apply ConsoleCLIDownload
 		cliDownload, err := getConsoleDownload(route.Spec.Host, log)
 		if err != nil {
-			log.Error(err, "failed to prepare hypershift-cli-download ConsoleCLIDownload")
+			log.Error(err, "failed to prepare hcp-cli-download ConsoleCLIDownload")
 			return err
 		}
 		// set ownerRef for garbage collection after the hypershift feature is disabled
 		cliDownload.SetOwnerReferences([]metav1.OwnerReference{*clusterScopedOwnerRef})
 		_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, cliDownload, func() error { return nil })
 		if err != nil {
-			log.Error(err, "failed to create or update hypershift-cli-download ConsoleCLIDownload")
+			log.Error(err, "failed to create or update hcp-cli-download ConsoleCLIDownload")
 			return err
 		}
-		log.Info("hypershift-cli-download ConsoleCLIDownload was applied successfully")
+		log.Info("hcp-cli-download ConsoleCLIDownload was applied successfully")
 	}
 
 	return nil
@@ -312,43 +312,43 @@ func getConsoleDownload(routeUrl string, log logr.Logger) (*consolev1.ConsoleCLI
 	links := []consolev1.CLIDownloadLink{}
 
 	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/linux/amd64/hypershift.tar.gz",
-		Text: "Download hypershift CLI for Linux for x86_64",
+		Href: "https://" + routeUrl + "/linux/amd64/hcp.tar.gz",
+		Text: "Download hcp CLI for Linux for x86_64",
 	})
 
 	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/darwin/amd64/hypershift.tar.gz",
-		Text: "Download hypershift CLI for Mac for x86_64",
+		Href: "https://" + routeUrl + "/darwin/amd64/hcp.tar.gz",
+		Text: "Download hcp CLI for Mac for x86_64",
 	})
 
 	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/windows/amd64/hypershift.tar.gz",
-		Text: "Download hypershift CLI for Windows for x86_64",
+		Href: "https://" + routeUrl + "/windows/amd64/hcp.tar.gz",
+		Text: "Download hcp CLI for Windows for x86_64",
 	})
 
 	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/linux/arm64/hypershift.tar.gz",
-		Text: "Download hypershift CLI for Linux for ARM 64",
+		Href: "https://" + routeUrl + "/linux/arm64/hcp.tar.gz",
+		Text: "Download hcp CLI for Linux for ARM 64",
 	})
 
 	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/darwin/arm64/hypershift.tar.gz",
-		Text: "Download hypershift CLI for Mac for ARM 64",
+		Href: "https://" + routeUrl + "/darwin/arm64/hcp.tar.gz",
+		Text: "Download hcp CLI for Mac for ARM 64",
 	})
 
 	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/linux/ppc64/hypershift.tar.gz",
-		Text: "Download hypershift CLI for Linux for IBM Power",
+		Href: "https://" + routeUrl + "/linux/ppc64/hcp.tar.gz",
+		Text: "Download hcp CLI for Linux for IBM Power",
 	})
 
 	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/linux/ppc64le/hypershift.tar.gz",
-		Text: "Download hypershift CLI for Linux for IBM Power, little endian",
+		Href: "https://" + routeUrl + "/linux/ppc64le/hcp.tar.gz",
+		Text: "Download hcp CLI for Linux for IBM Power, little endian",
 	})
 
 	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/linux/s390x/hypershift.tar.gz",
-		Text: "Download hypershift CLI for Linux for IBM Z",
+		Href: "https://" + routeUrl + "/linux/s390x/hcp.tar.gz",
+		Text: "Download hcp CLI for Linux for IBM Z",
 	})
 
 	cliDownload.Spec.Links = links

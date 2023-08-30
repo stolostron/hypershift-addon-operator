@@ -3,8 +3,8 @@ kind: Service
 metadata:
   creationTimestamp: null
   labels:
-    app: hypershift-cli-download
-  name: hypershift-cli-download
+    app: hcp-cli-download
+  name: hcp-cli-download
   namespace: multicluster-engine
 spec:
   ports:
@@ -13,6 +13,6 @@ spec:
     protocol: TCP
     targetPort: 8080
   selector:
-    app: hypershift-cli-download
+    app: hcp-cli-download
 status:
   loadBalancer: {}
