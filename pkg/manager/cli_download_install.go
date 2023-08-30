@@ -311,45 +311,38 @@ func getConsoleDownload(routeUrl string, log logr.Logger) (*consolev1.ConsoleCLI
 
 	links := []consolev1.CLIDownloadLink{}
 
-	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/linux/amd64/hcp.tar.gz",
-		Text: "Download hcp CLI for Linux for x86_64",
-	})
-
-	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/darwin/amd64/hcp.tar.gz",
-		Text: "Download hcp CLI for Mac for x86_64",
-	})
-
-	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/windows/amd64/hcp.tar.gz",
-		Text: "Download hcp CLI for Windows for x86_64",
-	})
-
-	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/linux/arm64/hcp.tar.gz",
-		Text: "Download hcp CLI for Linux for ARM 64",
-	})
-
-	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/darwin/arm64/hcp.tar.gz",
-		Text: "Download hcp CLI for Mac for ARM 64",
-	})
-
-	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/linux/ppc64/hcp.tar.gz",
-		Text: "Download hcp CLI for Linux for IBM Power",
-	})
-
-	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/linux/ppc64le/hcp.tar.gz",
-		Text: "Download hcp CLI for Linux for IBM Power, little endian",
-	})
-
-	links = append(links, consolev1.CLIDownloadLink{
-		Href: "https://" + routeUrl + "/linux/s390x/hcp.tar.gz",
-		Text: "Download hcp CLI for Linux for IBM Z",
-	})
+	links = append(links,
+		consolev1.CLIDownloadLink{
+			Href: "https://" + routeUrl + "/linux/amd64/hcp.tar.gz",
+			Text: "Download hcp CLI for Linux for x86_64"},
+		consolev1.CLIDownloadLink{
+			Href: "https://" + routeUrl + "/darwin/amd64/hcp.tar.gz",
+			Text: "Download hcp CLI for Mac for x86_64",
+		},
+		consolev1.CLIDownloadLink{
+			Href: "https://" + routeUrl + "/windows/amd64/hcp.tar.gz",
+			Text: "Download hcp CLI for Windows for x86_64",
+		},
+		consolev1.CLIDownloadLink{
+			Href: "https://" + routeUrl + "/linux/arm64/hcp.tar.gz",
+			Text: "Download hcp CLI for Linux for ARM 64",
+		},
+		consolev1.CLIDownloadLink{
+			Href: "https://" + routeUrl + "/darwin/arm64/hcp.tar.gz",
+			Text: "Download hcp CLI for Mac for ARM 64",
+		},
+		consolev1.CLIDownloadLink{
+			Href: "https://" + routeUrl + "/linux/ppc64/hcp.tar.gz",
+			Text: "Download hcp CLI for Linux for IBM Power",
+		},
+		consolev1.CLIDownloadLink{
+			Href: "https://" + routeUrl + "/linux/ppc64le/hcp.tar.gz",
+			Text: "Download hcp CLI for Linux for IBM Power, little endian",
+		},
+		consolev1.CLIDownloadLink{
+			Href: "https://" + routeUrl + "/linux/s390x/hcp.tar.gz",
+			Text: "Download hcp CLI for Linux for IBM Z",
+		})
 
 	cliDownload.Spec.Links = links
 
