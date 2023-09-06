@@ -1,0 +1,15 @@
+{{- if ne .disableMetrics "true" }}
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: {{ .SpokeRolebindingName }}-metrics
+  namespace: {{ .AddonInstallNamespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ .SpokeRolebindingName }}-metrics
+subjects:
+- kind: ServiceAccount
+  name: {{ .AgentServiceAccountName }}
+  namespace: {{ .AddonInstallNamespace }}
+{{- end }}
