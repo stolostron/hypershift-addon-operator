@@ -18,6 +18,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -114,12 +115,34 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	err = o.Client.Create(context.TODO(), ocCliDownload)
 	assert.Nil(t, err, "err nil when oc cli ConsoleCLIDownload is created successfully")
 
+	//
+	// The deployment, service, route and ConsoleCLIDownload names used to be hypershift-cli-download
+	// but changed to hcp-cli-download to align with the CLI command name. Upon MCE upgrade,
+	// these old resources should be deleted. Create them and check for the deletion later.
+	//
+	oldCliDownload := getHypershiftCLIDownload()
+	err = o.Client.Create(context.TODO(), oldCliDownload)
+	assert.Nil(t, err, "err nil when hypershift-cli-download ConsoleCLIDownload is created successfully")
+
+	oldCliDeployment := getHypershiftCLIDeployment()
+	err = o.Client.Create(context.TODO(), oldCliDeployment)
+	assert.Nil(t, err, "err nil when hypershift-cli-download Deployment is created successfully")
+
+	oldCliService := getHypershiftCLIService()
+	err = o.Client.Create(context.TODO(), oldCliService)
+	assert.Nil(t, err, "err nil when hypershift-cli-download Service is created successfully")
+
+	oldCliRoute := getHypershiftCLIRoute()
+	err = o.Client.Create(context.TODO(), oldCliRoute)
+	assert.Nil(t, err, "err nil when hypershift-cli-download Route is created successfully")
+	// The previous version of hypershift-cli-download resources are now created
+
 	err = EnableHypershiftCLIDownload(o.Client, o.log)
 	assert.Nil(t, err, "err nil when hypershift CLI download is deployed successfully")
 
 	// Check hypershift CLI deployment
 	cliDeployment := &appsv1.Deployment{}
-	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
+	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliDeploymentNN, cliDeployment)
 	assert.Nil(t, err, "err nil when hypershift CLI download deployment exists")
 	assert.Equal(t, "hypershift-addon-manager", cliDeployment.OwnerReferences[0].Name)
@@ -132,24 +155,46 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 
 	// Check hypershift CLI service
 	cliService := &corev1.Service{}
-	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
+	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliServiceNN, cliService)
 	assert.Nil(t, err, "err nil when hypershift CLI download service exists")
 	assert.Equal(t, "hypershift-addon-manager", cliService.OwnerReferences[0].Name)
 
 	// Check hypershift CLI route
 	cliRoute := &routev1.Route{}
-	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
+	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliRouteNN, cliRoute)
 	assert.Nil(t, err, "err nil when hypershift CLI download route exists")
 	assert.Equal(t, "hypershift-addon-manager", cliRoute.OwnerReferences[0].Name)
 
 	// Check hypershift CLI ConsoleCLIDownload
 	cliDownload := &consolev1.ConsoleCLIDownload{}
-	cliDownloadNN := types.NamespacedName{Name: "hcp-cli-download"}
+	cliDownloadNN := types.NamespacedName{Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliDownloadNN, cliDownload)
 	assert.Nil(t, err, "err nil when hypershift CLI download ConsoleCLIDownload exists")
 	assert.Equal(t, "open-cluster-management:hypershift-preview:hypershift-addon-manager", cliDownload.OwnerReferences[0].Name)
+
+	// Check the old hypershift-cli-download resources are deleted
+	removedCliDeployment := &appsv1.Deployment{}
+	removedCliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: OldCLIDownloadResourceName}
+	err = o.Client.Get(context.TODO(), removedCliDeploymentNN, removedCliDeployment)
+	assert.True(t, apierrors.IsNotFound(err))
+
+	removedCliService := &corev1.Service{}
+	removedCliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: OldCLIDownloadResourceName}
+	err = o.Client.Get(context.TODO(), removedCliServiceNN, removedCliService)
+	assert.True(t, apierrors.IsNotFound(err))
+
+	removecCliRoute := &routev1.Route{}
+	removecCliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: OldCLIDownloadResourceName}
+	err = o.Client.Get(context.TODO(), removecCliRouteNN, removecCliRoute)
+	assert.True(t, apierrors.IsNotFound(err))
+
+	removedCliDownload := &consolev1.ConsoleCLIDownload{}
+	removedCliDownloadNN := types.NamespacedName{Name: OldCLIDownloadResourceName}
+	err = o.Client.Get(context.TODO(), removedCliDownloadNN, removedCliDownload)
+	assert.True(t, apierrors.IsNotFound(err))
+
 }
 
 func TestEnableHypershiftCLIDownloadNoConsole(t *testing.T) {
@@ -238,7 +283,7 @@ func TestEnableHypershiftCLIDownloadNoConsole(t *testing.T) {
 
 	// Check hypershift CLI deployment
 	cliDeployment := &appsv1.Deployment{}
-	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
+	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliDeploymentNN, cliDeployment)
 	assert.Nil(t, err, "err nil when hypershift CLI download deployment exists")
 	assert.Equal(t, "hypershift-addon-manager", cliDeployment.OwnerReferences[0].Name)
@@ -251,21 +296,21 @@ func TestEnableHypershiftCLIDownloadNoConsole(t *testing.T) {
 
 	// Check hypershift CLI service
 	cliService := &corev1.Service{}
-	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
+	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliServiceNN, cliService)
 	assert.Nil(t, err, "err nil when hypershift CLI download service exists")
 	assert.Equal(t, "hypershift-addon-manager", cliService.OwnerReferences[0].Name)
 
 	// Check hypershift CLI route
 	cliRoute := &routev1.Route{}
-	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hcp-cli-download"}
+	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliRouteNN, cliRoute)
 	assert.Nil(t, err, "err nil when hypershift CLI download route exists")
 	assert.Equal(t, "hypershift-addon-manager", cliRoute.OwnerReferences[0].Name)
 
 	// Check hypershift CLI ConsoleCLIDownload
 	cliDownload := &consolev1.ConsoleCLIDownload{}
-	cliDownloadNN := types.NamespacedName{Name: "hcp-cli-download"}
+	cliDownloadNN := types.NamespacedName{Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliDownloadNN, cliDownload)
 	assert.EqualError(t, err, "consoleclidownloads.console.openshift.io \"hcp-cli-download\" not found")
 }
@@ -346,6 +391,69 @@ func getTestOCCLIDownload() *consolev1.ConsoleCLIDownload {
 	}
 
 	return cli
+}
+
+func getHypershiftCLIDownload() *consolev1.ConsoleCLIDownload {
+	cli := &consolev1.ConsoleCLIDownload{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "ConsoleCLIDownload",
+			APIVersion: "console.openshift.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: OldCLIDownloadResourceName,
+		},
+		Spec: consolev1.ConsoleCLIDownloadSpec{},
+	}
+
+	return cli
+}
+
+func getHypershiftCLIService() *corev1.Service {
+	service := &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      OldCLIDownloadResourceName,
+			Namespace: "multicluster-engine",
+		},
+		Spec: corev1.ServiceSpec{},
+	}
+
+	return service
+}
+
+func getHypershiftCLIRoute() *routev1.Route {
+	route := &routev1.Route{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Route",
+			APIVersion: "route.openshift.io/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      OldCLIDownloadResourceName,
+			Namespace: "multicluster-engine",
+		},
+		Spec: routev1.RouteSpec{},
+	}
+
+	return route
+}
+
+func getHypershiftCLIDeployment() *appsv1.Deployment {
+	deployment := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      OldCLIDownloadResourceName,
+			Namespace: "multicluster-engine",
+		},
+		Spec: appsv1.DeploymentSpec{},
+	}
+
+	return deployment
 }
 
 func getTestAddonDeployment() *appsv1.Deployment {
