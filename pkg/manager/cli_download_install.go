@@ -17,11 +17,17 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+)
+
+const (
+	NewCLIDownloadResourceName = "hcp-cli-download"
+	OldCLIDownloadResourceName = "hypershift-cli-download"
 )
 
 func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error {
@@ -55,7 +61,7 @@ func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error
 		return nil
 	}
 
-	err = deployHypershiftCLIDownload(hubclient, cliDownloadImage, log)
+	err = deployHCPCLIDownload(hubclient, cliDownloadImage, log)
 	if err != nil {
 		log.Error(err, "failed to deploy HypershiftCLIDownload")
 		return err
@@ -119,7 +125,7 @@ func getHypershiftCLIDownloadImage(csv *operatorsv1alpha1.ClusterServiceVersion,
 	return ""
 }
 
-func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log logr.Logger) error {
+func deployHCPCLIDownload(hubclient client.Client, cliImage string, log logr.Logger) error {
 	// Set owner reference to the addon manager deployment so that when the feature is disabled, HypershiftCLIDownload
 	// is uninstalled
 	ownerRef, envVars, installNamespace, err := getOwnerRef(hubclient, log)
@@ -127,6 +133,9 @@ func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log l
 		log.Error(err, "failed to get owner reference for hcp-cli-download. abort.")
 		return err
 	}
+
+	// CLI download resources are renamed. Remove resources with old names
+	removeHypershiftCLIDownload(hubclient, installNamespace, log)
 
 	log.Info("deploying hcp CLI download in namespace " + installNamespace)
 
@@ -220,6 +229,66 @@ func deployHypershiftCLIDownload(hubclient client.Client, cliImage string, log l
 	}
 
 	return nil
+}
+
+func removeHypershiftCLIDownload(hubclient client.Client, installNamespace string, log logr.Logger) {
+	// Remove the old version of hypershift CLI resources
+
+	// Remove the old ConsoleCLIDownload if exists
+	cliDownload := &consolev1.ConsoleCLIDownload{}
+	err := hubclient.Get(context.TODO(), types.NamespacedName{Name: OldCLIDownloadResourceName}, cliDownload)
+	if err == nil {
+		deleteErr := hubclient.Delete(context.TODO(), cliDownload)
+		if deleteErr != nil {
+			log.Error(err, "failed to delete hypershift-cli-download ConsoleCLIDownload")
+		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to find hypershift-cli-download ConsoleCLIDownload")
+		}
+	}
+
+	// Remove the old route if exists
+	cliRoute := &routev1.Route{}
+	err = hubclient.Get(context.TODO(), types.NamespacedName{Namespace: installNamespace, Name: OldCLIDownloadResourceName}, cliRoute)
+	if err == nil {
+		deleteErr := hubclient.Delete(context.TODO(), cliRoute)
+		if deleteErr != nil {
+			log.Error(err, "failed to delete hypershift-cli-download Route")
+		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to find hypershift-cli-download Route")
+		}
+	}
+
+	// Remove the old service if exists
+	cliService := &corev1.Service{}
+	err = hubclient.Get(context.TODO(), types.NamespacedName{Namespace: installNamespace, Name: OldCLIDownloadResourceName}, cliService)
+	if err == nil {
+		deleteErr := hubclient.Delete(context.TODO(), cliService)
+		if deleteErr != nil {
+			log.Error(err, "failed to delete hypershift-cli-download Service")
+		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to find hypershift-cli-download Service")
+		}
+	}
+
+	// Remove the old deployment if exists
+	cliDeployment := &appsv1.Deployment{}
+	err = hubclient.Get(context.TODO(), types.NamespacedName{Namespace: installNamespace, Name: OldCLIDownloadResourceName}, cliDeployment)
+	if err == nil {
+		deleteErr := hubclient.Delete(context.TODO(), cliDeployment)
+		if deleteErr != nil {
+			log.Error(err, "failed to delete hypershift-cli-download Deployment")
+		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to find hypershift-cli-download Deployment")
+		}
+	}
 }
 
 func getCLIDeployment(cliImage string, envVars []corev1.EnvVar, log logr.Logger, installNamespace string) (*appsv1.Deployment, error) {
