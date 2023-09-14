@@ -17,6 +17,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
@@ -241,6 +242,10 @@ func removeHypershiftCLIDownload(hubclient client.Client, installNamespace strin
 		if deleteErr != nil {
 			log.Error(err, "failed to delete hypershift-cli-download ConsoleCLIDownload")
 		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to find hypershift-cli-download ConsoleCLIDownload")
+		}
 	}
 
 	// Remove the old route if exists
@@ -250,6 +255,10 @@ func removeHypershiftCLIDownload(hubclient client.Client, installNamespace strin
 		deleteErr := hubclient.Delete(context.TODO(), cliRoute)
 		if deleteErr != nil {
 			log.Error(err, "failed to delete hypershift-cli-download Route")
+		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to find hypershift-cli-download Route")
 		}
 	}
 
@@ -261,6 +270,10 @@ func removeHypershiftCLIDownload(hubclient client.Client, installNamespace strin
 		if deleteErr != nil {
 			log.Error(err, "failed to delete hypershift-cli-download Service")
 		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to find hypershift-cli-download Service")
+		}
 	}
 
 	// Remove the old deployment if exists
@@ -270,6 +283,10 @@ func removeHypershiftCLIDownload(hubclient client.Client, installNamespace strin
 		deleteErr := hubclient.Delete(context.TODO(), cliDeployment)
 		if deleteErr != nil {
 			log.Error(err, "failed to delete hypershift-cli-download Deployment")
+		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to find hypershift-cli-download Deployment")
 		}
 	}
 }
