@@ -1,4 +1,4 @@
-# AWS Credentials For Creating A Hosted Cluster in AWS
+# Credentials For Creating A Hosted Cluster in AWS
 
 When creating a hosted cluster using the `hcp create cluster aws` CLI command, you need to provide your AWS account credentials that have permissions to create infrastructure resources for your cluster such as VPCs, subnets, and NAT gateways, etc. The AWS credentials can be provided in two different ways.
 
