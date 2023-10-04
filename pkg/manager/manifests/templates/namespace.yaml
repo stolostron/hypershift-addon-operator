@@ -1,0 +1,10 @@
+{{- if ne .disableMetrics "true" }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .AddonInstallNamespace }}
+  labels:
+    openshift.io/cluster-monitoring: "true"
+  annotations:
+    addon.open-cluster-management.io/deletion-orphan: ""
+{{- end }}
