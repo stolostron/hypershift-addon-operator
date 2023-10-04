@@ -2,8 +2,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: acm-{{ .AddonName }}-metrics
-  namespace: openshift-monitoring
+  name: mce-{{ .AddonName }}-metrics
+  namespace: {{ .AddonInstallNamespace }}
 spec:
   endpoints:
   - bearerTokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
