@@ -134,8 +134,10 @@ PUBLIC_KEY=$(base64 ssh-privatekey.pub -w 0)
 # CLI variables
 # This value can be like "kubectl --kubeconfig my/hub/kubeconfig"
 KUBECTL_COMMAND="kubectl"
-# This value can be a different file path pinting to the hypershift CLI binary like "/my/dir/hypershift"
+# This value can be a different file path pointing to the hypershift CLI binary like "/my/dir/hypershift"
 HYPERSHIFT_COMMAND="hypershift"
+
+OC_COMMAND="oc"
 
 # Generate the first hosted cluster name
 CLUSTER_NAME_1=${CLUSTER_NAME_PREFIX}$(cat /dev/urandom | env LC_ALL=C tr -dc 'a-z0-9' | fold -w 6 | head -n 1)
@@ -588,42 +590,86 @@ enableHypershiftForLocalCluster() {
     done
 }
 
+installOcBinary() {
+  DOWNLOAD_URL=$(${KUBECTL_COMMAND} get route downloads -n openshift-console --output jsonpath={.spec.host})
+  if [[ -n $DOWNLOAD_URL ]];
+  then
+    echo "$(date) Found the download URL: \"$DOWNLOAD_URL\""
+  else
+    echo "$(date) No download URL found."
+    exit 1
+  fi
+
+  curl -k -LO https://${DOWNLOAD_URL}/amd64/linux/oc.tar
+  if [ $? -ne 0 ];
+  then
+    echo "$(date) oc.tar download failed"
+    exit 1
+  fi
+
+  tar -xvf oc.tar
+  if [ $? -ne 0 ];
+  then
+    echo "$(date) failed to decompress oc.tar"
+    exit 1
+  fi
+
+  chmod +x oc
+  if [ $? -ne 0 ];
+  then
+    echo "$(date) failed to chmod +x oc"
+    exit 1
+  fi
+
+  mv oc /bin
+  if [ $? -ne 0 ];
+  then
+    echo "$(date) failed to move oc to /bin"
+    exit 1
+  fi
+}
+
 installHypershiftBinary() {
-    ${KUBECTL_COMMAND} get ConsoleCLIDownload hypershift-cli-download
-    if [ $? -ne 0 ]; then
-        echo "$(date) failed to get ConsoleCLIDownload hypershift-cli-download"
-        exit 1
-    fi
+  # hcp CLI from the hcp-cli-download ConsoleCLIDownload, which is the productized version of the CLI does not support
+  # creating "infra" and "iam". So the developer version of the CLI needs to be extracted from the hypershift operator pod
+  ${KUBECTL_COMMAND} get namespace hypershift
 
-    hypershiftTarGzURL=`${KUBECTL_COMMAND} get ConsoleCLIDownload hypershift-cli-download -o jsonpath='{.spec.links[?(@.text=="Download hypershift CLI for Linux for x86_64")].href}'`
-    if [ -z "$hypershiftTarGzURL" ]; then
-            echo "$(date) failed to get Hypershift tar.gz ConsoleCLIDownload hypershift-cli-download"
-        exit 1
-    fi
+  if [ $? -ne 0 ];
+  then
+    echo "$(date) hypershift namespace not found"
+    exit 1
+  fi
 
-    curl -LOk ${hypershiftTarGzURL}
-    if [ $? -ne 0 ]; then
-        echo "$(date) failed to download ${hypershiftTarGzURL}"
-        exit 1
-    fi
+  # Get a running hypershift operator pod
+  ${OC_COMMAND} project hypershift
+  HO_POD_NAME=$(${KUBECTL_COMMAND} get pod --no-headers=true --field-selector=status.phase=Running -l app=operator -o custom-columns="NAME:.metadata.name" | head -n 1)
 
-    tar xvzf hypershift.tar.gz
-    if [ $? -ne 0 ]; then
-        echo "$(date) failed to untar hypershift.tar.gz"
-        exit 1
-    fi
+  if [[ -n $HO_POD_NAME ]];
+  then
+    echo "$(date) Found a running hypershift operator pod: \"$HO_POD_NAME\""
+  else
+    echo "$(date) No running hypershift operator pod found."
+    exit 1
+  fi
 
-    mv hypershift /bin
-    if [ $? -ne 0 ]; then
-        echo "$(date) failed to mv extracted hypershift binary to /bin"
-        exit 1
-    fi
+  # Extract the hypershift CLI from the hypershift operator pod
+  ${OC_COMMAND} rsync ${HO_POD_NAME}:/usr/bin/hypershift /tmp
+  if [ $? -ne 0 ]; then
+      echo "$(date) failed to extract hypershift CLI from the hypershift operator pod"
+      exit 1
+  fi
 
-    chmod +x /bin/hypershift
-    if [ $? -ne 0 ]; then
-        echo "$(date) failed to chmod +x /bin/hypershift"
-        exit 1
-    fi
+  chmod +x /tmp/hypershift
+  if [ $? -ne 0 ]; then
+    echo "$(date) failed to chmod +x /tmp/hypershift"
+    exit 1
+  fi
+
+  mv /tmp/hypershift /bin
+  if [ $? -ne 0 ]; then
+    echo "$(date) failed to mv extracted hypershift binary to /bin"
+    exit 1
+  fi
 }
 
 enableHostedModeAddon() {
@@ -650,6 +696,7 @@ enableHypershiftForLocalCluster
 if ! command -v ${HYPERSHIFT_COMMAND} &> /dev/null
 then
     echo "$(date) ==== Installing hypershift binary ===="
+    installOcBinary
     installHypershiftBinary
 fi
 
