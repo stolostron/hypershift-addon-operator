@@ -570,6 +570,7 @@ func TestInstallFlagChanges(t *testing.T) {
 				"--hypershift-image", "my-test-image",
 				"--platform-monitoring", "AWS",
 				"--enable-defaulting-webhook",
+				"--enable-validating-webhook",
 				"--exclude-etcd",
 				"--metrics-set", "SRE",
 			}

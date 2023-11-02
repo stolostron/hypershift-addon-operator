@@ -877,6 +877,7 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 				"--platform-monitoring", "OperatorOnly",
 				"--enable-uwm-telemetry-remote-write",
 				"--enable-defaulting-webhook",
+				"--enable-validating-webhook",
 			}
 			assert.Equal(t, expectArgs, installJob.Spec.Template.Spec.Containers[0].Args, "mismatched container arguments")
 		}
@@ -1136,6 +1137,7 @@ func TestRunHypershiftInstallExternalDNSDifferentSecret(t *testing.T) {
 				"--platform-monitoring", "OperatorOnly",
 				"--enable-uwm-telemetry-remote-write",
 				"--enable-defaulting-webhook",
+				"--enable-validating-webhook",
 			}
 			assert.Equal(t, expectArgs, installJob.Spec.Template.Spec.Containers[0].Args, "mismatched container arguments")
 		}
