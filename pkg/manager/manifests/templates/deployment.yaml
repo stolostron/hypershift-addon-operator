@@ -23,6 +23,13 @@ spec:
       - name: kube-rbac-proxy
         image: {{ .KubeRbacProxyImage }}
         imagePullPolicy: IfNotPresent
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+              - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
         args:
         - --upstream=http://127.0.0.1:8383/
         - --logtostderr=true
@@ -49,7 +56,7 @@ spec:
             drop:
             - ALL
           privileged: false
-          readOnlyRootFilesystem: false
+          readOnlyRootFilesystem: true
         args:
           - "./hypershift-addon"
           - "agent"
