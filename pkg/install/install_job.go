@@ -19,6 +19,9 @@ import (
 func (c *UpgradeController) runHyperShiftInstallJob(ctx context.Context, image, mountPath string, imageStreamCMData map[string]string, args []string) (*kbatch.Job, error) {
 	c.log.Info(fmt.Sprintf("HyperShift install args: %v", args))
 
+	privileged := false
+	readOnly := true
+
 	jobPodSpec := corev1.PodSpec{
 		Containers: []corev1.Container{
 			{
@@ -26,6 +29,10 @@ func (c *UpgradeController) runHyperShiftInstallJob(ctx context.Context, image, 
 				Image:   image,
 				Command: []string{"hypershift", "install"},
 				Args:    args,
+				SecurityContext: &corev1.SecurityContext{
+					Privileged:             &privileged,
+					ReadOnlyRootFilesystem: &readOnly,
+				},
 			},
 		},
 		RestartPolicy:      "Never",
