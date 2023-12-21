@@ -3,12 +3,17 @@ package agent
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	routev1 "github.com/openshift/api/route/v1"
+	"k8s.io/client-go/transport"
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
@@ -33,6 +38,8 @@ import (
 
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
+	prometheusapi "github.com/prometheus/client_golang/api"
+	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/install"
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
@@ -58,7 +65,8 @@ func init() {
 	utilruntime.Must(operatorapiv1.AddToScheme(scheme))
 	utilruntime.Must(operatorv1.AddToScheme(scheme))
 	utilruntime.Must(agent.AddToScheme(scheme))
-
+	utilruntime.Must(routev1.AddToScheme(scheme))
+	utilruntime.Must(corev1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -171,6 +179,12 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		spokeClient: mgr.GetClient(), spokeClustersClient: spokeClusterClient,
 	}
 
+	aCtrl.prometheusClient, err = newPrometheusClient(ctx, spokeKubeClient)
+	if err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
+		return fmt.Errorf("failed to create prometheus client, err: %w", err)
+	}
+
 	o.Log = o.Log.WithName("agent-reconciler")
 	aCtrl.plugInOption(o)
 
@@ -226,6 +240,8 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("failed to create AddOnPlacementScore, err: %w", err)
 	}
+
+	aCtrl.calculateCapacitiesToHostHCPs()
 
 	log.Info("starting manager")
 
@@ -301,11 +317,92 @@ func (c *agentController) serveHealthProbes(healthProbeBindAddress string, confi
 	return server.ListenAndServe()
 }
 
+func newPrometheusClient(ctx context.Context, spokeclient client.Client) (prometheusv1.API, error) {
+	promService := &corev1.Service{}
+	promServiceNN := types.NamespacedName{Namespace: "openshift-monitoring", Name: "prometheus-k8s"}
+	err := spokeclient.Get(context.TODO(), promServiceNN, promService)
+	if err != nil {
+		return nil, err
+	}
+
+	thanosRoute := &routev1.Route{}
+	thanosRouteNN := types.NamespacedName{Namespace: "openshift-monitoring", Name: "thanos-querier"}
+	err = spokeclient.Get(context.TODO(), thanosRouteNN, thanosRoute)
+	if err != nil {
+		return nil, err
+	}
+
+	host := thanosRoute.Status.Ingress[0].Host
+	var bearerToken string
+
+	listopts := &client.ListOptions{Namespace: "openshift-monitoring"}
+	secrets := &corev1.SecretList{}
+	err = spokeclient.List(context.TODO(), secrets, listopts)
+	if err != nil {
+		return nil, fmt.Errorf("could not list secrets in openshift-monitoring namespace")
+	}
+
+	for _, s := range secrets.Items {
+		if s.Type != corev1.SecretTypeServiceAccountToken ||
+			!strings.HasPrefix(s.Name, "prometheus-k8s") {
+			continue
+		}
+		bearerToken = string(s.Data[corev1.ServiceAccountTokenKey])
+		break
+	}
+	if len(bearerToken) == 0 {
+		return nil, fmt.Errorf("prometheus service account not found")
+	}
+
+	return createClient(ctx, spokeclient, host, bearerToken)
+}
+
+func createClient(ctx context.Context, client client.Client, host, bearerToken string) (prometheusv1.API, error) {
+	// retrieve router CA
+	routerCAConfigMap := &corev1.ConfigMap{}
+	routerCAConfigMapNN := types.NamespacedName{Namespace: "openshift-config-managed", Name: "default-ingress-cert"}
+	err := client.Get(context.TODO(), routerCAConfigMapNN, routerCAConfigMap)
+	if err != nil {
+		return prometheusv1.NewAPI(nil), err
+	}
+
+	bundlePEM := []byte(routerCAConfigMap.Data["ca-bundle.crt"])
+
+	// make a client connection configured with the provided bundle.
+	roots := x509.NewCertPool()
+	roots.AppendCertsFromPEM(bundlePEM)
+
+	// prometheus API client, configured for route host and bearer token auth
+	promclient, err := prometheusapi.NewClient(prometheusapi.Config{
+		Address: "https://" + host,
+		RoundTripper: transport.NewBearerAuthRoundTripper(
+			bearerToken,
+			&http.Transport{
+				Proxy: http.ProxyFromEnvironment,
+				DialContext: (&net.Dialer{
+					Timeout:   30 * time.Second,
+					KeepAlive: 30 * time.Second,
+				}).DialContext,
+				TLSHandshakeTimeout: 10 * time.Second,
+				TLSClientConfig: &tls.Config{
+					RootCAs:    roots,
+					ServerName: host,
+				},
+			},
+		),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return prometheusv1.NewAPI(promclient), nil
+}
+
 type agentController struct {
 	hubClient                   client.Client
 	spokeUncachedClient         client.Client
 	spokeClient                 client.Client              //local for agent
 	spokeClustersClient         clusterclientset.Interface // client used to create cluster claim for the hypershift management cluster
+	prometheusClient            prometheusv1.API
 	log                         logr.Logger
 	recorder                    events.Recorder
 	clusterName                 string
@@ -498,6 +595,8 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		c.log.Error(err, "failed to get the hostedcluster")
 		return ctrl.Result{}, nil
 	}
+
+	c.calculateCapacitiesToHostHCPs()
 
 	if !hc.GetDeletionTimestamp().IsZero() {
 		c.log.Info(fmt.Sprintf("hostedcluster %s has deletionTimestamp %s. Skip reconciling klusterlet secrets", hc.Name, hc.GetDeletionTimestamp().String()))

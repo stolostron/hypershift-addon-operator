@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-logr/zapr"
 	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stolostron/hypershift-addon-operator/pkg/install"
@@ -1198,6 +1199,7 @@ func initClient() client.Client {
 	clusterv1.AddToScheme(scheme)
 	operatorapiv1.AddToScheme(scheme)
 	addonv1alpha1.AddToScheme(scheme)
+	routev1.AddToScheme(scheme)
 
 	ncb := fake.NewClientBuilder()
 	ncb.WithScheme(scheme)
