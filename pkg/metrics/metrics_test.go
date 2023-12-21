@@ -51,4 +51,18 @@ func TestMetrics(t *testing.T) {
 	IsAWSS3BucketSecretConfigured.Set(1)
 	assert.Equal(float64(1), testutil.ToFloat64(IsAWSS3BucketSecretConfigured))
 
+	CapacityOfRequestBasedHCPs.Set(1)
+	assert.Equal(float64(1), testutil.ToFloat64(CapacityOfRequestBasedHCPs))
+
+	CapacityOfLowQPSHCPs.Set(2)
+	assert.Equal(float64(2), testutil.ToFloat64(CapacityOfLowQPSHCPs))
+
+	CapacityOfMediumQPSHCPs.Set(3)
+	assert.Equal(float64(3), testutil.ToFloat64(CapacityOfMediumQPSHCPs))
+
+	CapacityOfHighQPSHCPs.Set(4)
+	assert.Equal(float64(4), testutil.ToFloat64(CapacityOfHighQPSHCPs))
+
+	CapacityOfAverageQPSHCPs.Set(5)
+	assert.Equal(float64(5), testutil.ToFloat64(CapacityOfAverageQPSHCPs))
 }
