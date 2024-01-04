@@ -73,7 +73,7 @@ rules:
     resources: ["managedclusters/accept"]
     verbs: ["update"]
   - apiGroups: ["admissionregistration.k8s.io"]
-    resources: ["mutatingwebhookconfigurations"]
+    resources: ["mutatingwebhookconfigurations", "validatingwebhookconfigurations"]
     verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
   - apiGroups: ["route.openshift.io"]
     resources: ["routes"]
