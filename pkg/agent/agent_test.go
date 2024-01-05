@@ -1188,6 +1188,112 @@ func Test_getNameCerts(t *testing.T) {
 	}
 }
 
+func Test_SetHCPSizingBaseline(t *testing.T) {
+	ctx := context.Background()
+	client := initClient()
+
+	zapLog, _ := zap.NewDevelopment()
+
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
+	aCtrl := &agentController{
+		spokeClustersClient: fakeClusterCS,
+		spokeUncachedClient: client,
+		spokeClient:         client,
+		hubClient:           client,
+		log:                 zapr.NewLogger(zapLog),
+		clusterName:         "local-cluster",
+	}
+
+	// Test SetHCPSizingBaseline without the overriding configmap
+	// and verify that all the baseline values are set
+	aCtrl.SetHCPSizingBaseline(ctx)
+
+	assert.Equal(t, float64(5), aCtrl.hcpSizingBaseline.cpuRequestPerHCP)
+	assert.Equal(t, float64(18), aCtrl.hcpSizingBaseline.memoryRequestPerHCP)
+	assert.Equal(t, float64(75), aCtrl.hcpSizingBaseline.podsPerHCP)
+	assert.Equal(t, float64(9.0), aCtrl.hcpSizingBaseline.incrementalCPUUsagePer1KQPS)
+	assert.Equal(t, float64(2.5), aCtrl.hcpSizingBaseline.incrementalMemUsagePer1KQPS)
+	assert.Equal(t, float64(2.9), aCtrl.hcpSizingBaseline.idleCPUUsage)
+	assert.Equal(t, float64(11.1), aCtrl.hcpSizingBaseline.idleMemoryUsage)
+	assert.Equal(t, float64(50.0), aCtrl.hcpSizingBaseline.minimumQPSPerHCP)
+	assert.Equal(t, float64(1000.0), aCtrl.hcpSizingBaseline.mediumQPSPerHCP)
+	assert.Equal(t, float64(2000.0), aCtrl.hcpSizingBaseline.highQPSPerHCP)
+
+	hcpSizingConfigmap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp-sizing-baseline",
+			Namespace: "local-cluster",
+		},
+		Data: map[string]string{
+			"cpuRequestPerHCP":            "8",
+			"memoryRequestPerHCP":         "21",
+			"podsPerHCP":                  "250",
+			"incrementalCPUUsagePer1KQPS": "5.0",
+			"incrementalMemUsagePer1KQPS": "3.5",
+			"idleCPUUsage":                "2.1",
+			"idleMemoryUsage":             "8.5",
+			"minimumQPSPerHCP":            "100.0",
+			"mediumQPSPerHCP":             "1500.0",
+			"highQPSPerHCP":               "2500.0",
+		},
+	}
+
+	err := client.Create(ctx, hcpSizingConfigmap)
+	assert.Nil(t, err, "hcp sizing baseline configmap created successfully")
+
+	// With the HCP sizing baseline override configmap, verify the overriden values
+	aCtrl.SetHCPSizingBaseline(ctx)
+
+	assert.Equal(t, float64(8), aCtrl.hcpSizingBaseline.cpuRequestPerHCP)
+	assert.Equal(t, float64(21), aCtrl.hcpSizingBaseline.memoryRequestPerHCP)
+	assert.Equal(t, float64(250), aCtrl.hcpSizingBaseline.podsPerHCP)
+	assert.Equal(t, float64(5.0), aCtrl.hcpSizingBaseline.incrementalCPUUsagePer1KQPS)
+	assert.Equal(t, float64(3.5), aCtrl.hcpSizingBaseline.incrementalMemUsagePer1KQPS)
+	assert.Equal(t, float64(2.1), aCtrl.hcpSizingBaseline.idleCPUUsage)
+	assert.Equal(t, float64(8.5), aCtrl.hcpSizingBaseline.idleMemoryUsage)
+	assert.Equal(t, float64(100.0), aCtrl.hcpSizingBaseline.minimumQPSPerHCP)
+	assert.Equal(t, float64(1500.0), aCtrl.hcpSizingBaseline.mediumQPSPerHCP)
+	assert.Equal(t, float64(2500.0), aCtrl.hcpSizingBaseline.highQPSPerHCP)
+
+	hcpSizingConfigmap = &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp-sizing-baseline",
+			Namespace: "local-cluster",
+		},
+		Data: map[string]string{
+			"cpuRequestPerHCP":            "8aa",
+			"memoryRequestPerHCP":         "21aa",
+			"podsPerHCP":                  "250aa",
+			"incrementalCPUUsagePer1KQPS": "5.0aa",
+			"incrementalMemUsagePer1KQPS": "3.5aa",
+			"idleCPUUsage":                "2.1aa",
+			"idleMemoryUsage":             "8.5aa",
+			"minimumQPSPerHCP":            "100.0aa",
+			"mediumQPSPerHCP":             "1500.0aa",
+			"highQPSPerHCP":               "2500.0aa",
+		},
+	}
+
+	err = client.Update(ctx, hcpSizingConfigmap)
+	assert.Nil(t, err, "hcp sizing baseline configmap updated successfully")
+
+	// With the HCP sizing baseline override configmap containing invalid override values,
+	// verify that the sizing baseline values are set with the default values
+	aCtrl.SetHCPSizingBaseline(ctx)
+
+	assert.Equal(t, float64(5), aCtrl.hcpSizingBaseline.cpuRequestPerHCP)
+	assert.Equal(t, float64(18), aCtrl.hcpSizingBaseline.memoryRequestPerHCP)
+	assert.Equal(t, float64(75), aCtrl.hcpSizingBaseline.podsPerHCP)
+	assert.Equal(t, float64(9.0), aCtrl.hcpSizingBaseline.incrementalCPUUsagePer1KQPS)
+	assert.Equal(t, float64(2.5), aCtrl.hcpSizingBaseline.incrementalMemUsagePer1KQPS)
+	assert.Equal(t, float64(2.9), aCtrl.hcpSizingBaseline.idleCPUUsage)
+	assert.Equal(t, float64(11.1), aCtrl.hcpSizingBaseline.idleMemoryUsage)
+	assert.Equal(t, float64(50.0), aCtrl.hcpSizingBaseline.minimumQPSPerHCP)
+	assert.Equal(t, float64(1000.0), aCtrl.hcpSizingBaseline.mediumQPSPerHCP)
+	assert.Equal(t, float64(2000.0), aCtrl.hcpSizingBaseline.highQPSPerHCP)
+}
+
 func initClient() client.Client {
 	scheme := runtime.NewScheme()
 	//corev1.AddToScheme(scheme)

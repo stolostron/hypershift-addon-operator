@@ -33,6 +33,8 @@ const (
 	ImageUpgradeControllerName = "hypershift-image-upgrade"
 	HypershiftInstallFlagsCM   = "hypershift-operator-install-flags"
 
+	HCPSizingBaselineCM = "hcp-sizing-baseline"
+
 	HypershiftOperatorNamespace       = "hypershift"
 	HypershiftOperatorName            = "operator"
 	HypershiftOperatorExternalDNSName = "external-dns"

@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"testing"
 
 	"github.com/go-logr/zapr"
@@ -25,6 +26,8 @@ func TestCalculateCapacitiesToHostHCPs(t *testing.T) {
 		hubClient:           client,
 		log:                 zapr.NewLogger(zapLog),
 	}
+
+	aCtrl.SetHCPSizingBaseline(context.TODO())
 
 	err := aCtrl.calculateCapacitiesToHostHCPs()
 	assert.Nil(t, err, "err nil when calculateCapacitiesToHostHCPs was successful")

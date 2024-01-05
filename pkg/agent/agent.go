@@ -241,6 +241,8 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("failed to create AddOnPlacementScore, err: %w", err)
 	}
 
+	aCtrl.SetHCPSizingBaseline(ctx)
+
 	aCtrl.calculateCapacitiesToHostHCPs()
 
 	log.Info("starting manager")
@@ -408,6 +410,7 @@ type agentController struct {
 	clusterName                 string
 	maxHostedClusterCount       int
 	thresholdHostedClusterCount int
+	hcpSizingBaseline           HCPSizingBaseline
 }
 
 func (c *agentController) plugInOption(o *AgentOptions) {
@@ -762,6 +765,120 @@ func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1
 		}
 	}
 	return false
+}
+
+func (c *agentController) SetHCPSizingBaseline(ctx context.Context) {
+	hcpSizingBaseline := &HCPSizingBaseline{
+		cpuRequestPerHCP:            defaulCpuRequestPerHCP,
+		memoryRequestPerHCP:         defaultMemoryRequestPerHCP,
+		podsPerHCP:                  defaultPodsPerHCP,
+		incrementalCPUUsagePer1KQPS: defaultIncrementalCPUUsagePer1KQPS,
+		incrementalMemUsagePer1KQPS: defaultIncrementalMemUsagePer1KQPS,
+		idleCPUUsage:                defaultIdleCPUUsage,
+		idleMemoryUsage:             defaultIdleMemoryUsage,
+		minimumQPSPerHCP:            defaultMinimumQPSPerHCP,
+		mediumQPSPerHCP:             defaultMediumQPSPerHCP,
+		highQPSPerHCP:               defaultHighQPSPerHCP,
+	}
+
+	cm := &corev1.ConfigMap{}
+	cmKey := types.NamespacedName{Name: util.HCPSizingBaselineCM, Namespace: c.clusterName}
+	err := c.hubClient.Get(context.TODO(), cmKey, cm)
+	if err != nil {
+		c.log.Error(err, "failed to get configmap from the hub. Setting the HCP sizing baseline with default values.")
+	} else {
+		if cm.Data["cpuRequestPerHCP"] != "" {
+			cpuRequestPerHCP, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["cpuRequestPerHCP"]), 64)
+			if err == nil {
+				c.log.Info(fmt.Sprintf("setting cpuRequestPerHCP to %s", cm.Data["cpuRequestPerHCP"]))
+				hcpSizingBaseline.cpuRequestPerHCP = cpuRequestPerHCP
+			} else {
+				c.log.Error(err, "failed to parse cpuRequestPerHCP")
+			}
+		}
+		if cm.Data["memoryRequestPerHCP"] != "" {
+			memoryRequestPerHCP, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["memoryRequestPerHCP"]), 64)
+			if err == nil {
+				c.log.Info(fmt.Sprintf("setting memoryRequestPerHCP to %s", cm.Data["memoryRequestPerHCP"]))
+				hcpSizingBaseline.memoryRequestPerHCP = memoryRequestPerHCP
+			} else {
+				c.log.Error(err, "failed to parse memoryRequestPerHCP")
+			}
+		}
+		if cm.Data["podsPerHCP"] != "" {
+			podsPerHCP, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["podsPerHCP"]), 64)
+			if err == nil {
+				c.log.Info(fmt.Sprintf("setting podsPerHCP to %s", cm.Data["podsPerHCP"]))
+				hcpSizingBaseline.podsPerHCP = podsPerHCP
+			} else {
+				c.log.Error(err, "failed to parse podsPerHCP")
+			}
+		}
+		if cm.Data["incrementalCPUUsagePer1KQPS"] != "" {
+			incrementalCPUUsagePer1KQPS, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["incrementalCPUUsagePer1KQPS"]), 64)
+			if err == nil {
+				c.log.Info(fmt.Sprintf("setting incrementalCPUUsagePer1KQPS to %s", cm.Data["incrementalCPUUsagePer1KQPS"]))
+				hcpSizingBaseline.incrementalCPUUsagePer1KQPS = incrementalCPUUsagePer1KQPS
+			} else {
+				c.log.Error(err, "failed to parse incrementalCPUUsagePer1KQPS")
+			}
+		}
+		if cm.Data["incrementalMemUsagePer1KQPS"] != "" {
+			incrementalMemUsagePer1KQPS, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["incrementalMemUsagePer1KQPS"]), 64)
+			if err == nil {
+				c.log.Info(fmt.Sprintf("setting incrementalMemUsagePer1KQPS to %s", cm.Data["incrementalMemUsagePer1KQPS"]))
+				hcpSizingBaseline.incrementalMemUsagePer1KQPS = incrementalMemUsagePer1KQPS
+			} else {
+				c.log.Error(err, "failed to parse incrementalMemUsagePer1KQPS")
+			}
+		}
+		if cm.Data["idleCPUUsage"] != "" {
+			idleCPUUsage, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["idleCPUUsage"]), 64)
+			if err == nil {
+				c.log.Info(fmt.Sprintf("setting idleCPUUsage to %s", cm.Data["idleCPUUsage"]))
+				hcpSizingBaseline.idleCPUUsage = idleCPUUsage
+			} else {
+				c.log.Error(err, "failed to parse idleCPUUsage")
+			}
+		}
+		if cm.Data["idleMemoryUsage"] != "" {
+			idleMemoryUsage, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["idleMemoryUsage"]), 64)
+			if err == nil {
+				c.log.Info(fmt.Sprintf("setting idleMemoryUsage to %s", cm.Data["idleMemoryUsage"]))
+				hcpSizingBaseline.idleMemoryUsage = idleMemoryUsage
+			} else {
+				c.log.Error(err, "failed to parse idleMemoryUsage")
+			}
+		}
+		if cm.Data["minimumQPSPerHCP"] != "" {
+			minimumQPSPerHCP, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["minimumQPSPerHCP"]), 64)
+			if err == nil {
+				c.log.Info(fmt.Sprintf("setting minimumQPSPerHCP to %s", cm.Data["minimumQPSPerHCP"]))
+				hcpSizingBaseline.minimumQPSPerHCP = minimumQPSPerHCP
+			} else {
+				c.log.Error(err, "failed to parse minimumQPSPerHCP")
+			}
+		}
+		if cm.Data["mediumQPSPerHCP"] != "" {
+			mediumQPSPerHCP, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["mediumQPSPerHCP"]), 64)
+			if err == nil {
+				c.log.Info(fmt.Sprintf("setting mediumQPSPerHCP to %s", cm.Data["mediumQPSPerHCP"]))
+				hcpSizingBaseline.mediumQPSPerHCP = mediumQPSPerHCP
+			} else {
+				c.log.Error(err, "failed to parse mediumQPSPerHCP")
+			}
+		}
+		if cm.Data["highQPSPerHCP"] != "" {
+			highQPSPerHCP, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["highQPSPerHCP"]), 64)
+			if err == nil {
+				c.log.Info(fmt.Sprintf("setting highQPSPerHCP to %s", cm.Data["highQPSPerHCP"]))
+				hcpSizingBaseline.highQPSPerHCP = highQPSPerHCP
+			} else {
+				c.log.Error(err, "failed to parse highQPSPerHCP")
+			}
+		}
+	}
+	c.hcpSizingBaseline = *hcpSizingBaseline
 }
 
 func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup bool) error {

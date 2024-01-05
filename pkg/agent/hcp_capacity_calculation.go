@@ -18,30 +18,43 @@ import (
 )
 
 const (
-	cpuRequestPerHCP    float64 = 5  // vCPUs required per HCP
-	memoryRequestPerHCP float64 = 18 // Memory required per HCP in BG
-	podsPerHCP          float64 = 75 // Pods per HighlyAvailable HCP
+	defaulCpuRequestPerHCP     float64 = 5  // vCPUs required per HCP
+	defaultMemoryRequestPerHCP float64 = 18 // Memory required per HCP in GB
+	defaultPodsPerHCP          float64 = 75 // Pods per HighlyAvailable HCP
 
-	incrementalCPUUsagePer1KQPS float64 = 9.0 // Incremental CPU usage per 1K QPS
-	incrementalMemUsagePer1KQPS float64 = 2.5 // Incremental Memory usage per 1K QPS
+	defaultIncrementalCPUUsagePer1KQPS float64 = 9.0 // Incremental CPU usage per 1K QPS
+	defaultIncrementalMemUsagePer1KQPS float64 = 2.5 // Incremental Memory usage per 1K QPS
 
-	idleCPUUsage    float64 = 2.9  // Idle CPU usage (unit vCPU)
-	idleMemoryUsage float64 = 11.1 // Idle memory usage (unit GiB)
+	defaultIdleCPUUsage    float64 = 2.9  // Idle CPU usage (unit vCPU)
+	defaultIdleMemoryUsage float64 = 11.1 // Idle memory usage (unit GiB)
 
 	defaultMinimumQPSPerHCP float64 = 50.0   // Default low Kube API QPS per HCP
 	defaultMediumQPSPerHCP  float64 = 1000.0 // Default medium Kube API QPS per HCP
 	defaultHighQPSPerHCP    float64 = 2000.0 // Default high Kube API QPS per HCP
 )
 
+type HCPSizingBaseline struct {
+	cpuRequestPerHCP            float64 // vCPUs required per HCP
+	memoryRequestPerHCP         float64 // Memory required per HCP in BG
+	podsPerHCP                  float64 // Pods per HighlyAvailable HCP
+	incrementalCPUUsagePer1KQPS float64 // Incremental CPU usage per 1K QPS
+	incrementalMemUsagePer1KQPS float64 // Incremental Memory usage per 1K QPS
+	idleCPUUsage                float64 // Idle CPU usage (unit vCPU)
+	idleMemoryUsage             float64 // Idle memory usage (unit GiB)
+	minimumQPSPerHCP            float64 // Default low Kube API QPS per HCP
+	mediumQPSPerHCP             float64 // Default medium Kube API QPS per HCP
+	highQPSPerHCP               float64 // Default high Kube API QPS per HCP
+}
+
 func (c *agentController) calculateMaxHCPs(workerCPUs, workerMemory, maxPods, apiRate float64, useLoadBased bool) float64 {
-	maxHCPsByCPU := workerCPUs / cpuRequestPerHCP
-	maxHCPsByMemory := workerMemory / memoryRequestPerHCP
-	maxHCPsByPods := maxPods / podsPerHCP
+	maxHCPsByCPU := workerCPUs / c.hcpSizingBaseline.cpuRequestPerHCP
+	maxHCPsByMemory := workerMemory / c.hcpSizingBaseline.memoryRequestPerHCP
+	maxHCPsByPods := maxPods / c.hcpSizingBaseline.podsPerHCP
 
 	var maxHCPsByCPUUsage, maxHCPsByMemoryUsage float64
 	if useLoadBased {
-		maxHCPsByCPUUsage = workerCPUs / (idleCPUUsage + (apiRate/1000)*incrementalCPUUsagePer1KQPS)
-		maxHCPsByMemoryUsage = workerMemory / (idleMemoryUsage + (apiRate/1000)*incrementalMemUsagePer1KQPS)
+		maxHCPsByCPUUsage = workerCPUs / (c.hcpSizingBaseline.idleCPUUsage + (apiRate/1000)*c.hcpSizingBaseline.incrementalCPUUsagePer1KQPS)
+		maxHCPsByMemoryUsage = workerMemory / (c.hcpSizingBaseline.idleMemoryUsage + (apiRate/1000)*c.hcpSizingBaseline.incrementalMemUsagePer1KQPS)
 	} else {
 		maxHCPsByCPUUsage = maxHCPsByCPU
 		maxHCPsByMemoryUsage = maxHCPsByMemory
@@ -63,8 +76,8 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 		return err
 	}
 
-	totalHCPQPS := defaultMinimumQPSPerHCP
-	averageHCPQPS := defaultMinimumQPSPerHCP
+	totalHCPQPS := c.hcpSizingBaseline.minimumQPSPerHCP
+	averageHCPQPS := c.hcpSizingBaseline.minimumQPSPerHCP
 	numberOfHCPs := 0.0
 	for _, hcp := range hcpList.Items {
 		queryStr := "sum(rate(apiserver_request_total{namespace=~\"" + hcp.Namespace + "\"}[2m])) by (namespace)"
@@ -82,7 +95,7 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 			if err == nil {
 				totalHCPQPS += hcpQPS
 			} else {
-				totalHCPQPS += defaultMinimumQPSPerHCP
+				totalHCPQPS += c.hcpSizingBaseline.minimumQPSPerHCP
 			}
 		}
 		numberOfHCPs++
@@ -133,13 +146,13 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 	maxHCPs := int(math.Floor(c.calculateMaxHCPs(totalWorkerCPU, totalWorkerMemory, totalWorkerPods, 0.0, false)))
 
 	// 2. ~50 low QPS load based max num of HCPs
-	maxLowQPSHCPs := int(math.Floor(c.calculateMaxHCPs(totalWorkerCPU, totalWorkerMemory, totalWorkerPods, defaultMinimumQPSPerHCP, true)))
+	maxLowQPSHCPs := int(math.Floor(c.calculateMaxHCPs(totalWorkerCPU, totalWorkerMemory, totalWorkerPods, c.hcpSizingBaseline.minimumQPSPerHCP, true)))
 
 	// 3. ~1000 medium QPS load based max num of HCPs
-	maxMediumQPSHCPs := int(math.Floor(c.calculateMaxHCPs(totalWorkerCPU, totalWorkerMemory, totalWorkerPods, defaultMediumQPSPerHCP, true)))
+	maxMediumQPSHCPs := int(math.Floor(c.calculateMaxHCPs(totalWorkerCPU, totalWorkerMemory, totalWorkerPods, c.hcpSizingBaseline.mediumQPSPerHCP, true)))
 
 	// 4. ~2000 high QPS load based max num of HCPs
-	maxHighQPSHCPs := int(math.Floor(c.calculateMaxHCPs(totalWorkerCPU, totalWorkerMemory, totalWorkerPods, defaultHighQPSPerHCP, true)))
+	maxHighQPSHCPs := int(math.Floor(c.calculateMaxHCPs(totalWorkerCPU, totalWorkerMemory, totalWorkerPods, c.hcpSizingBaseline.highQPSPerHCP, true)))
 
 	// 5. Current everage QPS of all HCPs max num of HCPs
 	maxAvgQPSHCPs := int(math.Floor(c.calculateMaxHCPs(totalWorkerCPU, totalWorkerMemory, totalWorkerPods, averageHCPQPS, true)))
@@ -147,9 +160,9 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 	// 6. Current number of HCPs
 
 	c.log.Info("The maximum number of HCPs based on resource requests per HCP is " + fmt.Sprintf("%d", maxHCPs))
-	c.log.Info("The maximum number of HCPs based on low 50~ QPS load per HCP is " + fmt.Sprintf("%d", maxLowQPSHCPs))
-	c.log.Info("The maximum number of HCPs based on medium 1000~ QPS load per HCP is " + fmt.Sprintf("%d", maxMediumQPSHCPs))
-	c.log.Info("The maximum number of HCPs based on high 2000~ QPS load per HCP is " + fmt.Sprintf("%d", maxHighQPSHCPs))
+	c.log.Info("The maximum number of HCPs based on low QPS load per HCP is " + fmt.Sprintf("%d", maxLowQPSHCPs))
+	c.log.Info("The maximum number of HCPs based on medium QPS load per HCP is " + fmt.Sprintf("%d", maxMediumQPSHCPs))
+	c.log.Info("The maximum number of HCPs based on high QPS load per HCP is " + fmt.Sprintf("%d", maxHighQPSHCPs))
 	c.log.Info("The maximum number of HCPs based on average QPS of all existing HCPs is " + fmt.Sprintf("%d", maxAvgQPSHCPs))
 
 	metrics.CapacityOfRequestBasedHCPs.Set(float64(maxHCPs))
