@@ -785,7 +785,11 @@ func (c *agentController) SetHCPSizingBaseline(ctx context.Context) {
 	cmKey := types.NamespacedName{Name: util.HCPSizingBaselineCM, Namespace: c.clusterName}
 	err := c.hubClient.Get(context.TODO(), cmKey, cm)
 	if err != nil {
-		c.log.Error(err, "failed to get configmap from the hub. Setting the HCP sizing baseline with default values.")
+		if apierrors.IsNotFound(err) {
+			c.log.Info("Baseline override configmap hcp-sizing-baseline not found. Setting the HCP sizing baseline with default values.")
+		} else {
+			c.log.Error(err, "failed to get configmap from the hub. Setting the HCP sizing baseline with default values.")
+		}
 	} else {
 		if cm.Data["cpuRequestPerHCP"] != "" {
 			cpuRequestPerHCP, err := strconv.ParseFloat(strings.TrimSpace(cm.Data["cpuRequestPerHCP"]), 64)
