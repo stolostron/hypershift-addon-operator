@@ -179,11 +179,8 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		spokeClient: mgr.GetClient(), spokeClustersClient: spokeClusterClient,
 	}
 
-	aCtrl.prometheusClient, err = newPrometheusClient(ctx, spokeKubeClient)
-	if err != nil {
-		metrics.AddonAgentFailedToStartBool.Set(1)
-		return fmt.Errorf("failed to create prometheus client, err: %w", err)
-	}
+	aCtrl.prometheusClient, _ = newPrometheusClient(ctx, spokeKubeClient)
+	// Failing to initialize the prometheus client should not prevent the agent to start.
 
 	o.Log = o.Log.WithName("agent-reconciler")
 	aCtrl.plugInOption(o)
