@@ -84,30 +84,37 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 	totalHCPQPS := c.hcpSizingBaseline.minimumQPSPerHCP
 	averageHCPQPS := c.hcpSizingBaseline.minimumQPSPerHCP
 	numberOfHCPs := 0.0
-	for _, hcp := range hcpList.Items {
-		queryStr := "sum(rate(apiserver_request_total{namespace=~\"" + hcp.Namespace + "\"}[2m])) by (namespace)"
-		result, warnings, err := c.prometheusClient.Query(context.TODO(), queryStr, time.Now())
-		if err != nil {
-			c.log.Error(err, "failed to query Prometheus")
-			continue
-		}
-		if len(warnings) > 0 {
-			c.log.Info("Warnings in querying Prometheus: %v\n", warnings)
-		}
-
-		for _, sample := range result.(model.Vector) {
-			hcpQPS, err := strconv.ParseFloat(sample.Value.String(), 64)
-			if err == nil {
-				totalHCPQPS += hcpQPS
-			} else {
-				totalHCPQPS += c.hcpSizingBaseline.minimumQPSPerHCP
+	if c.prometheusClient == nil {
+		c.log.Info("Prometheus client is not available. Defaulting the average QPS to the minimum QPS range which " + fmt.Sprintf("%f", c.hcpSizingBaseline.minimumQPSPerHCP))
+	} else {
+		for _, hcp := range hcpList.Items {
+			queryStr := "sum(rate(apiserver_request_total{namespace=~\"" + hcp.Namespace + "\"}[2m])) by (namespace)"
+			result, warnings, err := c.prometheusClient.Query(context.TODO(), queryStr, time.Now())
+			if err != nil {
+				c.log.Error(err, "failed to query Prometheus")
+				continue
 			}
-		}
-		numberOfHCPs++
-	}
+			if len(warnings) > 0 {
+				c.log.Info("Warnings in querying Prometheus: %v\n", warnings)
+			}
 
-	if numberOfHCPs > 0 {
-		averageHCPQPS = totalHCPQPS / numberOfHCPs
+			for _, sample := range result.(model.Vector) {
+				hcpQPS, err := strconv.ParseFloat(sample.Value.String(), 64)
+				if err == nil {
+					totalHCPQPS += hcpQPS
+				} else {
+					totalHCPQPS += c.hcpSizingBaseline.minimumQPSPerHCP
+				}
+			}
+			numberOfHCPs++
+		}
+
+		if numberOfHCPs > 0 {
+			averageHCPQPS = totalHCPQPS / numberOfHCPs
+		}
+
+		c.log.Info(fmt.Sprintf("There are currently %d hosted control planes", int(numberOfHCPs)))
+		c.log.Info("The average QPS of all existing HCPs is " + fmt.Sprintf("%f", averageHCPQPS))
 	}
 
 	c.log.Info(fmt.Sprintf("There are currently %d hosted control planes", int(numberOfHCPs)))
