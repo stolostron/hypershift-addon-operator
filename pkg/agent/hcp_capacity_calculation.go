@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -72,8 +73,12 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 	hcpList := &hyperv1beta1.HostedControlPlaneList{}
 	err := c.spokeUncachedClient.List(context.TODO(), hcpList, listopts)
 	if err != nil {
-		c.log.Error(err, "failed to list hosted control planes")
-		return err
+		if strings.HasPrefix(err.Error(), "no matches for kind") {
+			c.log.Info("No HostedControlPlane kind exists yet.")
+		} else {
+			c.log.Error(err, "failed to list hosted control planes")
+			return err
+		}
 	}
 
 	totalHCPQPS := c.hcpSizingBaseline.minimumQPSPerHCP
