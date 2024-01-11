@@ -15,7 +15,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -111,26 +110,6 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	return ctrl.Result{}, nil
-}
-
-func isAutoImportDisabled() bool {
-	disableAutoImport := os.Getenv("DISABLE_AUTO_IMPORT")
-	if disableAutoImport == "" {
-		return false
-	}
-	os.Setenv("DISABLE_AUTO_IMPORT", "false")
-
-	return strings.EqualFold(disableAutoImport, "true")
-}
-
-// returns string value if flag is found in list, otherwise ""
-func containsFlag(flagToFind string, list []addonv1alpha1.CustomizedVariable) string {
-	for _, flag := range list {
-		if flag.Name == flagToFind {
-			return flag.Value
-		}
-	}
-	return ""
 }
 
 // check if hosted control plane is available
