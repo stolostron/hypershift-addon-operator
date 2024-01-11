@@ -80,6 +80,10 @@ spec:
         - name: RHOBS_MONITORING
           value: "{{ .enableRHOBSMonitoring }}"
 {{- end }}
+{{- if eq .autoImportDisabled "true" }}
+        - name: DISABLE_AUTO_IMPORT
+          value: "{{ .autoImportDisabled }}"
+{{- end }}
 {{- if ne .disableMetrics "true" }}
         ports:
         - name: metrics

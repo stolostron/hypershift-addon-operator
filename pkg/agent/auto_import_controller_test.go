@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -220,11 +221,6 @@ func TestToggleAutoImport(t *testing.T) {
 	assert.Nil(t, err, "err nil when kube-apiserver service is created successfully")
 	defer AICtrl.hubClient.Delete(ctx, apiService)
 
-	// create addondeployment config
-	aodc := getAddonDeploymentConfig(false)
-	err = AICtrl.hubClient.Create(ctx, aodc)
-	assert.Nil(t, err, "err nil when addondeploymentconfig is created successfully")
-
 	// create acm operator
 	acmOperator := operatorv1.Operator{
 		ObjectMeta: metav1.ObjectMeta{Name: acmOperatorNamePrefix + ".ocm"}}
@@ -254,11 +250,7 @@ func TestToggleAutoImport(t *testing.T) {
 	assert.Nil(t, err, "err not nil if klusterletaddonconfig is found")
 
 	// disable auto import
-	AICtrl.hubClient.Delete(ctx, aodc)
-	assert.Nil(t, err, "err  nil if addondeploymentconfig is deleted")
-	aodc = getAddonDeploymentConfig(true)
-	err = AICtrl.hubClient.Create(ctx, aodc) // could just update but too lazy
-	assert.Nil(t, err, "err nil when addondeploymentconfig is updated successfully")
+	os.Setenv("DISABLE_AUTO_IMPORT", "true")
 
 	// create hosted cluster
 	hcDisableNN := types.NamespacedName{Name: "auto-import-disable", Namespace: "clusters"}
@@ -273,6 +265,8 @@ func TestToggleAutoImport(t *testing.T) {
 	err = AICtrl.hubClient.Get(ctx, types.NamespacedName{Name: hcDisableNN.Name}, gotMC)
 	assert.NotNil(t, err, "err not nil if managed cluster is not found")
 
+	// re-enable auto import
+	os.Setenv("DISABLE_AUTO_IMPORT", "false")
 }
 
 func TestHCPUnavailable(t *testing.T) {
