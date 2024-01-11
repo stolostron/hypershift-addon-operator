@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -14,7 +15,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -65,19 +65,8 @@ func (c *AutoImportController) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
-	// check if addon deployment exists
-	autoImportDisabled := false
-	adc := &addonv1alpha1.AddOnDeploymentConfig{}
-	adcNsn := types.NamespacedName{Namespace: "multicluster-engine", Name: addOnDeploymentConfigName}
-	if err := c.spokeClient.Get(ctx, adcNsn, adc); err != nil {
-		c.log.Error(err, fmt.Sprintf("could not get AddonDeploymentConfig (%s/%s)", adcNsn.Name, adcNsn.Namespace))
-	} else {
-		autoImportDisabled = containsFlag("autoImportDisabled", adc.Spec.CustomizedVariables) == "true"
-	}
-
 	// skip auto import if disabled
-	if autoImportDisabled {
+	if strings.EqualFold(os.Getenv("DISABLE_AUTO_IMPORT"), "true") {
 		c.log.Info("auto import is disabled, skip auto importing")
 		return ctrl.Result{}, nil
 	}
@@ -121,16 +110,6 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// returns string value if flag is found in list, otherwise ""
-func containsFlag(flagToFind string, list []addonv1alpha1.CustomizedVariable) string {
-	for _, flag := range list {
-		if flag.Name == flagToFind {
-			return flag.Value
-		}
-	}
-	return ""
 }
 
 // check if hosted control plane is available
