@@ -1,17 +1,8 @@
 # Hypershift Operator Configuration Options
 
-If you run `hypershift install --help` [hypershift CLI](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/installing_hypershift_cli.md) command, you can see the hypershift operator installation flags. For example,
+Hypershift operator installation flags.
 
 ```
-Installs the HyperShift operator
-
-Usage:
-  hypershift install [flags]
-  hypershift install [command]
-
-Available Commands:
-  render      Render HyperShift Operator manifests to stdout
-
 Flags:
       --additional-trust-bundle string                 Path to a file with user CA bundle
       --aws-private-creds string                       Path to an AWS credentials file with privileges sufficient to manage private cluster resources
@@ -46,7 +37,7 @@ Flags:
       --wait-until-available                           If true, pauses installation until hypershift operator has been rolled out and its webhook service is available (if installing the webhook)
 ```
 
-You optionally create some secrets to [configure a hosting cluster](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/provision_hosted_cluster_on_mce_local_cluster.md#configuring-the-hosting-cluster). The hypershift addon agent uses these secrets to build some of these installation flags.
+You can create secrets to [configure a hosting cluster](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/provision_hosted_cluster_on_mce_local_cluster.md#configuring-the-hosting-cluster). The hypershift addon agent uses these secrets to build some of these installation flags.
 
 ## OIDC S3 credentials secret
 
