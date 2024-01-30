@@ -175,8 +175,6 @@ replace (
 	go.opentelemetry.io/otel/sdk/metric => go.opentelemetry.io/otel/sdk/metric v0.20.0 // indirect
 	go.opentelemetry.io/otel/trace => go.opentelemetry.io/otel/trace v0.20.0 // indirect
 	go.opentelemetry.io/proto/otlp => go.opentelemetry.io/proto/otlp v0.7.0 // indirect
-	go.uber.org/atomic => go.uber.org/atomic v1.9.0 // indirect
-	go.uber.org/multierr => go.uber.org/multierr v1.8.0 // indirect
 	kubevirt.io/containerized-data-importer-api => github.com/kubevirt/containerized-data-importer-api v1.41.1-0.20211201033752-05520fb9f18d
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client => sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.0.24
 	sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.0.2
