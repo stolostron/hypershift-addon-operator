@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/zapr"
-	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
 	agent "github.com/stolostron/klusterlet-addon-controller/pkg/apis"
 	agentv1 "github.com/stolostron/klusterlet-addon-controller/pkg/apis/agent/v1"

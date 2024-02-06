@@ -10,7 +10,7 @@ import (
 	"github.com/go-logr/zapr"
 	configv1 "github.com/openshift/api/config/v1"
 	routev1 "github.com/openshift/api/route/v1"
-	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stolostron/hypershift-addon-operator/pkg/install"
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
@@ -864,7 +864,7 @@ func TestInitialAddonStatus(t *testing.T) {
 
 	meta.SetStatusCondition(&addon.Status.Conditions, addonCondition1)
 
-	err = hubclient.Status().Update(ctx, &addon, &client.UpdateOptions{})
+	err = hubclient.Status().Update(ctx, &addon, &client.SubResourceUpdateOptions{})
 	assert.Nil(t, err, "err nil when hypershift-addon ManagedClusterAddOn test condition is set successfully for local-cluster")
 
 	addonStatusController := &AddonStatusController{
