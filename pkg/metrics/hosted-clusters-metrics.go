@@ -32,6 +32,14 @@ var ThresholdNumHostedClustersGauge = prometheus.NewGauge(prometheus.GaugeOpts{
 	Help: "Threshold number of hosted clusters",
 })
 
+var HostedControlPlaneStatusGaugeVec = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "mce_hs_addon_hosted_control_planes_status_gauge",
+		Help: "Number of hosted contol planes with status",
+	},
+	[]string{"hcp_namespace", "hcp_name", "ready", "version"},
+)
+
 func init() {
 	CollectorsForRegistration = append(CollectorsForRegistration,
 		TotalHostedClusterGauge,
@@ -39,5 +47,6 @@ func init() {
 		HostedClusterAvailableGauge,
 		HostedClusterBeingDeletedGauge,
 		MaxNumHostedClustersGauge,
-		ThresholdNumHostedClustersGauge)
+		ThresholdNumHostedClustersGauge,
+		HostedControlPlaneStatusGaugeVec)
 }

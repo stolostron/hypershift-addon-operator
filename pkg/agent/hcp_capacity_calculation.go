@@ -81,6 +81,11 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 		}
 	}
 
+	metrics.QPSValues.WithLabelValues("average").Set(1)
+	metrics.QPSValues.WithLabelValues("low").Set(c.hcpSizingBaseline.minimumQPSPerHCP)
+	metrics.QPSValues.WithLabelValues("medium").Set(c.hcpSizingBaseline.mediumQPSPerHCP)
+	metrics.QPSValues.WithLabelValues("high").Set(c.hcpSizingBaseline.highQPSPerHCP)
+
 	totalHCPQPS := c.hcpSizingBaseline.minimumQPSPerHCP
 	averageHCPQPS := c.hcpSizingBaseline.minimumQPSPerHCP
 	numberOfHCPs := 0.0
@@ -88,32 +93,36 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 		c.log.Info("Prometheus client is not available. Defaulting the average QPS to the minimum QPS range which " + fmt.Sprintf("%f", c.hcpSizingBaseline.minimumQPSPerHCP))
 	} else {
 		for _, hcp := range hcpList.Items {
-			queryStr := "sum(rate(apiserver_request_total{namespace=~\"" + hcp.Namespace + "\"}[2m])) by (namespace)"
-			result, warnings, err := c.prometheusClient.Query(context.TODO(), queryStr, time.Now())
-			if err != nil {
-				c.log.Error(err, "failed to query Prometheus")
-				continue
-			}
-			if len(warnings) > 0 {
-				c.log.Info("Warnings in querying Prometheus: %v\n", warnings)
-			}
-
-			for _, sample := range result.(model.Vector) {
-				hcpQPS, err := strconv.ParseFloat(sample.Value.String(), 64)
-				if err == nil {
-					totalHCPQPS += hcpQPS
-				} else {
-					totalHCPQPS += c.hcpSizingBaseline.minimumQPSPerHCP
+			if hcp.Status.Ready { // For calcucalting the average QPS, consider HCPs with ready state only
+				queryStr := "sum(rate(apiserver_request_total{namespace=~\"" + hcp.Namespace + "\"}[2m])) by (namespace)"
+				result, warnings, err := c.prometheusClient.Query(context.TODO(), queryStr, time.Now())
+				if err != nil {
+					c.log.Error(err, "failed to query Prometheus")
+					continue
 				}
+				if len(warnings) > 0 {
+					c.log.Info("Warnings in querying Prometheus: %v\n", warnings)
+				}
+
+				for _, sample := range result.(model.Vector) {
+					hcpQPS, err := strconv.ParseFloat(sample.Value.String(), 64)
+					if err == nil {
+						totalHCPQPS += hcpQPS
+					} else {
+						totalHCPQPS += c.hcpSizingBaseline.minimumQPSPerHCP
+					}
+				}
+				numberOfHCPs++
 			}
-			numberOfHCPs++
 		}
 
 		if numberOfHCPs > 0 {
 			averageHCPQPS = totalHCPQPS / numberOfHCPs
 		}
 
-		c.log.Info(fmt.Sprintf("There are currently %d hosted control planes", int(numberOfHCPs)))
+		metrics.QPSValues.WithLabelValues("average").Set(averageHCPQPS)
+
+		c.log.Info(fmt.Sprintf("There are currently %d hosted control planes with ready status", int(numberOfHCPs)))
 		c.log.Info("The average QPS of all existing HCPs is " + fmt.Sprintf("%f", averageHCPQPS))
 	}
 
@@ -146,6 +155,13 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 		totalWorkerCPU += node.Status.Capacity.Cpu().AsApproximateFloat64()
 		totalWorkerMemory += node.Status.Capacity.Memory().AsApproximateFloat64()
 		totalWorkerPods += node.Status.Capacity.Pods().AsApproximateFloat64()
+
+		nodeMemInGB := node.Status.Capacity.Memory().AsApproximateFloat64() / float64(size.Gigabyte)
+
+		metrics.WorkerNodeResourceCapacities.WithLabelValues(node.Name,
+			fmt.Sprintf("%.2f", node.Status.Capacity.Cpu().AsApproximateFloat64()),
+			fmt.Sprintf("%.2f", nodeMemInGB),
+			node.Status.Capacity.Pods().String()).Set(1)
 	}
 
 	totalWorkerMemory = totalWorkerMemory / float64(size.Gigabyte)
@@ -177,11 +193,16 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 	c.log.Info("The maximum number of HCPs based on high QPS load per HCP is " + fmt.Sprintf("%d", maxHighQPSHCPs))
 	c.log.Info("The maximum number of HCPs based on average QPS of all existing HCPs is " + fmt.Sprintf("%d", maxAvgQPSHCPs))
 
+	metrics.CapacityOfQPSBasedHCPs.Reset()
+
 	metrics.CapacityOfRequestBasedHCPs.Set(float64(maxHCPs))
 	metrics.CapacityOfLowQPSHCPs.Set(float64(maxLowQPSHCPs))
 	metrics.CapacityOfMediumQPSHCPs.Set(float64(maxMediumQPSHCPs))
 	metrics.CapacityOfHighQPSHCPs.Set(float64(maxHighQPSHCPs))
 	metrics.CapacityOfAverageQPSHCPs.Set(float64(maxAvgQPSHCPs))
-
+	metrics.CapacityOfQPSBasedHCPs.WithLabelValues("high").Set(float64(maxHighQPSHCPs))
+	metrics.CapacityOfQPSBasedHCPs.WithLabelValues("medium").Set(float64(maxMediumQPSHCPs))
+	metrics.CapacityOfQPSBasedHCPs.WithLabelValues("low").Set(float64(maxLowQPSHCPs))
+	metrics.CapacityOfQPSBasedHCPs.WithLabelValues("average").Set(float64(maxAvgQPSHCPs))
 	return nil
 }
