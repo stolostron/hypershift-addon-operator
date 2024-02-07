@@ -447,6 +447,90 @@ kind: Config`)
 	assert.True(t, err != nil && errors.IsNotFound(err), "is nil when the kubeadmin password secret is deleted")
 }
 
+func TestGenerateHCPMetrics(t *testing.T) {
+	ctx := context.Background()
+	client := initClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	fakeClusterCS := clustercsfake.NewSimpleClientset()
+
+	aCtrl := &agentController{
+		spokeClustersClient:         fakeClusterCS,
+		spokeUncachedClient:         client,
+		spokeClient:                 client,
+		hubClient:                   client,
+		log:                         zapr.NewLogger(zapLog),
+		maxHostedClusterCount:       5,
+		thresholdHostedClusterCount: 3,
+	}
+
+	availableHCP := &hyperv1beta1.HostedControlPlane{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "HostedControlPlane",
+			APIVersion: "hypershift.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp1",
+			Namespace: "hcp1",
+		},
+		Spec: hyperv1beta1.HostedControlPlaneSpec{
+			Platform: hyperv1beta1.PlatformSpec{
+				Type: hyperv1beta1.AWSPlatform,
+			},
+			Networking: hyperv1beta1.ClusterNetworking{
+				NetworkType: hyperv1beta1.OpenShiftSDN,
+			},
+			Services: []hyperv1beta1.ServicePublishingStrategyMapping{},
+			Etcd: hyperv1beta1.EtcdSpec{
+				ManagementType: hyperv1beta1.Managed,
+			},
+			InfraID: "hcp1-abcdef",
+		},
+		Status: hyperv1beta1.HostedControlPlaneStatus{
+			Ready:   true,
+			Version: "4.14.0",
+		},
+	}
+
+	unavailableHCP := &hyperv1beta1.HostedControlPlane{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "HostedControlPlane",
+			APIVersion: "hypershift.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hcp2",
+			Namespace: "hcp2",
+		},
+		Spec: hyperv1beta1.HostedControlPlaneSpec{
+			Platform: hyperv1beta1.PlatformSpec{
+				Type: hyperv1beta1.AWSPlatform,
+			},
+			Networking: hyperv1beta1.ClusterNetworking{
+				NetworkType: hyperv1beta1.OpenShiftSDN,
+			},
+			Services: []hyperv1beta1.ServicePublishingStrategyMapping{},
+			Etcd: hyperv1beta1.EtcdSpec{
+				ManagementType: hyperv1beta1.Managed,
+			},
+			InfraID: "hcp1-abcdef",
+		},
+		Status: hyperv1beta1.HostedControlPlaneStatus{
+			Ready:   false,
+			Version: "4.14.3",
+		},
+	}
+
+	err := aCtrl.spokeUncachedClient.Create(ctx, availableHCP)
+	assert.Nil(t, err, "err nil when hosted control plane hcp1 is created successfully")
+
+	err = aCtrl.spokeUncachedClient.Create(ctx, unavailableHCP)
+	assert.Nil(t, err, "err nil when hosted control plane hcp2 is created successfully")
+
+	aCtrl.GenerateHCPMetrics(ctx)
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.HostedControlPlaneStatusGaugeVec.WithLabelValues("hcp1", "hcp1", "true", "4.14.0")))
+	assert.Equal(t, float64(1), testutil.ToFloat64(metrics.HostedControlPlaneStatusGaugeVec.WithLabelValues("hcp2", "hcp2", "false", "4.14.3")))
+}
+
 func TestHostedClusterCount(t *testing.T) {
 	ctx := context.Background()
 	client := initClient()
