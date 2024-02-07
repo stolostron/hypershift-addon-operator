@@ -539,6 +539,9 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	c.log.Info(fmt.Sprintf("Reconciling hostedcluster secrect %s", req))
 	defer c.log.Info(fmt.Sprintf("Done reconcile hostedcluster secrect %s", req))
 
+	// Generate metrics about existing hosted control planes
+	c.GenerateHCPMetrics(ctx)
+
 	// Update the AddOnPlacementScore resource, requeue reconcile if error occurred
 	metrics.TotalReconcileCount.Inc() // increase reconcile action count
 	if err := c.SyncAddOnPlacementScore(ctx, false); err != nil {
@@ -880,6 +883,27 @@ func (c *agentController) SetHCPSizingBaseline(ctx context.Context) {
 		}
 	}
 	c.hcpSizingBaseline = *hcpSizingBaseline
+}
+
+func (c *agentController) GenerateHCPMetrics(ctx context.Context) {
+	listopts := &client.ListOptions{}
+	hcpList := &hyperv1beta1.HostedControlPlaneList{}
+	err := c.spokeUncachedClient.List(context.TODO(), hcpList, listopts)
+	if err != nil {
+		c.log.Error(err, "failed to get HostedControlPlane list")
+		return
+	}
+
+	metrics.HostedControlPlaneStatusGaugeVec.Reset()
+	metrics.HostedControlPlaneStatusGaugeVec.WithLabelValues("", "", "true", "").Set(0)  // Set available HCP count to 0
+	metrics.HostedControlPlaneStatusGaugeVec.WithLabelValues("", "", "false", "").Set(0) // Set unavailable HCP count to 0
+	for _, hcp := range hcpList.Items {
+		ready := "false"
+		if hcp.Status.Ready {
+			ready = "true"
+		}
+		metrics.HostedControlPlaneStatusGaugeVec.WithLabelValues(hcp.Namespace, hcp.Name, ready, hcp.Status.Version).Inc()
+	}
 }
 
 func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup bool) error {
