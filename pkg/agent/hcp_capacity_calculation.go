@@ -193,12 +193,9 @@ func (c *agentController) calculateCapacitiesToHostHCPs() error {
 	c.log.Info("The maximum number of HCPs based on high QPS load per HCP is " + fmt.Sprintf("%d", maxHighQPSHCPs))
 	c.log.Info("The maximum number of HCPs based on average QPS of all existing HCPs is " + fmt.Sprintf("%d", maxAvgQPSHCPs))
 
-	metrics.CurrentCapacityOfRequestBasedHCPs.Reset()
 	metrics.CapacityOfQPSBasedHCPs.Reset()
 
 	metrics.CapacityOfRequestBasedHCPs.Set(float64(maxHCPs))
-	metrics.CurrentCapacityOfRequestBasedHCPs.WithLabelValues("current").Set(numberOfHCPs)
-	metrics.CurrentCapacityOfRequestBasedHCPs.WithLabelValues("reqBased").Set(float64(maxHCPs))
 	metrics.CapacityOfLowQPSHCPs.Set(float64(maxLowQPSHCPs))
 	metrics.CapacityOfMediumQPSHCPs.Set(float64(maxMediumQPSHCPs))
 	metrics.CapacityOfHighQPSHCPs.Set(float64(maxHighQPSHCPs))
