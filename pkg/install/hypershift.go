@@ -25,7 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	imageapi "github.com/openshift/api/image/v1"
-	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"

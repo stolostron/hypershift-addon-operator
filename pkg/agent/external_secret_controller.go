@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
-	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 
 	operatorapiv1 "open-cluster-management.io/api/operator/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
