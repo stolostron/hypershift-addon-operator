@@ -192,6 +192,11 @@ It is recommended that the passive cluster has identical set of operators and ot
       $ oc get managedcluster   
 ```
 
+## Backup and restore hosted cluster
+
+Before failing over to another service cluster to restore ACM, you also need to backup and store hosted clusters. Follow this [doc](https://docs.openshift.com/container-platform/4.15/hosted_control_planes/hcp-backup-restore-dr.html).
+
+
 ## Fail over to the passive service cluster
 
 1. Completely shutdown the active service cluster.
