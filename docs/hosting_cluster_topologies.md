@@ -6,6 +6,9 @@ This document describes various ways to deploy hosted clusters on a single or mu
 
 This is the default hosting cluster topology where MCE hub cluster is the only hosting cluster for all hosted control planes. 
 
+<img width="450" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/019242d5-9ada-4a28-bfeb-549b0f47571a">
+
+
 When MCE is installed and MultiClusterEngine instance is created, it auto-enables the following components.
 
 ```
@@ -100,12 +103,19 @@ local-cluster-hcp-1     true           https://a80d68b28cf0d4314aef0b193fd75587-
 
 To delete the hosted cluster, detach the managed cluster first by running `oc delete managedcluster local-cluster-hcp-1` and then `hcp destroy cluster`.
 
+### Scaling option
+
+Since all hosted control planes will be running on the hub cluster's nodes, the number of hosted control planes the cluster can host is determined by the resource availability of the nodes. You can add more nodes to host more hosted control planes.
+
+
 ## MCE managed (AKA spoke, leaf) OCP cluster as a hosting cluster
 
 Clusters in this scenario:
 
 - MCE cluster
 - OCP cluster that is imported into MCE as a managed cluster
+
+<img width="534" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/1cc46a6a-b52f-4c4c-98ca-6bb6f4f2e870">
 
 This is a topology where your MCE hub cluster has one or more remote managed OCP clusters and you want to have hosted control planes in those clusters instead of or on top of having hosted control planes in the hub cluster. Unlike how the `hypershift-addon` managed cluster addon is automatically enabled for `local-cluster` in the default topology described above, this topology requires you to enable the `hypershift-addon` managed cluster addon manually for the remote managed cluster.
 
@@ -119,6 +129,10 @@ managed-ocp-cluster-1   true           https://api.app-aws-east2-414-hub-lmwbw.d
 ```
 
 Enable the `hypershift-addon` managed cluster addon for `managed-ocp-cluster-1` managed cluster so that the addon agent installs the hypershift operator in `managed-ocp-cluster-1` to make it a hosting cluster. There are a couple of ways to enable the addon.
+
+### Scaling option
+
+Since the hosted control planes run on the managed OCP clusters' nodes, the number of hosted control planes the cluster can host is determined by the resource availability of managed OCP clusters' nodes as well as the number of managed OCP clusters. You can add more nodes or managed clusters to host more hosted control planes.
 
 ### Enable the addon by using clusteradm CLI
 
@@ -227,7 +241,13 @@ Clusters in this topology:
 - ACM or MCE cluster as a hub cluster
 - One ore more MCE clusters as managed clusters
 
+<img width="532" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/55b83d78-7172-4434-bef5-9deec75c23f5">
+
 In the previous topology, the managed clusters are vanilla OCP clusters and we turned them into hosting clusters by enabling the hypershift addon. In this topology, the managed clusters are MCE clusters. One of the reasons why you want managed clusters to be MCE clusters instead of vanilla OCP is that MCE installs other operators like hive and BareMetal infrastructure operators that you can take advantage of.
+
+### Scaling option
+
+Since the hosted control planes run on the managed MCE clusters' nodes, the number of hosted control planes the cluster can host is determined by the resource availability of managed MCE clusters' nodes as well as the number of managed MCE clusters. You can add more nodes or managed clusters to host more hosted control planes.
 
 ### Importing an MCE cluster into ACM
 
