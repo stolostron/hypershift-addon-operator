@@ -78,3 +78,6 @@ rules:
   - apiGroups: ["route.openshift.io"]
     resources: ["routes"]
     verbs: ["get", "list"]
+  - apiGroups: [ "scheduling.hypershift.openshift.io" ]
+    resources: [ "*" ]
+    verbs: [ "*" ]
