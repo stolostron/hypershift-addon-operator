@@ -220,9 +220,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		oidcBucket = false
 	}
 
-	// cache the bucket secret for comparison againt the hub's to detect any change
-	c.bucketSecret = *se
-
 	//Attempt to retrieve private link creds
 	privateSecretKey := types.NamespacedName{Name: util.HypershiftPrivateLinkSecretName, Namespace: c.clusterName}
 	spl := &corev1.Secret{}
@@ -231,8 +228,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 
 		privateLinkCreds = false
 	}
-	// cache the private link secret for comparison againt the hub's to detect any change
-	c.privateLinkSecret = *spl
 
 	//Platform is aws if either secret exists
 	awsPlatform = oidcBucket || privateLinkCreds
@@ -253,9 +248,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			return fmt.Errorf("hypershift-operator-oidc-provider-s3-credentials does not contain a bucket key")
 		}
 
-		if err := c.createAwsSpokeSecret(ctx, se, true); err != nil {
-			return err
-		}
 		c.log.Info("oidc s3 bucket, region & credential arguments included")
 		awsArgs := []string{
 			"--oidc-storage-provider-s3-bucket-name", bucketName,
@@ -270,9 +262,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	}
 
 	if privateLinkCreds { // if private link credentials is found, install hypershift with private secret options
-		if err := c.createAwsSpokeSecret(ctx, spl, true); err != nil {
-			return err
-		}
 		c.log.Info("private link region & credential arguments included")
 		awsArgs := []string{
 			"--aws-private-secret", util.HypershiftPrivateLinkSecretName,
@@ -287,17 +276,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	extDNSSecretKey := types.NamespacedName{Name: util.HypershiftExternalDNSSecretName, Namespace: c.clusterName}
 	sExtDNS := &corev1.Secret{}
 	if err := c.hubClient.Get(ctx, extDNSSecretKey, sExtDNS); err == nil {
-		if awsPlatform {
-			// For AWS DNS provider, users can specify either credentials or
-			// aws-access-key-id and aws-secret-access-key
-			if err := c.createAwsSpokeSecret(ctx, sExtDNS, false); err != nil {
-				return err
-			}
-		} else {
-			if err := c.createSpokeSecret(ctx, sExtDNS); err != nil {
-				return err
-			}
-		}
 
 		c.log.Info("external dns provider & domain-filter arguments included")
 		awsArgs := []string{
@@ -312,9 +290,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	} else {
 		c.log.Info(fmt.Sprintf("external dns secret(%s) was not found", extDNSSecretKey))
 	}
-
-	// cache the external DNS secret for comparison againt the hub's to detect any change
-	c.extDnsSecret = *sExtDNS
 
 	// Get the hypershift operator installation flags configmap from the hub
 	installFlagsCM, _ := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
@@ -334,15 +309,11 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		args = append(args, "--image-refs", filepath.Join(os.TempDir(), util.HypershiftDownstreamOverride))
 
 		// compare installed operator images to the new image stream
-		// compare locally saved secrets to the hub secrets as well
 		// If they are the same, skip re-install.
 		if reinstallCheckRequired &&
 			!(c.operatorImagesUpdated(im, *operatorDeployment) ||
-				c.secretDataUpdated(util.HypershiftBucketSecretName, *se) ||
-				c.secretDataUpdated(util.HypershiftPrivateLinkSecretName, *spl) ||
-				c.secretDataUpdated(util.HypershiftExternalDNSSecretName, *sExtDNS) ||
 				c.configmapDataUpdated(util.HypershiftInstallFlagsCM, installFlagsCM)) {
-			c.log.Info("no change in hypershift operator images, secrets and install flags, skipping hypershift operator installation")
+			c.log.Info("no change in hypershift operator images and install flags, skipping hypershift operator installation")
 			return nil
 		}
 	} else {
@@ -391,16 +362,6 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	// since the last successful installation
 	metrics.InstallationOrUpgradeFailedCount.Set(0)
 
-	// Upon successful installation, save the secrets locally to check any changes on addon restart
-	if err := c.saveSecretLocally(ctx, se); err != nil { // S3 bucket secret
-		return err
-	}
-	if err := c.saveSecretLocally(ctx, spl); err != nil { // private link secret
-		return err
-	}
-	if err := c.saveSecretLocally(ctx, sExtDNS); err != nil { // external DNS secret
-		return err
-	}
 	if err := c.saveConfigmapLocally(ctx, &installFlagsCM); err != nil { // hypershift operator installation flags
 		return err
 	}
@@ -519,7 +480,8 @@ func getParamValue(s []string, e string) string {
 	return ""
 }
 
-func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret, regionRequired bool) error {
+func (c *UpgradeController) createOrUpdateAwsSpokeSecret(
+	ctx context.Context, hubSecret *corev1.Secret, regionRequired bool) error {
 	spokeSecret := hubSecret.DeepCopy()
 
 	region := hubSecret.Data["region"]
@@ -533,10 +495,10 @@ func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret 
 		}
 	}
 
-	return c.createSpokeSecret(ctx, spokeSecret)
+	return c.createOrUpdateSpokeSecret(ctx, spokeSecret)
 }
 
-func (c *UpgradeController) createSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
+func (c *UpgradeController) createOrUpdateSpokeSecret(ctx context.Context, hubSecret *corev1.Secret) error {
 
 	spokeSecret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
@@ -554,24 +516,6 @@ func (c *UpgradeController) createSpokeSecret(ctx context.Context, hubSecret *co
 	})
 
 	return err
-}
-
-func (c *UpgradeController) saveSecretLocally(ctx context.Context, hubSecret *corev1.Secret) error {
-	if hubSecret.Name != "" {
-		spokeSecret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      hubSecret.Name,
-				Namespace: c.addonNamespace,
-			},
-		}
-		c.log.Info(fmt.Sprintf("save the secret (%s/%s) locally on cluster %s", c.addonNamespace, hubSecret.Name, c.clusterName))
-		_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeSecret, func() error {
-			spokeSecret.Data = hubSecret.Data
-			return nil
-		})
-		return err
-	}
-	return nil
 }
 
 func (c *UpgradeController) saveConfigmapLocally(ctx context.Context, hubConfigmap *corev1.ConfigMap) error {
@@ -848,22 +792,6 @@ func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
 		}
 	}
 	return ""
-}
-
-func (c *UpgradeController) secretDataUpdated(secretName string, secret corev1.Secret) bool {
-	c.log.Info(fmt.Sprintf("comparing hypershift operator installation secret(%s) to the locally saved secret", secretName))
-	secretKey := types.NamespacedName{Name: secretName, Namespace: c.addonNamespace}
-	localSecret := &corev1.Secret{}
-	if err := c.spokeUncachedClient.Get(context.TODO(), secretKey, localSecret); err != nil && !apierrors.IsNotFound(err) {
-		c.log.Error(err, "failed to find secret:") // just log and continue
-	}
-
-	if !reflect.DeepEqual(localSecret.Data, secret.Data) { // compare only the secret data
-		c.log.Info("the secret has changed")
-		return true
-	}
-
-	return false
 }
 
 func (c *UpgradeController) configmapDataUpdated(cmName string, cm corev1.ConfigMap) bool {

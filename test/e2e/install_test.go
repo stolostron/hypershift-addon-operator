@@ -62,7 +62,11 @@ func createOIDCProviderSecret(ctx context.Context, client kubernetes.Interface, 
 
 func deleteOIDCProviderSecret(ctx context.Context, client kubernetes.Interface, namespace string) error {
 	ginkgo.By(fmt.Sprintf("Delete  hypershift OIDC provider secret for %s", namespace))
-	return client.CoreV1().Secrets(namespace).Delete(ctx, "hypershift-operator-oidc-provider-s3-credentials", metav1.DeleteOptions{})
+	if err := client.CoreV1().Secrets(namespace).Delete(ctx, "hypershift-operator-oidc-provider-s3-credentials", metav1.DeleteOptions{}); err != nil {
+		ginkgo.By(fmt.Sprintf("Error deleting oidc credentials: %v", err.Error()))
+		return err
+	} 
+	return nil 
 }
 
 func getPodLogs(pod *corev1.Pod, container string) (string, error) {
@@ -179,7 +183,7 @@ var _ = ginkgo.Describe("Install", func() {
 					for _, p := range podList.Items {
 						if strings.HasPrefix(p.Name, "hypershift-addon-agent") {
 							addonAgentPod = &p
-							ginkgo.By("Found addon agent pod" + p.Name)
+							ginkgo.By("Found addon agent pod " + p.Name)
 
 							break
 						}
