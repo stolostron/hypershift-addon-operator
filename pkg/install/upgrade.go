@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -11,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -40,6 +42,11 @@ type UpgradeController struct {
 	awsPlatform               bool // this is used only for code test
 	startup                   bool //
 	installfailed             bool // previous installation failed - retry needed on next attempt
+}
+
+type argObject struct {
+	name string
+	args []string // The args that should exists if the object exists
 }
 
 func NewUpgradeController(hubClient, spokeClient client.Client, logger logr.Logger, addonName, addonNamespace, clusterName, operatorImage,
@@ -123,6 +130,22 @@ func (c *UpgradeController) installOptionsChanged() bool {
 		c.installFlagsConfigmap = newInstallFlagsCM // save the new configmap for the next cycle of comparison
 		return true
 	}
+	var expectArgs = []argObject{
+		{
+			name: util.HypershiftBucketSecretName,
+			args: []string{"--oidc-storage-provider-s3-bucket-name",
+				"--oidc-storage-provider-s3-region",
+				"--oidc-storage-provider-s3-credentials"},
+		},
+		{
+			name: util.HypershiftPrivateLinkSecretName,
+			args: []string{"--private-platform=AWS"},
+		},
+	}
+	operatorDeployment, err := c.getDeployment()
+	if err == nil && c.operatorArgMismatch(operatorDeployment, expectArgs) {
+		return true
+	}
 
 	return false
 }
@@ -173,5 +196,53 @@ func (c *UpgradeController) configmapDataChanged(oldCM, newCM corev1.ConfigMap, 
 		c.log.Info(fmt.Sprintf("the configmap(%s) has changed", cmName))
 		return true
 	}
+	return false
+}
+
+func (c *UpgradeController) getDeployment() (appsv1.Deployment, error) {
+	deployment := &appsv1.Deployment{}
+	nsn := types.NamespacedName{Namespace: util.HypershiftOperatorNamespace, Name: util.HypershiftOperatorName}
+	err := c.spokeUncachedClient.Get(c.ctx, nsn, deployment)
+	if err != nil {
+		c.log.Error(err, "failed to get operater deployment: ")
+		return *deployment, err
+	}
+
+	return *deployment, nil
+}
+
+func (c *UpgradeController) operatorArgMismatch(dep appsv1.Deployment, mismatched []argObject) bool {
+
+	for i := range mismatched {
+		objExists := false
+		current := mismatched[i]
+		nsn := types.NamespacedName{Name: current.name, Namespace: c.clusterName}
+
+		secretObj := &corev1.Secret{}
+		if err := c.hubClient.Get(c.ctx, nsn, secretObj); err == nil {
+			objExists = true
+		}
+
+		//Check for args
+		args := dep.Spec.Template.Spec.Containers[0].Args
+		presentArgs := 0
+
+		for i := range current.args {
+			for j := range args {
+				if strings.Contains(args[j], current.args[i]) {
+					presentArgs++
+					break
+				}
+			}
+		}
+
+		// if object exists all related args should exist, otherwise no related args should exist
+		if objExists && presentArgs != len(current.args) || !objExists && presentArgs > 0 {
+			c.log.Info("hypershift operator has argument mismatch, reinstalling operator")
+			return true
+		}
+
+	}
+
 	return false
 }
