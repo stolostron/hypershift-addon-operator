@@ -10,7 +10,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"go.withmatt.com/size"
 	corev1 "k8s.io/api/core/v1"
