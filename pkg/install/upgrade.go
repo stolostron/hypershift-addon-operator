@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -11,6 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 
@@ -124,6 +126,11 @@ func (c *UpgradeController) installOptionsChanged() bool {
 		return true
 	}
 
+	// check for changes in hypershift operator deployment arguments
+	operatorDeployment, err := c.getDeployment()
+	if err == nil && c.operatorArgMismatch(operatorDeployment) {
+		return true
+	}
 	return false
 }
 
@@ -174,4 +181,43 @@ func (c *UpgradeController) configmapDataChanged(oldCM, newCM corev1.ConfigMap, 
 		return true
 	}
 	return false
+}
+
+func (c *UpgradeController) getDeployment() (appsv1.Deployment, error) {
+	deployment := &appsv1.Deployment{}
+	nsn := types.NamespacedName{Namespace: util.HypershiftOperatorNamespace, Name: util.HypershiftOperatorName}
+	err := c.spokeUncachedClient.Get(c.ctx, nsn, deployment)
+	if err != nil {
+		c.log.Error(err, "failed to get operater deployment: ")
+		return *deployment, err
+	}
+
+	return *deployment, nil
+}
+
+func (c *UpgradeController) operatorArgMismatch(dep appsv1.Deployment) bool {
+	//If secret exists but operator does not have secret args, add secret args to deployment
+
+	//Attempt to retrieve oidc bucket secret
+	oidcExists := false
+	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.clusterName}
+	se := &corev1.Secret{}
+	if err := c.hubClient.Get(c.ctx, bucketSecretKey, se); err == nil {
+		oidcExists = true
+	} else {
+		return false
+	}
+
+	args := dep.Spec.Template.Spec.Containers[0].Args
+	oidcArgExists := false
+	for arg := range args {
+		if strings.Contains(args[arg], "--oidc-storage-provider-s3-bucket-name") {
+			oidcArgExists = true
+			break
+		}
+	}
+	if oidcExists != oidcArgExists {
+		c.log.Info("hypershift operator has mismatch with oidc secrets, reinstalling operator")
+	}
+	return oidcExists != oidcArgExists
 }
