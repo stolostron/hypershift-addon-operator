@@ -996,7 +996,8 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 	mc := &clusterv1.ManagedCluster{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "c1",
+			Name:        "c1",
+			Annotations: map[string]string{"import.open-cluster-management.io/klusterlet-deploy-mode": "Hosted"},
 		},
 		Spec: clusterv1.ManagedClusterSpec{
 			HubAcceptsClient:     false,
@@ -1009,7 +1010,8 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 	mc2 := &clusterv1.ManagedCluster{
 		TypeMeta: metav1.TypeMeta{},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "hc-3",
+			Name:        "hc-3",
+			Annotations: map[string]string{"import.open-cluster-management.io/klusterlet-deploy-mode": "Hosted"},
 		},
 		Spec: clusterv1.ManagedClusterSpec{
 			HubAcceptsClient:     false,
@@ -1017,6 +1019,34 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 		},
 	}
 	err = client.Create(ctx, mc2)
+	assert.Nil(t, err, "err nil when managedcluster is created successfully")
+
+	hiveMc := &clusterv1.ManagedCluster{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "hc-4",
+			Annotations: map[string]string{"open-cluster-management/created-via": "hive"},
+		},
+		Spec: clusterv1.ManagedClusterSpec{
+			HubAcceptsClient:     false,
+			LeaseDurationSeconds: 0,
+		},
+	}
+	err = client.Create(ctx, hiveMc)
+	assert.Nil(t, err, "err nil when managedcluster is created successfully")
+
+	notHCMc := &clusterv1.ManagedCluster{
+		TypeMeta: metav1.TypeMeta{},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "hc-5",
+			Annotations: map[string]string{"import.open-cluster-management.io/klusterlet-deploy-mode": "other"},
+		},
+		Spec: clusterv1.ManagedClusterSpec{
+			HubAcceptsClient:     false,
+			LeaseDurationSeconds: 0,
+		},
+	}
+	err = client.Create(ctx, notHCMc)
 	assert.Nil(t, err, "err nil when managedcluster is created successfully")
 
 	hcNN := types.NamespacedName{Name: "hc-1", Namespace: "clusters"}
@@ -1034,6 +1064,16 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 	hcNoKlusterlet := getHostedCluster(hcNN3)
 	hcNoKlusterlet.Annotations = map[string]string{util.ManagedClusterAnnoKey: "hc-3"}
 	err = client.Create(ctx, hcNoKlusterlet)
+	assert.Nil(t, err, "err nil when hostedcluster is created successfully")
+
+	hcNN4 := types.NamespacedName{Name: "hc-4", Namespace: "clusters"}
+	hc4 := getHostedCluster(hcNN4)
+	err = client.Create(ctx, hc4)
+	assert.Nil(t, err, "err nil when hostedcluster is created successfully")
+
+	hcNN5 := types.NamespacedName{Name: "hc-5", Namespace: "clusters"}
+	hc5 := getHostedCluster(hcNN5)
+	err = client.Create(ctx, hc5)
 	assert.Nil(t, err, "err nil when hostedcluster is created successfully")
 
 	aCtrl := &agentController{
@@ -1103,6 +1143,44 @@ func Test_agentController_deleteManagedCluster(t *testing.T) {
 				assert.Nil(t, err, "err nil if klusterlet is found")
 				hasFinalizer := controllerutil.ContainsFinalizer(gotKl, "operator.open-cluster-management.io/klusterlet-hosted-cleanup")
 				assert.False(t, hasFinalizer, "false if finalizer is removed")
+			}
+		})
+	}
+
+	tests2 := []struct {
+		name    string
+		hc      *hyperv1beta1.HostedCluster
+		mc      *clusterv1.ManagedCluster
+		k       *operatorapiv1.Klusterlet
+		wantErr bool
+	}{
+		{
+			name:    "Delete hosted cluster that has the same name as a hive cluster managed cluster",
+			hc:      hc4,
+			mc:      hiveMc,
+			wantErr: false,
+		},
+		{
+			name:    "Delete hosted cluster that has the same name as some other managed cluster that is not hosted cluster",
+			hc:      hc4,
+			mc:      notHCMc,
+			wantErr: false,
+		},
+	}
+	for _, tt := range tests2 {
+		t.Run(tt.name, func(t *testing.T) {
+			if err := aCtrl.deleteManagedCluster(ctx, tt.hc); (err != nil) != tt.wantErr {
+				t.Errorf("agentController.deleteManagedCluster() error = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if tt.mc != nil {
+				gotMc := &clusterv1.ManagedCluster{}
+				err = client.Get(ctx, types.NamespacedName{Name: tt.mc.Name, Namespace: tt.mc.Namespace}, gotMc)
+
+				// Managed cluster is NOT deleted
+				assert.Nil(t, err, "managed cluster is found")
+				assert.NotEmpty(t, gotMc, "managed cluster is found")
+				//assert.True(t, apierrors.IsNotFound(err), "true if error is type IsNotFound")
 			}
 		})
 	}

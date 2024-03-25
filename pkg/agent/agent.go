@@ -1066,12 +1066,18 @@ func (c *agentController) deleteManagedCluster(ctx context.Context, hc *hyperv1b
 	}
 
 	if mc != nil {
-		if err := c.hubClient.Delete(ctx, mc); err != nil {
-			c.log.Info(fmt.Sprintf("failed to delete the managedCluster %v", managedClusterName))
-			return err
-		}
+		createdVia, _ := mc.GetAnnotations()["open-cluster-management/created-via"]
+		deployMode, _ := mc.GetAnnotations()["import.open-cluster-management.io/klusterlet-deploy-mode"]
+		if createdVia == "hive" || deployMode != "Hosted" {
+			c.log.Info(fmt.Sprintf("The managed cluster %v is not a hosted cluster. It will not be deleted.", managedClusterName))
+		} else {
+			if err := c.hubClient.Delete(ctx, mc); err != nil {
+				c.log.Info(fmt.Sprintf("failed to delete the managedCluster %v", managedClusterName))
+				return err
+			}
 
-		c.log.Info(fmt.Sprintf("deleted managedCluster %v", managedClusterName))
+			c.log.Info(fmt.Sprintf("deleted managedCluster %v", managedClusterName))
+		}
 	}
 
 	klusterletName := "klusterlet-" + managedClusterName
