@@ -2,6 +2,8 @@ package manager
 
 import (
 	"context"
+	"log"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -13,27 +15,93 @@ import (
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	mcev1 "github.com/stolostron/backplane-operator/api/v1"
-	"github.com/stretchr/testify/assert"
+	"github.com/stolostron/klusterlet-addon-controller/pkg/apis"
+	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	schemes "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/envtest"
 )
 
-func TestEnableHypershiftCLIDownload(t *testing.T) {
+type CLIDownloadTestSuite struct {
+	suite.Suite
+	t              *envtest.Environment
+	testKubeConfig *rest.Config
+	testKubeClient client.Client
+	log            logr.Logger
+}
+
+func (suite *CLIDownloadTestSuite) SetupSuite() {
+	suite.t = &envtest.Environment{
+		CRDDirectoryPaths: []string{
+			filepath.Join("..", "..", "hack", "crds"),
+		},
+	}
+
+	apis.AddToScheme(schemes.Scheme)
+	appsv1.AddToScheme(schemes.Scheme)
+	corev1.AddToScheme(schemes.Scheme)
+	metav1.AddMetaToScheme(schemes.Scheme)
+	routev1.AddToScheme(schemes.Scheme)
+	consolev1.AddToScheme(schemes.Scheme)
+	appsv1.AddToScheme(schemes.Scheme)
+	rbacv1.AddToScheme(schemes.Scheme)
+	mcev1.AddToScheme(schemes.Scheme)
+	operatorsv1alpha1.AddToScheme(schemes.Scheme)
+
+	var err error
+	if suite.testKubeConfig, err = suite.t.Start(); err != nil {
+		log.Fatal(err)
+	}
+
+	if suite.testKubeClient, err = client.New(suite.testKubeConfig, client.Options{Scheme: schemes.Scheme}); err != nil {
+		log.Fatal(err)
+	}
+
+	zapLog, _ := zap.NewDevelopment()
+	suite.log = zapr.NewLogger(zapLog)
+
+	err = suite.testKubeClient.Create(context.TODO(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "local-cluster"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = suite.testKubeClient.Create(context.TODO(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "multicluster-engine"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func (suite *CLIDownloadTestSuite) TearDownSuite() {
+	suite.t.Stop()
+}
+
+func (suite *CLIDownloadTestSuite) SetupTest() {
+}
+
+func (suite *CLIDownloadTestSuite) TearDownTest() {
+}
+
+func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownload() {
 	controllerContext := &controllercmd.ControllerContext{}
 
-	client := initClient()
-	zapLog, _ := zap.NewDevelopment()
 	o := &override{
-		Client:            client,
-		log:               zapr.NewLogger(zapLog),
+		Client:            suite.testKubeClient,
+		log:               suite.log,
 		operatorNamespace: controllerContext.OperatorNamespace,
 		withOverride:      false,
 	}
@@ -46,48 +114,53 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	// Create mock multicluster engine
 	newmce := getTestMCE("multiclusterengine", "multicluster-engine")
 	err := o.Client.Create(context.TODO(), newmce)
-	assert.Nil(t, err, "could not create test MCE")
+	suite.Nil(err, "could not create test MCE")
+	defer o.Client.Delete(context.TODO(), newmce)
 
 	// This should get no MCE CSV (error case)
 	csv, err := GetMCECSV(o.Client, o.log)
-	assert.NotNil(t, err, "no MCE CSV found")
+	suite.NotNil(err, "no MCE CSV found")
 
 	// Create upstream MCE 2.1.0 CSV
 	newcsv := getTestMCECSV("v2.1.0", false)
 	err = o.Client.Create(context.TODO(), newcsv)
-	assert.Nil(t, err, "err nil when mce csv is created successfull")
+	suite.Nil(err, "err nil when mce csv is created successfull")
+	defer o.Client.Delete(context.TODO(), newcsv)
 
 	// Create downstream MCE 2.1.1 CSV
 	newcsv = getTestMCECSV("v2.1.1", false)
 	err = o.Client.Create(context.TODO(), newcsv)
-	assert.Nil(t, err, "err nil when mce csv is created successfull")
+	suite.Nil(err, "err nil when mce csv is created successfull")
+	defer o.Client.Delete(context.TODO(), newcsv)
 
 	// This should get upstream MCE 2.1.1 CSV
 	csv, err = GetMCECSV(o.Client, o.log)
-	assert.Nil(t, err, "err nil when mce csv is found")
-	assert.Equal(t, "multicluster-engine.v2.1.1", csv.Name)
+	suite.Nil(err, "err nil when mce csv is found")
+	suite.Equal("multicluster-engine.v2.1.1", csv.Name)
 
 	// upstream CSV should not contain the hypershift cli image
 	cliImage := getHypershiftCLIDownloadImage(csv, o.log)
-	assert.Equal(t, "", cliImage)
+	suite.Equal("", cliImage)
 
 	// Create downstream MCE 2.2.0 CSV
 	newcsv = getTestMCECSV("v2.2.0", true)
 	err = o.Client.Create(context.TODO(), newcsv)
-	assert.Nil(t, err, "err nil when mce csv is created successfull")
+	suite.Nil(err, "err nil when mce csv is created successfull")
+	defer o.Client.Delete(context.TODO(), newcsv)
 
 	// Create downstream MCE 2.2.1 CSV
 	newcsv = getTestMCECSV("v2.2.1", true)
 	err = o.Client.Create(context.TODO(), newcsv)
-	assert.Nil(t, err, "err nil when mce csv is created successfull")
+	suite.Nil(err, "err nil when mce csv is created successfull")
+	defer o.Client.Delete(context.TODO(), newcsv)
 
 	// This should get MCE 2.2.1 CSV
 	csv, err = GetMCECSV(o.Client, o.log)
-	assert.Nil(t, err, "err nil when mce csv is found")
-	assert.Equal(t, "multicluster-engine.v2.2.1", csv.Name)
+	suite.Nil(err, "err nil when mce csv is found")
+	suite.Equal("multicluster-engine.v2.2.1", csv.Name)
 
 	cliImage = getHypershiftCLIDownloadImage(csv, o.log)
-	assert.Equal(t, "https://hypershift.cli.image.io", cliImage)
+	suite.Equal("https://hypershift.cli.image.io", cliImage)
 
 	//
 	// Create the hypershift addon deployment which is going to be the owner
@@ -96,7 +169,8 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	//
 	dep := getTestAddonDeployment()
 	err = o.Client.Create(context.TODO(), dep)
-	assert.Nil(t, err, "err nil when addon deployment is created successfully")
+	suite.Nil(err, "err nil when addon deployment is created successfully")
+	defer o.Client.Delete(context.TODO(), dep)
 
 	//
 	// Create the hypershift clusterrole which is going to be the owner
@@ -105,7 +179,8 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	//
 	clusterRole := getTestClusterRole()
 	err = o.Client.Create(context.TODO(), clusterRole)
-	assert.Nil(t, err, "err nil when addon clusterRole is created successfully")
+	suite.Nil(err, "err nil when addon clusterRole is created successfully")
+	defer o.Client.Delete(context.TODO(), clusterRole)
 
 	//
 	// Create the oc cli ConsoleCLIDownload to satisfy that condition that checks for
@@ -113,7 +188,7 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	//
 	ocCliDownload := getTestOCCLIDownload()
 	err = o.Client.Create(context.TODO(), ocCliDownload)
-	assert.Nil(t, err, "err nil when oc cli ConsoleCLIDownload is created successfully")
+	suite.Nil(err, "err nil when oc cli ConsoleCLIDownload is created successfully")
 
 	//
 	// The deployment, service, route and ConsoleCLIDownload names used to be hypershift-cli-download
@@ -122,89 +197,97 @@ func TestEnableHypershiftCLIDownload(t *testing.T) {
 	//
 	oldCliDownload := getHypershiftCLIDownload()
 	err = o.Client.Create(context.TODO(), oldCliDownload)
-	assert.Nil(t, err, "err nil when hypershift-cli-download ConsoleCLIDownload is created successfully")
+	suite.Nil(err, "err nil when hypershift-cli-download ConsoleCLIDownload is created successfully")
 
 	oldCliDeployment := getHypershiftCLIDeployment()
 	err = o.Client.Create(context.TODO(), oldCliDeployment)
-	assert.Nil(t, err, "err nil when hypershift-cli-download Deployment is created successfully")
+	suite.Nil(err, "err nil when hypershift-cli-download Deployment is created successfully")
+	defer o.Client.Delete(context.TODO(), oldCliDeployment)
 
 	oldCliService := getHypershiftCLIService()
 	err = o.Client.Create(context.TODO(), oldCliService)
-	assert.Nil(t, err, "err nil when hypershift-cli-download Service is created successfully")
+	suite.Nil(err, "err nil when hypershift-cli-download Service is created successfully")
+	defer o.Client.Delete(context.TODO(), oldCliService)
 
 	oldCliRoute := getHypershiftCLIRoute()
 	err = o.Client.Create(context.TODO(), oldCliRoute)
-	assert.Nil(t, err, "err nil when hypershift-cli-download Route is created successfully")
+	suite.Nil(err, "err nil when hypershift-cli-download Route is created successfully")
 	// The previous version of hypershift-cli-download resources are now created
+	defer o.Client.Delete(context.TODO(), oldCliRoute)
 
 	err = EnableHypershiftCLIDownload(o.Client, o.log)
-	assert.Nil(t, err, "err nil when hypershift CLI download is deployed successfully")
+	suite.Nil(err, "err nil when hypershift CLI download is deployed successfully")
 
 	// Check hypershift CLI deployment
 	cliDeployment := &appsv1.Deployment{}
 	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliDeploymentNN, cliDeployment)
-	assert.Nil(t, err, "err nil when hypershift CLI download deployment exists")
-	assert.Equal(t, "hypershift-addon-manager", cliDeployment.OwnerReferences[0].Name)
+	suite.Nil(err, "err nil when hypershift CLI download deployment exists")
+	suite.Equal("hypershift-addon-manager", cliDeployment.OwnerReferences[0].Name)
 
 	// Check hypershift CLI deployment proxy settings
-	assert.Equal(t, 3, len(cliDeployment.Spec.Template.Spec.Containers[0].Env))
-	assert.True(t, strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[0].Name, "_PROXY"))
-	assert.True(t, strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[1].Name, "_PROXY"))
-	assert.True(t, strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[2].Name, "_PROXY"))
+	suite.Equal(3, len(cliDeployment.Spec.Template.Spec.Containers[0].Env))
+	suite.True(strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[0].Name, "_PROXY"))
+	suite.True(strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[1].Name, "_PROXY"))
+	suite.True(strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[2].Name, "_PROXY"))
 
 	// Check hypershift CLI service
 	cliService := &corev1.Service{}
 	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliServiceNN, cliService)
-	assert.Nil(t, err, "err nil when hypershift CLI download service exists")
-	assert.Equal(t, "hypershift-addon-manager", cliService.OwnerReferences[0].Name)
+	suite.Nil(err, "err nil when hypershift CLI download service exists")
+	suite.Equal("hypershift-addon-manager", cliService.OwnerReferences[0].Name)
 
 	// Check hypershift CLI route
 	cliRoute := &routev1.Route{}
 	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliRouteNN, cliRoute)
-	assert.Nil(t, err, "err nil when hypershift CLI download route exists")
-	assert.Equal(t, "hypershift-addon-manager", cliRoute.OwnerReferences[0].Name)
+	suite.Nil(err, "err nil when hypershift CLI download route exists")
+	suite.Equal("hypershift-addon-manager", cliRoute.OwnerReferences[0].Name)
 
 	// Check hypershift CLI ConsoleCLIDownload
 	cliDownload := &consolev1.ConsoleCLIDownload{}
 	cliDownloadNN := types.NamespacedName{Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliDownloadNN, cliDownload)
-	assert.Nil(t, err, "err nil when hypershift CLI download ConsoleCLIDownload exists")
-	assert.Equal(t, "open-cluster-management:hypershift-preview:hypershift-addon-manager", cliDownload.OwnerReferences[0].Name)
+	suite.Nil(err, "err nil when hypershift CLI download ConsoleCLIDownload exists")
+	suite.Equal("open-cluster-management:hypershift-preview:hypershift-addon-manager", cliDownload.OwnerReferences[0].Name)
 
 	// Check the old hypershift-cli-download resources are deleted
 	removedCliDeployment := &appsv1.Deployment{}
 	removedCliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: OldCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), removedCliDeploymentNN, removedCliDeployment)
-	assert.True(t, apierrors.IsNotFound(err))
+	suite.True(apierrors.IsNotFound(err))
 
 	removedCliService := &corev1.Service{}
 	removedCliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: OldCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), removedCliServiceNN, removedCliService)
-	assert.True(t, apierrors.IsNotFound(err))
+	suite.True(apierrors.IsNotFound(err))
 
 	removecCliRoute := &routev1.Route{}
 	removecCliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: OldCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), removecCliRouteNN, removecCliRoute)
-	assert.True(t, apierrors.IsNotFound(err))
+	suite.True(apierrors.IsNotFound(err))
 
 	removedCliDownload := &consolev1.ConsoleCLIDownload{}
 	removedCliDownloadNN := types.NamespacedName{Name: OldCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), removedCliDownloadNN, removedCliDownload)
-	assert.True(t, apierrors.IsNotFound(err))
+	suite.True(apierrors.IsNotFound(err))
 
+	cliDownloadList := &consolev1.ConsoleCLIDownloadList{}
+	o.Client.List(context.TODO(), cliDownloadList)
+	if len(cliDownloadList.Items) > 0 {
+		for _, download := range cliDownloadList.Items {
+			suite.deleteCLIDownload(download.Name)
+		}
+	}
 }
 
-func TestEnableHypershiftCLIDownloadNoConsole(t *testing.T) {
+func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadNoConsole() {
 	controllerContext := &controllercmd.ControllerContext{}
 
-	client := initClient()
-	zapLog, _ := zap.NewDevelopment()
 	o := &override{
-		Client:            client,
-		log:               zapr.NewLogger(zapLog),
+		Client:            suite.testKubeClient,
+		log:               suite.log,
 		operatorNamespace: controllerContext.OperatorNamespace,
 		withOverride:      false,
 	}
@@ -217,48 +300,48 @@ func TestEnableHypershiftCLIDownloadNoConsole(t *testing.T) {
 	// Create mock multicluster engine
 	newmce := getTestMCE("multiclusterengine", "multicluster-engine")
 	err := o.Client.Create(context.TODO(), newmce)
-	assert.Nil(t, err, "could not create test MCE")
+	suite.Nil(err, "could not create test MCE")
 
 	// This should get no MCE CSV (error case)
 	csv, err := GetMCECSV(o.Client, o.log)
-	assert.NotNil(t, err, "no MCE CSV found")
+	suite.NotNil(err, "no MCE CSV found")
 
 	// Create upstream MCE 2.1.0 CSV
 	newcsv := getTestMCECSV("v2.1.0", false)
 	err = o.Client.Create(context.TODO(), newcsv)
-	assert.Nil(t, err, "err nil when mce csv is created successfull")
+	suite.Nil(err, "err nil when mce csv is created successfull")
 
 	// Create downstream MCE 2.1.1 CSV
 	newcsv = getTestMCECSV("v2.1.1", false)
 	err = o.Client.Create(context.TODO(), newcsv)
-	assert.Nil(t, err, "err nil when mce csv is created successfull")
+	suite.Nil(err, "err nil when mce csv is created successfull")
 
 	// This should get upstream MCE 2.1.1 CSV
 	csv, err = GetMCECSV(o.Client, o.log)
-	assert.Nil(t, err, "err nil when mce csv is found")
-	assert.Equal(t, "multicluster-engine.v2.1.1", csv.Name)
+	suite.Nil(err, "err nil when mce csv is found")
+	suite.Equal("multicluster-engine.v2.1.1", csv.Name)
 
 	// upstream CSV should not contain the hypershift cli image
 	cliImage := getHypershiftCLIDownloadImage(csv, o.log)
-	assert.Equal(t, "", cliImage)
+	suite.Equal("", cliImage)
 
 	// Create downstream MCE 2.2.0 CSV
 	newcsv = getTestMCECSV("v2.2.0", true)
 	err = o.Client.Create(context.TODO(), newcsv)
-	assert.Nil(t, err, "err nil when mce csv is created successfull")
+	suite.Nil(err, "err nil when mce csv is created successfull")
 
 	// Create downstream MCE 2.2.1 CSV
 	newcsv = getTestMCECSV("v2.2.1", true)
 	err = o.Client.Create(context.TODO(), newcsv)
-	assert.Nil(t, err, "err nil when mce csv is created successfull")
+	suite.Nil(err, "err nil when mce csv is created successfull")
 
 	// This should get MCE 2.2.1 CSV
 	csv, err = GetMCECSV(o.Client, o.log)
-	assert.Nil(t, err, "err nil when mce csv is found")
-	assert.Equal(t, "multicluster-engine.v2.2.1", csv.Name)
+	suite.Nil(err, "err nil when mce csv is found")
+	suite.Equal("multicluster-engine.v2.2.1", csv.Name)
 
 	cliImage = getHypershiftCLIDownloadImage(csv, o.log)
-	assert.Equal(t, "https://hypershift.cli.image.io", cliImage)
+	suite.Equal("https://hypershift.cli.image.io", cliImage)
 
 	//
 	// Create the hypershift addon deployment which is going to be the owner
@@ -267,7 +350,7 @@ func TestEnableHypershiftCLIDownloadNoConsole(t *testing.T) {
 	//
 	dep := getTestAddonDeployment()
 	err = o.Client.Create(context.TODO(), dep)
-	assert.Nil(t, err, "err nil when addon deployment is created successfully")
+	suite.Nil(err, "err nil when addon deployment is created successfully")
 
 	//
 	// Create the hypershift clusterrole which is going to be the owner
@@ -276,52 +359,52 @@ func TestEnableHypershiftCLIDownloadNoConsole(t *testing.T) {
 	//
 	clusterRole := getTestClusterRole()
 	err = o.Client.Create(context.TODO(), clusterRole)
-	assert.Nil(t, err, "err nil when addon clusterRole is created successfully")
+	suite.Nil(err, "err nil when addon clusterRole is created successfully")
 
 	err = EnableHypershiftCLIDownload(o.Client, o.log)
-	assert.Nil(t, err, "err nil when hypershift CLI download is deployed successfully")
+	suite.Nil(err, "err nil when hypershift CLI download is deployed successfully")
 
 	// Check hypershift CLI deployment
 	cliDeployment := &appsv1.Deployment{}
 	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliDeploymentNN, cliDeployment)
-	assert.Nil(t, err, "err nil when hypershift CLI download deployment exists")
-	assert.Equal(t, "hypershift-addon-manager", cliDeployment.OwnerReferences[0].Name)
+	suite.Nil(err, "err nil when hypershift CLI download deployment exists")
+	suite.Equal("hypershift-addon-manager", cliDeployment.OwnerReferences[0].Name)
 
 	// Check hypershift CLI deployment proxy settings
-	assert.Equal(t, 3, len(cliDeployment.Spec.Template.Spec.Containers[0].Env))
-	assert.True(t, strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[0].Name, "_PROXY"))
-	assert.True(t, strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[1].Name, "_PROXY"))
-	assert.True(t, strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[2].Name, "_PROXY"))
+	suite.Equal(3, len(cliDeployment.Spec.Template.Spec.Containers[0].Env))
+	suite.True(strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[0].Name, "_PROXY"))
+	suite.True(strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[1].Name, "_PROXY"))
+	suite.True(strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[2].Name, "_PROXY"))
 
 	// Check hypershift CLI service
 	cliService := &corev1.Service{}
 	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliServiceNN, cliService)
-	assert.Nil(t, err, "err nil when hypershift CLI download service exists")
-	assert.Equal(t, "hypershift-addon-manager", cliService.OwnerReferences[0].Name)
+	suite.Nil(err, "err nil when hypershift CLI download service exists")
+	suite.Equal("hypershift-addon-manager", cliService.OwnerReferences[0].Name)
 
 	// Check hypershift CLI route
 	cliRoute := &routev1.Route{}
 	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliRouteNN, cliRoute)
-	assert.Nil(t, err, "err nil when hypershift CLI download route exists")
-	assert.Equal(t, "hypershift-addon-manager", cliRoute.OwnerReferences[0].Name)
+	suite.Nil(err, "err nil when hypershift CLI download route exists")
+	suite.Equal("hypershift-addon-manager", cliRoute.OwnerReferences[0].Name)
 
 	// Check hypershift CLI ConsoleCLIDownload
 	cliDownload := &consolev1.ConsoleCLIDownload{}
 	cliDownloadNN := types.NamespacedName{Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliDownloadNN, cliDownload)
-	assert.EqualError(t, err, "consoleclidownloads.console.openshift.io \"hcp-cli-download\" not found")
+	suite.EqualError(err, "consoleclidownloads.console.openshift.io \"hcp-cli-download\" not found")
 }
 
-func TestRetryCSV(t *testing.T) {
+func (suite *CLIDownloadTestSuite) TestRetryCSV() {
 	controllerContext := &controllercmd.ControllerContext{}
 	client, sch := initCSVErrorClient()
-	zapLog, _ := zap.NewDevelopment()
+
 	o := &override{
 		Client:            client,
-		log:               zapr.NewLogger(zapLog),
+		log:               suite.log,
 		operatorNamespace: controllerContext.OperatorNamespace,
 		withOverride:      false,
 	}
@@ -332,21 +415,42 @@ func TestRetryCSV(t *testing.T) {
 	// Create mock multicluster engine
 	newmce := getTestMCE("multiclusterengine", "multicluster-engine")
 	err := o.Client.Create(context.TODO(), newmce)
-	assert.Nil(t, err, "could not create test MCE")
+	suite.Nil(err, "could not create test MCE")
 
 	dep := getTestAddonDeployment()
 	err = o.Client.Create(context.TODO(), dep)
-	assert.Nil(t, err, "err nil when addon deployment is created successfully")
+	suite.Nil(err, "err nil when addon deployment is created successfully")
 
 	clusterRole := getTestClusterRole()
 	err = o.Client.Create(context.TODO(), clusterRole)
-	assert.Nil(t, err, "err nil when addon clusterRole is created successfully")
+	suite.Nil(err, "err nil when addon clusterRole is created successfully")
 
 	go asyncEnableHypershiftCLIDownload(client, o.log, c) //Attempt to enable clidownload
-	go asyncClusterRole(o, sch, t)                        //Add permissions after a small period of time
+	go suite.asyncClusterRole(o, sch)                     //Add permissions after a small period of time
 	result := <-c
-	assert.Nil(t, result, "could not get MCE")
+	suite.Nil(result, "could not get MCE")
 
+}
+
+func TestCLIDownloadTestSuite(t *testing.T) {
+	suite.Run(t, new(CLIDownloadTestSuite))
+}
+
+func (suite *CLIDownloadTestSuite) deleteCLIDownload(name string) {
+	hcNN := types.NamespacedName{Name: name}
+
+	cliDownload := &consolev1.ConsoleCLIDownload{}
+	err := suite.testKubeClient.Get(context.TODO(), hcNN, cliDownload)
+
+	if err == nil {
+		suite.testKubeClient.Delete(context.TODO(), cliDownload)
+
+		suite.Eventually(func() bool {
+			cliDownloadToDelete := &consolev1.ConsoleCLIDownload{}
+			err := suite.testKubeClient.Get(context.TODO(), hcNN, cliDownloadToDelete)
+			return err != nil && errors.IsNotFound(err)
+		}, 5*time.Second, 500*time.Millisecond)
+	}
 }
 
 func getTestMCECSV(version string, downstream bool) *operatorsv1alpha1.ClusterServiceVersion {
@@ -362,6 +466,9 @@ func getTestMCECSV(version string, downstream bool) *operatorsv1alpha1.ClusterSe
 		Spec: operatorsv1alpha1.ClusterServiceVersionSpec{
 			InstallStrategy: operatorsv1alpha1.NamedInstallStrategy{
 				StrategyName: "deployment",
+				StrategySpec: operatorsv1alpha1.StrategyDetailsDeployment{
+					DeploymentSpecs: []operatorsv1alpha1.StrategyDeploymentSpec{},
+				},
 			},
 			DisplayName: "multicluster engine for Kubernetes",
 		},
@@ -387,7 +494,9 @@ func getTestOCCLIDownload() *consolev1.ConsoleCLIDownload {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "oc-cli-downloads",
 		},
-		Spec: consolev1.ConsoleCLIDownloadSpec{},
+		Spec: consolev1.ConsoleCLIDownloadSpec{
+			Links: []consolev1.CLIDownloadLink{},
+		},
 	}
 
 	return cli
@@ -402,7 +511,9 @@ func getHypershiftCLIDownload() *consolev1.ConsoleCLIDownload {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: OldCLIDownloadResourceName,
 		},
-		Spec: consolev1.ConsoleCLIDownloadSpec{},
+		Spec: consolev1.ConsoleCLIDownloadSpec{
+			Links: []consolev1.CLIDownloadLink{},
+		},
 	}
 
 	return cli
@@ -418,7 +529,13 @@ func getHypershiftCLIService() *corev1.Service {
 			Name:      OldCLIDownloadResourceName,
 			Namespace: "multicluster-engine",
 		},
-		Spec: corev1.ServiceSpec{},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Port: 8443,
+				},
+			},
+		},
 	}
 
 	return service
@@ -441,6 +558,10 @@ func getHypershiftCLIRoute() *routev1.Route {
 }
 
 func getHypershiftCLIDeployment() *appsv1.Deployment {
+	container := corev1.Container{
+		Name:  "operator",
+		Image: "https://hypershift.addon.image.io",
+	}
 	deployment := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Deployment",
@@ -450,7 +571,19 @@ func getHypershiftCLIDeployment() *appsv1.Deployment {
 			Name:      OldCLIDownloadResourceName,
 			Namespace: "multicluster-engine",
 		},
-		Spec: appsv1.DeploymentSpec{},
+		Spec: appsv1.DeploymentSpec{
+			Selector: &metav1.LabelSelector{
+				MatchLabels: map[string]string{"app": "hypershift-cli-download"},
+			},
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{container},
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "hypershift-cli-download"},
+				},
+			},
+		},
 	}
 
 	return deployment
@@ -484,6 +617,7 @@ func getTestAddonDeployment() *appsv1.Deployment {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "hypershift-addon-manager",
 			Namespace: "multicluster-engine",
+			//	Labels:    map[string]string{"app": "hypershift-addon-manager"},
 		},
 		Spec: appsv1.DeploymentSpec{
 			Selector: &metav1.LabelSelector{
@@ -492,6 +626,9 @@ func getTestAddonDeployment() *appsv1.Deployment {
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{container},
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{"app": "hypershift-addon-manager"},
 				},
 			},
 		},
@@ -525,7 +662,7 @@ func getTestMCE(name string, namespace string) *mcev1.MultiClusterEngine {
 	return mce
 }
 
-func asyncClusterRole(o *override, s *runtime.Scheme, t *testing.T) {
+func (suite *CLIDownloadTestSuite) asyncClusterRole(o *override, s *runtime.Scheme) {
 	//Simulate adding permissions to clusterrole after a delay
 	//Hard to simulate RBAC, add csv to scheme and create it after a delay instead
 	time.Sleep(1 * time.Minute)
@@ -534,7 +671,7 @@ func asyncClusterRole(o *override, s *runtime.Scheme, t *testing.T) {
 
 	newcsv := getTestMCECSV("v2.2.1", true)
 	err := o.Client.Create(context.TODO(), newcsv)
-	assert.Nil(t, err, "err nil when mce csv is created successfull")
+	suite.Nil(err, "err nil when mce csv is created successfull")
 
 }
 

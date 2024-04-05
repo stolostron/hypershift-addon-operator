@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/go-logr/zapr"
+	configv1 "github.com/openshift/api/config/v1"
+	routev1 "github.com/openshift/api/route/v1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
 	agent "github.com/stolostron/klusterlet-addon-controller/pkg/apis"
@@ -353,4 +355,94 @@ func getAddonDeploymentConfig(disable bool) *addonv1alpha1.AddOnDeploymentConfig
 	}
 
 	return aodc
+}
+
+func initClient() client.Client {
+	scheme := runtime.NewScheme()
+	//corev1.AddToScheme(scheme)
+	appsv1.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
+	metav1.AddMetaToScheme(scheme)
+	hyperv1beta1.AddToScheme(scheme)
+	clusterv1alpha1.AddToScheme(scheme)
+	clusterv1.AddToScheme(scheme)
+	operatorapiv1.AddToScheme(scheme)
+	addonv1alpha1.AddToScheme(scheme)
+	routev1.AddToScheme(scheme)
+
+	ncb := fake.NewClientBuilder()
+	ncb.WithScheme(scheme)
+	return ncb.Build()
+
+}
+
+func initReconcileErrorClient() client.Client {
+	scheme := runtime.NewScheme()
+	//corev1.AddToScheme(scheme)
+	appsv1.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
+	metav1.AddMetaToScheme(scheme)
+	hyperv1beta1.AddToScheme(scheme)
+	//clusterv1alpha1.AddToScheme(scheme)
+	clusterv1.AddToScheme(scheme)
+	operatorapiv1.AddToScheme(scheme)
+
+	ncb := fake.NewClientBuilder()
+	ncb.WithScheme(scheme)
+	return ncb.Build()
+
+}
+
+func initErrorClient() client.Client {
+	scheme := runtime.NewScheme()
+	//corev1.AddToScheme(scheme)
+	appsv1.AddToScheme(scheme)
+	corev1.AddToScheme(scheme)
+	metav1.AddMetaToScheme(scheme)
+	clusterv1alpha1.AddToScheme(scheme)
+	hyperv1beta1.AddToScheme(scheme)
+
+	ncb := fake.NewClientBuilder()
+	ncb.WithScheme(scheme)
+	return ncb.Build()
+
+}
+
+func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
+	hc := &hyperv1beta1.HostedCluster{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "HostedCluster",
+			APIVersion: "hypershift.openshift.io/v1alpha1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      hcNN.Name,
+			Namespace: hcNN.Namespace,
+		},
+		Spec: hyperv1beta1.HostedClusterSpec{
+			Platform: hyperv1beta1.PlatformSpec{
+				Type: hyperv1beta1.AWSPlatform,
+			},
+			Networking: hyperv1beta1.ClusterNetworking{
+				NetworkType:    hyperv1beta1.OpenShiftSDN,
+				ServiceNetwork: []hyperv1beta1.ServiceNetworkEntry{},
+				ClusterNetwork: []hyperv1beta1.ClusterNetworkEntry{},
+			},
+			Services: []hyperv1beta1.ServicePublishingStrategyMapping{},
+			Release: hyperv1beta1.Release{
+				Image: "test-image",
+			},
+			Etcd: hyperv1beta1.EtcdSpec{
+				ManagementType: hyperv1beta1.Managed,
+			},
+			InfraID: hcNN.Name + "-abcdef",
+		},
+		Status: hyperv1beta1.HostedClusterStatus{
+			KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"},
+			Conditions: []metav1.Condition{{Type: string(hyperv1beta1.HostedClusterAvailable), Status: metav1.ConditionTrue, Reason: hyperv1beta1.AsExpectedReason}},
+			Version: &hyperv1beta1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate}},
+			},
+		},
+	}
+	return hc
 }

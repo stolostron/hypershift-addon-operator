@@ -1,8 +1,6 @@
 module github.com/stolostron/hypershift-addon-operator
 
-go 1.21
-
-toolchain go1.21.1
+go 1.21.1
 
 require (
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
@@ -21,7 +19,7 @@ require (
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
 	github.com/stolostron/backplane-operator v0.0.0-20240209003542-4def396a0ac1
 	github.com/stolostron/klusterlet-addon-controller v0.0.0-20230726064251-1a558f536b6c
-	github.com/stretchr/testify v1.8.4
+	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.26.0
 	go.withmatt.com/size v0.0.0-20221118222007-0d9da7819356
 	gopkg.in/yaml.v2 v2.4.0
@@ -29,8 +27,8 @@ require (
 	k8s.io/apimachinery v0.29.1
 	k8s.io/client-go v0.29.1
 	k8s.io/component-base v0.29.1
-	open-cluster-management.io/addon-framework v0.8.1
-	open-cluster-management.io/api v0.12.0
+	open-cluster-management.io/addon-framework v0.9.0
+	open-cluster-management.io/api v0.13.0
 	sigs.k8s.io/controller-runtime v0.17.1
 )
 
@@ -175,10 +173,11 @@ require (
 	k8s.io/kms v0.29.1 // indirect
 	k8s.io/kube-aggregator v0.28.3 // indirect
 	k8s.io/kube-openapi v0.0.0-20231113174909-778a5567bc1e // indirect
-	k8s.io/utils v0.0.0-20231127182322-b307cd553661 // indirect
+	k8s.io/utils v0.0.0-20240102154912-e7106e64919e // indirect
 	kubevirt.io/api v1.1.0 // indirect
 	kubevirt.io/containerized-data-importer-api v1.57.0 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
+	open-cluster-management.io/sdk-go v0.13.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.28.0 // indirect
 	sigs.k8s.io/cluster-api v1.6.1 // indirect
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.2.4 // indirect
