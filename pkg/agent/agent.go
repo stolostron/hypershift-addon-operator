@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
@@ -137,6 +138,9 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		Scheme:                 scheme,
 		HealthProbeBindAddress: o.ProbeAddr,
 		LeaderElection:         false,
+		Metrics: server.Options{
+			BindAddress: o.MetricAddr,
+		},
 	})
 
 	metrics.AddonAgentFailedToStartBool.Set(0)
