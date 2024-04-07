@@ -200,7 +200,7 @@ func (c *AddonStatusController) updateStatus(ctx context.Context, updateFuncs ..
 		}
 
 		hypershiftAddon.Status = *newStatus
-		err = c.hubClient.Status().Update(ctx, hypershiftAddon, &client.UpdateOptions{})
+		err = c.hubClient.Status().Update(ctx, hypershiftAddon, &client.SubResourceUpdateOptions{})
 		if err != nil {
 			return err
 		}

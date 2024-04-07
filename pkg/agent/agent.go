@@ -35,8 +35,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
 	prometheusapi "github.com/prometheus/client_golang/api"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -135,10 +136,11 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	spokeConfig := ctrl.GetConfigOrDie()
 	mgr, err := ctrl.NewManager(spokeConfig, ctrl.Options{
 		Scheme:                 scheme,
-		MetricsBindAddress:     o.MetricAddr,
-		Port:                   9443,
 		HealthProbeBindAddress: o.ProbeAddr,
 		LeaderElection:         false,
+		Metrics: server.Options{
+			BindAddress: o.MetricAddr,
+		},
 	})
 
 	metrics.AddonAgentFailedToStartBool.Set(0)
@@ -950,7 +952,7 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup b
 			Message: err.Error(),
 		})
 
-		err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.UpdateOptions{})
+		err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.SubResourceUpdateOptions{})
 		if err != nil {
 			// just log the error. it should not stop the rest of reconcile
 			c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))
@@ -1004,7 +1006,7 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup b
 		})
 		addOnPlacementScore.Status.Scores = scores
 
-		err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.UpdateOptions{})
+		err = c.hubClient.Status().Update(context.TODO(), addOnPlacementScore, &client.SubResourceUpdateOptions{})
 		if err != nil {
 			// just log the error. it should not stop the rest of reconcile
 			c.log.Error(err, fmt.Sprintf("failed to update the addOnPlacementScore status in %s", c.clusterName))

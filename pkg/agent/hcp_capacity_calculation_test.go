@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/go-logr/zapr"
-	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stretchr/testify/assert"
