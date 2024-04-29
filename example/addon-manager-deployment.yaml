@@ -83,7 +83,6 @@ spec:
       labels:
         app: hypershift-addon-manager
     spec:
-      automountServiceAccountToken: false
       restartPolicy: Always
       serviceAccountName: hypershift-addon-manager-sa
       schedulerName: default-scheduler
@@ -102,11 +101,4 @@ spec:
               value: 'quay.io/hypershift/hypershift-operator:latest'
             - name: HYPERSHIFT_ADDON_IMAGE_NAME
               value: 'quay.io/stolostron/hypershift-addon-operator:latest'
-          resources:
-            requests:
-              cpu: "2m"
-              memory: "32Mi"
-            limits:
-              cpu: "4m"
-              memory: "64Mi"
       serviceAccount: hypershift-addon-manager-sa
