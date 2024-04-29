@@ -5,7 +5,7 @@ set -o nounset
 set -o pipefail
 
 CLUSTERADM=${CLUSTERADM:-clusteradm}
-KUBECTL=${KUBECTL:-oc}
+KUBECTL=${KUBECTL:-kubectl}
 _managed_cluster_name="local-cluster"
 
 $CLUSTERADM init --output-join-command-file join.sh --wait

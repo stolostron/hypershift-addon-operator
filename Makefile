@@ -120,8 +120,7 @@ FOUNDATION_IMAGE_TAG = backplane-$(basename ${COMPONENT_VERSION})
 build-e2e:
 	go test -c ./test/e2e
 
-# test-e2e: build-e2e deploy-ocm deploy-addon-manager
-test-e2e:
+test-e2e: build-e2e deploy-ocm deploy-addon-manager
 	./e2e.test -test.v -ginkgo.v -ginkgo.junit-report $(JUNIT_REPORT_FILE)
 
 .PHONY: deploy-addon-manager
