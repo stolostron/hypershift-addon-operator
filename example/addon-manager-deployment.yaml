@@ -105,8 +105,8 @@ spec:
           resources:
             requests:
               cpu: "2m"
-              memory: "2Mi"
+              memory: "32Mi"
             limits:
               cpu: "4m"
-              memory: "4Mi"
+              memory: "64Mi"
       serviceAccount: hypershift-addon-manager-sa
