@@ -71,40 +71,40 @@ roleRef:
   name: hypershift-addon-operator-manager
 subjects:
   - kind: ServiceAccount
-    name: hypershift-addon-manager-sa-test
+    name: hypershift-addon-manager-sa
     namespace: multicluster-engine
 ---
 kind: ServiceAccount
 apiVersion: v1
 metadata:
-  name: hypershift-addon-manager-sa-test
+  name: hypershift-addon-manager-sa
   namespace: multicluster-engine
 ---
 kind: Deployment
 apiVersion: apps/v1
 metadata:
-  name: hypershift-addon-manager-test
+  name: hypershift-addon-manager
   namespace: multicluster-engine
   labels:
-    app: hypershift-addon-manager-test
+    app: hypershift-addon-manager
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: hypershift-addon-manager-test
+      app: hypershift-addon-manager
   template:
     metadata:
       creationTimestamp: null
       labels:
-        app: hypershift-addon-manager-test
+        app: hypershift-addon-manager
     spec:
       restartPolicy: Always
-      serviceAccountName: hypershift-addon-manager-sa-test
+      serviceAccountName: hypershift-addon-manager-sa
       schedulerName: default-scheduler
       terminationGracePeriodSeconds: 30
       securityContext: {}
       containers:
-        - name: hypershift-addon-manager-test
+        - name: hypershift-addon-manager
           image: 'quay.io/stolostron/hypershift-addon-operator:latest'
           args:
             - ./hypershift-addon
@@ -116,4 +116,11 @@ spec:
               value: 'quay.io/hypershift/hypershift-operator:latest'
             - name: HYPERSHIFT_ADDON_IMAGE_NAME
               value: 'quay.io/stolostron/hypershift-addon-operator:latest'
-      serviceAccount: hypershift-addon-manager-sa-test
+          resources:
+            requests:
+              cpu: "2m"
+              memory: "256Mi"
+            limits:
+              cpu: "4m"
+              memory: "512Mi"
+      serviceAccount: hypershift-addon-manager-sa
