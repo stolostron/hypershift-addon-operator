@@ -50,7 +50,7 @@ func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error
 	//Failed 5 attempts
 	if err != nil {
 		log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace")
-		return nil
+		return err
 	}
 
 	// check if the CSV has hypershift_cli image, which is the downstream case
