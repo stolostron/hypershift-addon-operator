@@ -98,6 +98,7 @@ spec:
       labels:
         app: hypershift-addon-manager
     spec:
+      automountServiceAccountToken: false
       restartPolicy: Always
       serviceAccountName: hypershift-addon-manager-sa
       schedulerName: default-scheduler
