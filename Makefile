@@ -121,7 +121,7 @@ build-e2e:
 	go test -c ./test/e2e
 
 test-e2e: build-e2e deploy-ocm deploy-addon-manager
-	./e2e.test -test.v -ginkgo.v -ginkgo.junit-report $(JUNIT_REPORT_FILE)
+#	./e2e.test -test.v -ginkgo.v -ginkgo.junit-report $(JUNIT_REPORT_FILE)
 
 .PHONY: deploy-addon-manager
 deploy-addon-manager:

@@ -19,6 +19,7 @@ spec:
         app: hcp-cli-download
         ocm-antiaffinity-selector: hcp-cli-download
     spec:
+      automountServiceAccountToken: false
       affinity:
         nodeAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
@@ -66,8 +67,11 @@ spec:
           name: file-server
         resources:
           requests:
-            cpu: 2m
-            memory: 2Mi
+            cpu: 1m
+            memory: 32Mi
+          limits:
+            cpu: "2m"
+            memory: "64Mi"
         securityContext:
           allowPrivilegeEscalation: false
           capabilities:
