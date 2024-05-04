@@ -652,11 +652,17 @@ installHypershiftBinary() {
     exit 1
   fi
 
-  # Extract the hypershift CLI from the hypershift operator pod
-  ${OC_COMMAND} rsync ${HO_POD_NAME}:/usr/bin/hypershift /tmp
+  # Extract the hypershift CLI from the hypershift operator pod. hypershift-no-cgo is built with no CGO enabled.
+  ${OC_COMMAND} rsync ${HO_POD_NAME}:/usr/bin/hypershift-no-cgo /tmp
   if [ $? -ne 0 ]; then
       echo "$(date) failed to extract hypershift CLI from the hypershift operator pod"
       exit 1
+  fi
+
+  mv /tmp/hypershift-no-cgo /tmp/hypershift
+  if [ $? -ne 0 ]; then
+    echo "$(date) failed to mv /tmp/hypershift-no-cgo /tmp/hypershift"
+    exit 1
   fi
 
   chmod +x /tmp/hypershift
