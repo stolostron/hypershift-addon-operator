@@ -26,6 +26,7 @@ const (
 	AddonControllerName          = "hypershift-addon"
 	AddonStatusControllerName    = "hypershift-addon-status"
 	AutoImportControllerName     = "auto-import"
+	DiscoveryControllerName      = "discovery"
 	ExternalSecretControllerName = "external-secret"
 	AgentDeploymentName          = "hypershift-addon-agent"
 
