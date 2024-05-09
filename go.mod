@@ -6,6 +6,7 @@ require (
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
 	github.com/go-logr/logr v1.4.1
 	github.com/go-logr/zapr v1.3.0
+	github.com/hashicorp/go-version v1.6.0
 	github.com/onsi/ginkgo/v2 v2.15.0
 	github.com/onsi/gomega v1.31.1
 	github.com/openshift/api v0.0.0-20231206170337-f356bd9e2ff6

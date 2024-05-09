@@ -112,17 +112,6 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 	return ctrl.Result{}, nil
 }
 
-// check if hosted control plane is available
-/*func (c *AutoImportController) isHostedControlPlaneAvailable(status hyperv1beta1.HostedClusterStatus) bool {
-	for _, condition := range status.Conditions {
-		if condition.Reason == hyperv1beta1.AsExpectedReason && condition.Status == metav1.ConditionTrue &&
-			condition.Type == string(hyperv1beta1.HostedClusterAvailable) {
-			return true
-		}
-	}
-	return false
-}*/
-
 // creates managed cluster from hosted cluster
 func (c *AutoImportController) createManagedCluster(hc hyperv1beta1.HostedCluster, ctx context.Context) error {
 	mc := clusterv1.ManagedCluster{}
