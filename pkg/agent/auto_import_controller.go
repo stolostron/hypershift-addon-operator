@@ -79,7 +79,7 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// check if controlplane is available, if not then requeue until it is
-	if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || !c.isHostedControlPlaneAvailable(hc.Status) {
+	if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || !isHostedControlPlaneAvailable(hc.Status) {
 		// wait for cluster to become available, check again in a minute
 		c.log.Info(fmt.Sprintf("hosted control plane of (%s) is unavailable, retrying in 1 minute", req.NamespacedName))
 		return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
@@ -110,17 +110,6 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	return ctrl.Result{}, nil
-}
-
-// check if hosted control plane is available
-func (c *AutoImportController) isHostedControlPlaneAvailable(status hyperv1beta1.HostedClusterStatus) bool {
-	for _, condition := range status.Conditions {
-		if condition.Reason == hyperv1beta1.AsExpectedReason && condition.Status == metav1.ConditionTrue &&
-			condition.Type == string(hyperv1beta1.HostedClusterAvailable) {
-			return true
-		}
-	}
-	return false
 }
 
 // creates managed cluster from hosted cluster

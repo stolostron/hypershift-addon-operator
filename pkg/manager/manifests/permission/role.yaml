@@ -16,3 +16,6 @@ rules:
   - apiGroups: ["cluster.open-cluster-management.io"]
     resources: ["addonplacementscores", "addonplacementscores/status"]
     verbs: ["get", "list", "watch", "create", "delete", "update", patch]
+  - apiGroups: [ "discovery.open-cluster-management.io" ]
+    resources: [ "discoveredclusters" ]
+    verbs: [ "*" ]

@@ -81,3 +81,6 @@ rules:
   - apiGroups: [ "scheduling.hypershift.openshift.io" ]
     resources: [ "*" ]
     verbs: [ "*" ]
+  - apiGroups: [ "discovery.open-cluster-management.io" ]
+    resources: [ "discoveredclusters" ]
+    verbs: [ "*" ]

@@ -26,6 +26,7 @@ const (
 	AddonControllerName          = "hypershift-addon"
 	AddonStatusControllerName    = "hypershift-addon-status"
 	AutoImportControllerName     = "auto-import"
+	DiscoveryAgentName           = "discovery-agent"
 	ExternalSecretControllerName = "external-secret"
 	AgentDeploymentName          = "hypershift-addon-agent"
 
@@ -43,6 +44,8 @@ const (
 	HypershiftClusterNameLabel           = "hypershiftdeployments.cluster.open-cluster-management.io/cluster-name"
 	HypershiftHostingNamespaceLabel      = "hypershiftdeployments.cluster.open-cluster-management.io/hosting-namespace"
 	HypershiftOperatorNoMCEAnnotationKey = "hypershift.open-cluster-management.io/not-by-mce"
+	HostedClusterNameLabel               = "hypershift.open-cluster-management.io/hc-name"
+	HostedClusterNamespaceLabel          = "hypershift.open-cluster-management.io/hc-namespace"
 
 	// ImageStream image names
 	ImageStreamAwsCapiProvider      = "cluster-api-provider-aws"

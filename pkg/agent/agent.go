@@ -41,6 +41,7 @@ import (
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
 	prometheusapi "github.com/prometheus/client_golang/api"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	discoveryv1 "github.com/stolostron/discovery/api/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/install"
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
@@ -68,6 +69,7 @@ func init() {
 	utilruntime.Must(agent.AddToScheme(scheme))
 	utilruntime.Must(routev1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
+	utilruntime.Must(discoveryv1.AddToScheme(scheme))
 	//+kubebuilder:scaffold:scheme
 }
 
@@ -285,6 +287,15 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	if err = autoImportController.SetupWithManager(mgr); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to create auto-import controller: %s, err: %w", util.AutoImportControllerName, err)
+	}
+
+	discoveryAgent := &DiscoveryAgent{
+		hubClient: hubClient, spokeClient: spokeKubeClient, clusterName: aCtrl.clusterName, log: o.Log.WithName("discovery-controller"),
+	}
+
+	if err = discoveryAgent.SetupWithManager(mgr); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
+		return fmt.Errorf("unable to create discovery controller: %s, err: %w", util.DiscoveryAgentName, err)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -614,7 +625,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 ||
-		!c.isHostedControlPlaneAvailable(hc.Status) {
+		!isHostedControlPlaneAvailable(hc.Status) {
 		// Wait for secrets to exist
 		c.log.Info(fmt.Sprintf("hostedcluster %s's control plane is not ready yet.", hc.Name))
 		return ctrl.Result{}, nil
@@ -751,7 +762,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return ctrl.Result{}, nil
 }
 
-func (c *agentController) isHostedControlPlaneAvailable(status hyperv1beta1.HostedClusterStatus) bool {
+func isHostedControlPlaneAvailable(status hyperv1beta1.HostedClusterStatus) bool {
 	for _, condition := range status.Conditions {
 		if condition.Reason == hyperv1beta1.AsExpectedReason && condition.Status == metav1.ConditionTrue && condition.Type == string(hyperv1beta1.HostedClusterAvailable) {
 			return true
@@ -977,7 +988,7 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup b
 		deletingHcNum := 0
 
 		for _, hc := range hcList.Items {
-			if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || c.isHostedControlPlaneAvailable(hc.Status) {
+			if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || isHostedControlPlaneAvailable(hc.Status) {
 				availableHcpNum++
 			}
 

@@ -88,6 +88,10 @@ spec:
         - name: DISABLE_AUTO_IMPORT
           value: "{{ .autoImportDisabled }}"
 {{- end }}
+{{- if eq .enableHCDiscovery "true" }}
+        - name: ENABLE_HC_DISCOVERY
+          value: "{{ .enableHCDiscovery }}"
+{{- end }}
 {{- if ne .disableMetrics "true" }}
         ports:
         - name: metrics
