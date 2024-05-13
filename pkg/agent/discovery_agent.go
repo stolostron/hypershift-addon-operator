@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -22,7 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
-type DiscoveryController struct {
+type DiscoveryAgent struct {
 	hubClient   client.Client
 	spokeClient client.Client
 	clusterName string
@@ -45,7 +46,7 @@ var DiscoveryPredicateFunctions = predicate.Funcs{
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (c *DiscoveryController) SetupWithManager(mgr ctrl.Manager) error {
+func (c *DiscoveryAgent) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
@@ -53,7 +54,19 @@ func (c *DiscoveryController) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(c)
 }
 
-func (c *DiscoveryController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (c *DiscoveryAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	// skip discovery if disabled
+	if strings.EqualFold(os.Getenv("DISABLE_HC_DISCOVERY"), "true") {
+		c.log.Info("hosted cluster discovery is disabled, skip discovering")
+		return ctrl.Result{}, nil
+	}
+
+	// if this agent is for self managed cluster aka local-cluster, skip discovery
+	if strings.EqualFold(c.clusterName, "local-cluster") { // we can use hardcoded local-cluster for now
+		c.log.Info("this is local-cluster agent, skip discovering")
+		return ctrl.Result{}, nil
+	}
+
 	hc := &hyperv1beta1.HostedCluster{}
 	err := c.spokeClient.Get(ctx, req.NamespacedName, hc)
 
@@ -72,7 +85,7 @@ func (c *DiscoveryController) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	if hcDeleted {
 		c.log.Info(fmt.Sprintf("deleting the discovered cluster for hosted cluster %s", req.NamespacedName))
-		if err := c.deleteDiscoveredCluster(*hc, ctx); err != nil {
+		if err := c.deleteDiscoveredCluster(req.Name, req.Namespace, ctx); err != nil {
 			c.log.Error(err, fmt.Sprintf("could not delete discovered cluster for hosted cluster (%s)", hc.Name))
 			return ctrl.Result{}, err
 		}
@@ -96,7 +109,7 @@ func (c *DiscoveryController) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 // creates discovered cluster in the hub cluster
-func (c *DiscoveryController) createUpdateDiscoveredCluster(hc hyperv1beta1.HostedCluster, ctx context.Context) error {
+func (c *DiscoveryAgent) createUpdateDiscoveredCluster(hc hyperv1beta1.HostedCluster, ctx context.Context) error {
 	dcList, err := c.getDiscoveredClusterList(hc, ctx)
 	if err != nil {
 		return err
@@ -135,7 +148,7 @@ func (c *DiscoveryController) createUpdateDiscoveredCluster(hc hyperv1beta1.Host
 }
 
 // populate discovered cluster data for creation
-func (c *DiscoveryController) getDiscoveredCluster(hc hyperv1beta1.HostedCluster) *discoveryv1.DiscoveredCluster {
+func (c *DiscoveryAgent) getDiscoveredCluster(hc hyperv1beta1.HostedCluster) *discoveryv1.DiscoveredCluster {
 	dc := &discoveryv1.DiscoveredCluster{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "DiscoveredCluster",
@@ -150,14 +163,15 @@ func (c *DiscoveryController) getDiscoveredCluster(hc hyperv1beta1.HostedCluster
 			},
 		},
 		Spec: discoveryv1.DiscoveredClusterSpec{
-			APIURL:            getAPIServerURL(hc.Status),
-			DisplayName:       c.clusterName + "-" + hc.Name,
-			Name:              hc.Name,
-			IsManagedCluster:  false,
-			Type:              "MultiClusterEngineHCP",
-			OpenshiftVersion:  c.getOCPVersion(hc.Status),
-			CreationTimestamp: &hc.CreationTimestamp,
-			CloudProvider:     strings.ToLower(string(hc.Spec.Platform.Type)),
+			APIURL:                 getAPIServerURL(hc.Status),
+			DisplayName:            c.clusterName + "-" + hc.Name,
+			Name:                   hc.Name,
+			IsManagedCluster:       false,
+			ImportAsManagedCluster: false,
+			Type:                   "MultiClusterEngineHCP",
+			OpenshiftVersion:       c.getOCPVersion(hc.Status),
+			CreationTimestamp:      &hc.CreationTimestamp,
+			CloudProvider:          strings.ToLower(string(hc.Spec.Platform.Type)),
 		},
 	}
 
@@ -165,7 +179,10 @@ func (c *DiscoveryController) getDiscoveredCluster(hc hyperv1beta1.HostedCluster
 }
 
 // deletes discovered cluster from the hub cluster
-func (c *DiscoveryController) deleteDiscoveredCluster(hc hyperv1beta1.HostedCluster, ctx context.Context) error {
+func (c *DiscoveryAgent) deleteDiscoveredCluster(hcName string, hcNamespace string, ctx context.Context) error {
+	hc := hyperv1beta1.HostedCluster{}
+	hc.Name = hcName
+	hc.Namespace = hcNamespace
 	dcList, err := c.getDiscoveredClusterList(hc, ctx)
 	if err != nil {
 		return err
@@ -189,7 +206,7 @@ func (c *DiscoveryController) deleteDiscoveredCluster(hc hyperv1beta1.HostedClus
 }
 
 // deletes discovered cluster from the hub cluster
-func (c *DiscoveryController) getDiscoveredClusterList(hc hyperv1beta1.HostedCluster, ctx context.Context) (*discoveryv1.DiscoveredClusterList, error) {
+func (c *DiscoveryAgent) getDiscoveredClusterList(hc hyperv1beta1.HostedCluster, ctx context.Context) (*discoveryv1.DiscoveredClusterList, error) {
 	dcList := &discoveryv1.DiscoveredClusterList{}
 
 	// Create label selector
@@ -210,14 +227,14 @@ func getAPIServerURL(status hyperv1beta1.HostedClusterStatus) string {
 	return fmt.Sprintf("https://%s:%s", status.ControlPlaneEndpoint.Host, fmt.Sprint(status.ControlPlaneEndpoint.Port))
 }
 
-func (c *DiscoveryController) getOCPVersion(status hyperv1beta1.HostedClusterStatus) string {
+func (c *DiscoveryAgent) getOCPVersion(status hyperv1beta1.HostedClusterStatus) string {
 	v1, err := version.NewVersion("0")
 	if err != nil {
 		c.log.Error(err, "failed to create a new version")
 		return ""
 	}
 
-	if len(status.Version.History) > 0 {
+	if status.Version != nil && len(status.Version.History) > 0 {
 		for _, history := range status.Version.History {
 			if history.State == configv1.CompletedUpdate {
 				v2, err := version.NewVersion(history.Version)

@@ -289,13 +289,13 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to create auto-import controller: %s, err: %w", util.AutoImportControllerName, err)
 	}
 
-	discoveryController := &DiscoveryController{
+	discoveryAgent := &DiscoveryAgent{
 		hubClient: hubClient, spokeClient: spokeKubeClient, clusterName: aCtrl.clusterName, log: o.Log.WithName("discovery-controller"),
 	}
 
-	if err = discoveryController.SetupWithManager(mgr); err != nil {
+	if err = discoveryAgent.SetupWithManager(mgr); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
-		return fmt.Errorf("unable to create discovery controller: %s, err: %w", util.DiscoveryControllerName, err)
+		return fmt.Errorf("unable to create discovery controller: %s, err: %w", util.DiscoveryAgentName, err)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {

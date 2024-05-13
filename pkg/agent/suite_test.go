@@ -7,6 +7,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	discoveryv1 "github.com/stolostron/discovery/api/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 
 	"k8s.io/apimachinery/pkg/types"
@@ -63,6 +64,8 @@ var _ = BeforeSuite(func() {
 	Expect(err).NotTo(HaveOccurred())
 	err = appsv1.AddToScheme(k8sscheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
+	err = discoveryv1.AddToScheme(k8sscheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
 
 	// Register and start the Foo controller
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
@@ -76,6 +79,14 @@ var _ = BeforeSuite(func() {
 		log:         zapLogger.WithName("addon-status-controller-test"),
 		addonNsn:    types.NamespacedName{Namespace: localClusterName, Name: util.AddonControllerName},
 		clusterName: localClusterName,
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = (&DiscoveryAgent{
+		spokeClient: k8sManager.GetClient(),
+		hubClient:   k8sManager.GetClient(),
+		log:         zapLogger.WithName("addon-status-controller-test"),
+		clusterName: managedMCEClusterName,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
