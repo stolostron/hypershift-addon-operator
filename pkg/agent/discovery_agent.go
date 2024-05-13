@@ -30,6 +30,7 @@ type DiscoveryAgent struct {
 	log         logr.Logger
 }
 
+// This predicate is used as an event filter
 var DiscoveryPredicateFunctions = predicate.Funcs{
 	CreateFunc: func(e event.CreateEvent) bool {
 		return true
@@ -40,6 +41,7 @@ var DiscoveryPredicateFunctions = predicate.Funcs{
 	DeleteFunc: func(e event.DeleteEvent) bool {
 		return true
 	},
+	//GenericEvent is an event where the operation type is unknown in which case, do not request reconciliation
 	GenericFunc: func(e event.GenericEvent) bool {
 		return false
 	},
@@ -199,6 +201,9 @@ func (c *DiscoveryAgent) deleteDiscoveredCluster(hcName string, hcNamespace stri
 			return err
 		}
 	} else {
+		// Only one matching DiscoveredCluster is expected to exist for a hosted cluster. If there happens to be more than one DiscoveredCluster
+		// resources with the same annotations, this is an error case. Do not make any assumption because removing a DiscoveredCluster could
+		// remove the managed cluster. Log the error and do nothing.
 		return fmt.Errorf("there are %s discovered clusters for hosted cluster (%s/%s)", strconv.Itoa(len(dcList.Items)), hc.Namespace, hc.Name)
 	}
 
