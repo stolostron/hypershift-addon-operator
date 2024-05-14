@@ -39,6 +39,7 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	frameworkagent "open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
+	addonutil "open-cluster-management.io/addon-framework/pkg/utils"
 	addonapiv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	addonv1alpha1client "open-cluster-management.io/api/client/addon/clientset/versioned"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
@@ -177,11 +178,13 @@ func getAgentAddon(componentName string, o *override, controllerContext *control
 		WithGetValuesFuncs(
 			o.getValueForAgentTemplate,
 			addonfactory.GetValuesFromAddonAnnotation,
-			addonfactory.GetAddOnDeloymentConfigValues(
-				addonfactory.NewAddOnDeloymentConfigGetter(addonClient),
-				addonfactory.ToAddOnDeloymentConfigValues,
+			addonfactory.GetAddOnDeploymentConfigValues(
+				addonutil.NewAddOnDeploymentConfigGetter(addonClient),
+				addonfactory.ToAddOnDeploymentConfigValues,
 			)).
 		WithAgentRegistrationOption(registrationOption).
+		WithAgentInstallNamespace(addonutil.AgentInstallNamespaceFromDeploymentConfigFunc(
+			addonutil.NewAddOnDeploymentConfigGetter(addonClient))).
 		WithScheme(genericScheme).
 		BuildTemplateAgentAddon()
 }
