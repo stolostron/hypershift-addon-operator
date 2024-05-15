@@ -3,7 +3,9 @@ package install
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -69,21 +71,25 @@ func (c *UpgradeController) Start() {
 	c.stopch = make(chan struct{})
 
 	go wait.Until(func() {
-		c.log.Info(fmt.Sprintf("check if HyperShift operator re-installation is required (startup=%v, installfailed=%v)", c.startup, c.installfailed))
+		if strings.EqualFold(os.Getenv("DISABLE_HO_MANAGEMENT"), "true") {
+			c.log.Info("hypershift operator management is disabled. Skip installing or upgrading the hypershift operator")
+		} else {
+			c.log.Info(fmt.Sprintf("check if HyperShift operator re-installation is required (startup=%v, installfailed=%v)", c.startup, c.installfailed))
 
-		c.reinstallNeeded = false
-		if c.startup || c.installfailed || c.installOptionsChanged() || c.upgradeImageCheck() {
-			c.reinstallNeeded = true
-			c.log.Info("hypershift operator re-installation is required")
-			if err := c.runHypershiftInstall(c.ctx, c.startup); err != nil {
-				c.log.Error(err, "failed to install hypershift operator")
+			c.reinstallNeeded = false
+			if c.startup || c.installfailed || c.installOptionsChanged() || c.upgradeImageCheck() {
+				c.reinstallNeeded = true
+				c.log.Info("hypershift operator re-installation is required")
+				if err := c.runHypershiftInstall(c.ctx, c.startup); err != nil {
+					c.log.Error(err, "failed to install hypershift operator")
 
-				c.installfailed = true
-				metrics.InstallationFailningGaugeBool.Set(float64(1))
-			} else {
-				c.installfailed = false
-				c.startup = false
-				metrics.InstallationFailningGaugeBool.Set(0)
+					c.installfailed = true
+					metrics.InstallationFailningGaugeBool.Set(float64(1))
+				} else {
+					c.installfailed = false
+					c.startup = false
+					metrics.InstallationFailningGaugeBool.Set(0)
+				}
 			}
 		}
 	}, 2*time.Minute, c.stopch) // Connect to the hub every 2 minutes to check for any changes

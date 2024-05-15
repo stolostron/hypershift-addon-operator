@@ -88,6 +88,10 @@ spec:
         - name: DISABLE_AUTO_IMPORT
           value: "{{ .autoImportDisabled }}"
 {{- end }}
+{{- if eq .disableHOManagement "true" }}
+        - name: DISABLE_HO_MANAGEMENT
+          value: "{{ .disableHOManagement }}"
+{{- end }}
 {{- if eq .enableHCDiscovery "true" }}
         - name: ENABLE_HC_DISCOVERY
           value: "{{ .enableHCDiscovery }}"
