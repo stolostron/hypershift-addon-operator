@@ -409,6 +409,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	err = c.updateHyperShiftDeployment(ctx)
 	if err != nil {
 		c.log.Error(err, "failed to update the hypershift operator deployment")
+		return err
 	}
 
 	return nil
