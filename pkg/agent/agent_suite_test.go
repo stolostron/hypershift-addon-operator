@@ -107,6 +107,13 @@ func (suite *AgentTestSuite) SetupSuite() {
 	}
 
 	err = suite.testKubeClient.Create(context.TODO(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "spoke-1"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = suite.testKubeClient.Create(context.TODO(), &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: "clusters"},
 	})
 	if err != nil {
@@ -262,8 +269,6 @@ func (suite *AgentTestSuite) TestReconcileRequeue() {
 }
 
 func (suite *AgentTestSuite) TestReconcile() {
-	fmt.Println("From TestAddOne")
-
 	hcName := "test-2"
 
 	suite.createHCResources(hcName, nil, &hyperv1beta1.ClusterConfiguration{})
@@ -493,6 +498,109 @@ func (suite *AgentTestSuite) TestReconcileWithAnnotation() {
 	err = suite.controller.hubClient.Get(ctx, kcSecretNN, secret)
 	suite.True(err != nil && errors.IsNotFound(err), "is true when the admin kubeconfig secret is deleted")
 	err = suite.controller.hubClient.Get(ctx, pwdSecretNN, secret)
+	suite.True(err != nil && errors.IsNotFound(err), "is nil when the kubeadmin password secret is deleted")
+}
+
+func (suite *AgentTestSuite) TestReconcileDiscovery() {
+	hcName := "test-5"
+
+	suite.controller.clusterName = "spoke-1"
+
+	suite.createHCResources(hcName, nil, &hyperv1beta1.ClusterConfiguration{})
+
+	hc := &hyperv1beta1.HostedCluster{}
+	err := suite.controller.hubClient.Get(context.TODO(), types.NamespacedName{Name: hcName, Namespace: "clusters"}, hc)
+	suite.Nil(err, "err nil when hosted cluster is found successfully")
+
+	newStatus := &hyperv1beta1.HostedClusterStatus{
+		Conditions: []metav1.Condition{{Type: string(hyperv1beta1.HostedClusterAvailable), Status: metav1.ConditionTrue, Reason: hyperv1beta1.AsExpectedReason, LastTransitionTime: metav1.NewTime(time.Now())}},
+		KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"},
+		Version: &hyperv1beta1.ClusterVersionStatus{
+			History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate, StartedTime: metav1.NewTime(time.Now())}},
+		},
+	}
+
+	hc.Status = *newStatus
+
+	err = suite.controller.hubClient.Status().Update(context.TODO(), hc, &client.SubResourceUpdateOptions{})
+	suite.Nil(err, "err nil when hosted cluster status is found successfully")
+
+	// Create klusterlet namespace
+	klusterletNamespace := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "klusterlet-spoke-1-" + hc.Name,
+		},
+	}
+	err = suite.controller.hubClient.Create(context.TODO(), klusterletNamespace)
+	suite.Nil(err, "err nil when klusterletNamespace was created successfully")
+
+	// Reconcile with annotation
+	_, err = suite.controller.Reconcile(context.TODO(), ctrl.Request{NamespacedName: types.NamespacedName{Name: hcName, Namespace: "clusters"}})
+	suite.Nil(err, "err nil when reconcile was successfully")
+
+	// Secret for kubconfig is created
+	secret := &corev1.Secret{}
+	kcSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-admin-kubeconfig", hc.Name), Namespace: suite.controller.clusterName}
+	err = suite.controller.hubClient.Get(context.TODO(), kcSecretNN, secret)
+	suite.Nil(err, "is nil when the admin kubeconfig secret is found")
+
+	// The hosted cluster does not have status.KubeadminPassword so the kubeadmin-password is not expected to be copied
+	pwdSecretNN := types.NamespacedName{Name: fmt.Sprintf("%s-kubeadmin-password", hc.Name), Namespace: suite.controller.clusterName}
+	err = suite.controller.hubClient.Get(context.TODO(), pwdSecretNN, secret)
+	suite.True(err != nil && errors.IsNotFound(err), "is true when the kubeadmin-password secret is not copied")
+
+	kcExtSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-spoke-1-" + hc.Name}
+	err = suite.controller.hubClient.Get(context.TODO(), kcExtSecretNN, secret)
+	suite.Nil(err, "is nil when external-managed-kubeconfig secret is found")
+
+	kubeconfig, err := clientcmd.Load(secret.Data["kubeconfig"])
+	suite.Nil(err, "is nil when kubeconfig data can be loaded")
+	suite.Equal(kubeconfig.Clusters["cluster"].Server, "https://kube-apiserver."+hc.Namespace+"-"+hc.Name+".svc.cluster.local:443")
+
+	suite.Equal(float64(0), testutil.ToFloat64(metrics.KubeconfigSecretCopyFailureCount))
+	suite.Equal(float64(1), testutil.ToFloat64(metrics.TotalHostedClusterGauge))
+	suite.Equal(float64(1), testutil.ToFloat64(metrics.HostedClusterAvailableGauge))
+
+	hc1 := &hyperv1beta1.HostedCluster{}
+	err = suite.controller.hubClient.Get(context.TODO(), types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}, hc1)
+	suite.Nil(err, "err nil when hosted cluster is found successfully")
+
+	// Add the kubeadmin password to the hosted cluster CR to test that the kubeadmin-password is copied
+	newStatus = &hyperv1beta1.HostedClusterStatus{
+		Conditions: []metav1.Condition{{Type: string(hyperv1beta1.HostedClusterAvailable), Status: metav1.ConditionTrue, Reason: hyperv1beta1.AsExpectedReason, LastTransitionTime: metav1.NewTime(time.Now())}},
+		KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"},
+		Version: &hyperv1beta1.ClusterVersionStatus{
+			History: []configv1.UpdateHistory{{State: configv1.CompletedUpdate, StartedTime: metav1.NewTime(time.Now())}},
+		},
+		KubeadminPassword: &corev1.LocalObjectReference{Name: "kubeadmin-password"},
+	}
+	hc1.Status = *newStatus
+
+	err = suite.controller.hubClient.Status().Update(context.TODO(), hc1, &client.SubResourceUpdateOptions{})
+	suite.Nil(err, "err nil when hosted cluster was updated successfully")
+
+	_, err = suite.controller.Reconcile(context.TODO(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}})
+	suite.Nil(err, "err nil when reconcile was successfully")
+
+	// The hosted cluster now has status.KubeadminPassword so the kubeadmin-password is expected to be copied
+	err = suite.controller.hubClient.Get(context.TODO(), pwdSecretNN, secret)
+	suite.Nil(err, "is nil when the kubeadmin-password secret is found")
+
+	// Delete hosted cluster and reconcile
+	suite.controller.hubClient.Delete(context.TODO(), hc)
+
+	suite.Eventually(func() bool {
+		hcToDelete := &hyperv1beta1.HostedCluster{}
+		err := suite.controller.hubClient.Get(context.TODO(), types.NamespacedName{Namespace: "clusters", Name: hcName}, hcToDelete)
+		return err != nil && errors.IsNotFound(err)
+	}, 5*time.Second, 500*time.Millisecond)
+
+	_, err = suite.controller.Reconcile(context.TODO(), ctrl.Request{NamespacedName: types.NamespacedName{Namespace: hc.Namespace, Name: hc.Name}})
+	suite.Nil(err, "err nil when reconcile was successfully")
+
+	err = suite.controller.hubClient.Get(context.TODO(), kcSecretNN, secret)
+	suite.True(err != nil && errors.IsNotFound(err), "is true when the admin kubeconfig secret is deleted")
+	err = suite.controller.hubClient.Get(context.TODO(), pwdSecretNN, secret)
 	suite.True(err != nil && errors.IsNotFound(err), "is nil when the kubeadmin password secret is deleted")
 }
 
