@@ -166,7 +166,7 @@ func (c *DiscoveryAgent) getDiscoveredCluster(hc hyperv1beta1.HostedCluster) *di
 		},
 		Spec: discoveryv1.DiscoveredClusterSpec{
 			APIURL:                 getAPIServerURL(hc.Status),
-			DisplayName:            c.clusterName + "-" + hc.Name,
+			DisplayName:            getDiscoveredClusterName(c.clusterName, hc.Name),
 			Name:                   hc.Name,
 			IsManagedCluster:       false,
 			ImportAsManagedCluster: false,
@@ -174,6 +174,7 @@ func (c *DiscoveryAgent) getDiscoveredCluster(hc hyperv1beta1.HostedCluster) *di
 			OpenshiftVersion:       c.getOCPVersion(hc.Status),
 			CreationTimestamp:      &hc.CreationTimestamp,
 			CloudProvider:          strings.ToLower(string(hc.Spec.Platform.Type)),
+			Status:                 "Active",
 		},
 	}
 
@@ -257,4 +258,8 @@ func (c *DiscoveryAgent) getOCPVersion(status hyperv1beta1.HostedClusterStatus) 
 		}
 	}
 	return ""
+}
+
+func getDiscoveredClusterName(spokeClusterName, hcName string) string {
+	return spokeClusterName + "-" + hcName
 }

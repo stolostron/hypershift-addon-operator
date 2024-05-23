@@ -37,6 +37,7 @@ const (
 type AutoImportController struct {
 	hubClient   client.Client
 	spokeClient client.Client
+	clusterName string
 	log         logr.Logger
 }
 
@@ -68,6 +69,12 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 	// skip auto import if disabled
 	if strings.EqualFold(os.Getenv("DISABLE_AUTO_IMPORT"), "true") {
 		c.log.Info("auto import is disabled, skip auto importing")
+		return ctrl.Result{}, nil
+	}
+
+	// if this agent is not for self managed cluster aka local-cluster, skip auto-import
+	if !strings.EqualFold(c.clusterName, "local-cluster") { // we can use hardcoded local-cluster for now
+		c.log.Info("this is local-cluster agent, skip discovering")
 		return ctrl.Result{}, nil
 	}
 
