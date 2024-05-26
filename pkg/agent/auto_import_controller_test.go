@@ -44,6 +44,7 @@ func TestNoACMAutoImport(t *testing.T) {
 	AICtrl := &AutoImportController{
 		spokeClient: client,
 		hubClient:   client,
+		clusterName: "local-cluster",
 		log:         zapr.NewLogger(zapLog),
 	}
 
@@ -113,6 +114,7 @@ func TestACMAutoImport(t *testing.T) {
 	AICtrl := &AutoImportController{
 		spokeClient: client,
 		hubClient:   client,
+		clusterName: "local-cluster",
 		log:         zapr.NewLogger(zapLog),
 	}
 
@@ -192,6 +194,7 @@ func TestToggleAutoImport(t *testing.T) {
 	AICtrl := &AutoImportController{
 		spokeClient: client,
 		hubClient:   client,
+		clusterName: "local-cluster",
 		log:         zapr.NewLogger(zapLog),
 	}
 
@@ -279,6 +282,7 @@ func TestHCPUnavailable(t *testing.T) {
 	AICtrl := &AutoImportController{
 		spokeClient: client,
 		hubClient:   client,
+		clusterName: "local-cluster",
 		log:         zapr.NewLogger(zapLog),
 	}
 

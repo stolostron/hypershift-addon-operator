@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -281,7 +282,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	autoImportController := &AutoImportController{
-		hubClient: hubClient, spokeClient: spokeKubeClient, log: o.Log.WithName("auto-import-controller"),
+		hubClient: hubClient, spokeClient: spokeKubeClient, clusterName: aCtrl.clusterName, log: o.Log.WithName("auto-import-controller"),
 	}
 
 	if err = autoImportController.SetupWithManager(mgr); err != nil {
@@ -459,15 +460,21 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	// 1. Get hosted cluster's admin kubeconfig secret
 	secret := &corev1.Secret{}
 	secret.SetName("external-managed-kubeconfig")
-	managedClusterAnnoValue, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
-	if !ok || len(managedClusterAnnoValue) == 0 {
-		managedClusterAnnoValue = hc.Name
+	managedClusterName, ok := hc.GetAnnotations()[util.ManagedClusterAnnoKey]
+	if !ok || len(managedClusterName) == 0 {
+		managedClusterName = hc.Name
 	}
-	secret.SetNamespace("klusterlet-" + managedClusterAnnoValue)
+
+	if !strings.EqualFold(os.Getenv("DISABLE_HC_DISCOVERY"), "true") && !strings.EqualFold(c.clusterName, "local-cluster") {
+		managedClusterName = getDiscoveredClusterName(c.clusterName, hc.Name)
+		c.log.Info(fmt.Sprintf("Hosted cluster discovery is enabled. Using klusterlet-%s as the hosted cluster's klusterlet namespace.", managedClusterName))
+	}
+
+	secret.SetNamespace("klusterlet-" + managedClusterName)
 	kubeconfigData := secretData["kubeconfig"]
 
 	klusterletNamespace := &corev1.Namespace{}
-	klusterletNamespaceNsn := types.NamespacedName{Name: "klusterlet-" + managedClusterAnnoValue}
+	klusterletNamespaceNsn := types.NamespacedName{Name: "klusterlet-" + managedClusterName}
 
 	if err := c.spokeClient.Get(ctx, klusterletNamespaceNsn, klusterletNamespace); err != nil {
 		c.log.Error(err, fmt.Sprintf("failed to find the klusterlet namespace: %s ", klusterletNamespaceNsn.Name))

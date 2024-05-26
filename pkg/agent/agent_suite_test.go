@@ -107,6 +107,13 @@ func (suite *AgentTestSuite) SetupSuite() {
 	}
 
 	err = suite.testKubeClient.Create(context.TODO(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "spoke-1"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = suite.testKubeClient.Create(context.TODO(), &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: "clusters"},
 	})
 	if err != nil {
@@ -262,8 +269,6 @@ func (suite *AgentTestSuite) TestReconcileRequeue() {
 }
 
 func (suite *AgentTestSuite) TestReconcile() {
-	fmt.Println("From TestAddOne")
-
 	hcName := "test-2"
 
 	suite.createHCResources(hcName, nil, &hyperv1beta1.ClusterConfiguration{})
@@ -494,6 +499,98 @@ func (suite *AgentTestSuite) TestReconcileWithAnnotation() {
 	suite.True(err != nil && errors.IsNotFound(err), "is true when the admin kubeconfig secret is deleted")
 	err = suite.controller.hubClient.Get(ctx, pwdSecretNN, secret)
 	suite.True(err != nil && errors.IsNotFound(err), "is nil when the kubeadmin password secret is deleted")
+}
+
+func (suite *AgentTestSuite) TestReconcileDiscovery() {
+	secData := map[string][]byte{}
+	secData["kubeconfig"] = []byte(`apiVersion: v1
+clusters:
+- cluster:
+    server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:7443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    namespace: default
+    user: admin
+  name: admin
+current-context: admin
+kind: Config`)
+
+	err := suite.controller.spokeClient.Create(context.TODO(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "klusterlet-discovery-test-1"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = suite.controller.spokeClient.Create(context.TODO(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "klusterlet-spoke-1-discovery-test-1"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = suite.controller.spokeClient.Create(context.TODO(), &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "clusters-discovery-test-1"},
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	apiService := &corev1.Service{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Service",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "kube-apiserver",
+			Namespace: "clusters-" + "discovery-test-1",
+		},
+		Spec: corev1.ServiceSpec{
+			Ports: []corev1.ServicePort{
+				{
+					Name:     "https",
+					Port:     443,
+					Protocol: "TCP",
+					TargetPort: intstr.IntOrString{
+						IntVal: 6443,
+					},
+				},
+			},
+		},
+	}
+
+	err = suite.controller.spokeClient.Create(context.TODO(), apiService)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create hosted cluster
+	hc := getHostedCluster(types.NamespacedName{Namespace: "clusters", Name: "discovery-test-1"})
+
+	// If the cluster name is not local-cluster and hosted cluster discovery is not disabled (DISABLE_HC_DISCOVERY = false)
+	// we expect the external-managed-kubeconfig secret to be generated in klusterlet-clusterName-hcName namespace.
+	// Otherwise, we expect the external-managed-kubeconfig secret to be generated in klusterlet-hcName namespace.
+
+	err = suite.controller.generateExtManagedKubeconfigSecret(context.TODO(), secData, *hc)
+	suite.Nil(err, "is nil when generateExtManagedKubeconfigSecret ran successfully")
+
+	secret := &corev1.Secret{}
+	kcSecretNN := types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-discovery-test-1"}
+	err = suite.controller.spokeClient.Get(context.TODO(), kcSecretNN, secret)
+	suite.Nil(err, "is nil when the external-managed-kubeconfig secret is found in the normal hosted klusterlet namespace")
+
+	suite.controller.clusterName = "spoke-1"
+
+	err = suite.controller.generateExtManagedKubeconfigSecret(context.TODO(), secData, *hc)
+	suite.Nil(err, "is nil when generateExtManagedKubeconfigSecret ran successfully")
+
+	kcSecretNN = types.NamespacedName{Name: "external-managed-kubeconfig", Namespace: "klusterlet-spoke-1-discovery-test-1"}
+	err = suite.controller.spokeClient.Get(context.TODO(), kcSecretNN, secret)
+	suite.Nil(err, "is nil when the external-managed-kubeconfig secret is found in the discovered hosted klusterlet namespace")
+
+	suite.controller.clusterName = "local-cluster"
 }
 
 func (suite *AgentTestSuite) TestGenerateHCPMetrics() {
