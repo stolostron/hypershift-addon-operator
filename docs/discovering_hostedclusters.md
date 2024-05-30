@@ -205,6 +205,9 @@ spec:
 
 Setting the `spec.importAsManagedCluster` to `true` triggers ACM's discovery operator to start the auto-importing process and soon, you will see a managed cluster that is named the same as `spec.displayName` in the `DiscoveredCluster`. 
 
+<img width="1645" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/68fe947a-702c-4e24-a57c-2719b71eea5a">
+
+
 Setting `spec.importAsManagedCluster` to `true` can be automated by applying the following [policy](https://github.com/serngawy/policy-collection/blob/policy-mcehcp/community/CM-Configuration-Management/policy-mce-hcp-autoimport.yaml) to ACM. This policy ensures that a DiscoveredCluster with type `MultiClusterEngineHCP` is set for auto-importing.
 
 ```
