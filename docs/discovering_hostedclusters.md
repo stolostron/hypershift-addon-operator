@@ -335,3 +335,6 @@ This is the MCE console.
 <img width="1389" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/29ffd0f7-3b69-4ea6-917c-6f7838a6c070">
 
 
+## Detaching hosted clusters from ACM
+
+An imported hosted cluster can be detached from ACM using the detach option in the ACM console or by removing the corresponsing `ManagedCluster` CR from the command line. It is recommended to detach the managed hosted cluster before destroying the hosted cluster.
