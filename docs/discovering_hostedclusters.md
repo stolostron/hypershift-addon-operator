@@ -320,3 +320,6 @@ spec:
             {{- end }}
 ```
 
+When a discovered hosted cluster is auto-imported into ACM, all ACM addons are enabled as well so you can start managing the hosted clusters using the available management tools.
+
+## Hosted cluster life-cycle management
