@@ -168,6 +168,10 @@ managed-serviceaccount-addon-agent   1/1     1            1           24h
 This hypershift addon deployed by ACM acts as a discovery agent that discovers hosted clusters from MCE and create corresponding `DiscoveredCluster` CR in the MCE's managed cluster namespace in the ACM hub cluster when the hosted cluster's kube API server becomes available. Log into ACM hub console, navigate to All Clusters -> Infrastructure -> Clusters and `Discovered clusters` tab to view all discovered hosted clusters from MCE with type `MultiClusterEngineHCP`. 
 
 
+<img width="1641" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/b2739520-413a-4cd8-8a59-29d2e6837967">
+
+
+
 ## Auto-importing the discovered hosted clusters
 
 A `DiscoveredCluster` CR that is created by ACM's hypershift addon agent looks like this.
