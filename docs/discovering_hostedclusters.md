@@ -323,3 +323,5 @@ spec:
 When a discovered hosted cluster is auto-imported into ACM, all ACM addons are enabled as well so you can start managing the hosted clusters using the available management tools.
 
 ## Hosted cluster life-cycle management
+
+The hosted cluster is also auto-imported into MCE. Through the MCE console, you can manage the hosted cluster's life-cycle. You cannot manage the hosted cluster life-cycle from the ACM console.
