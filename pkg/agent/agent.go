@@ -273,7 +273,7 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	externalSecretController := &ExternalSecretController{
-		hubClient: hubClient, spokeClient: spokeKubeClient, log: o.Log.WithName("external-secret-controller"),
+		hubClient: hubClient, spokeClient: spokeKubeClient, clusterName: aCtrl.clusterName, log: o.Log.WithName("external-secret-controller"),
 	}
 
 	if err = externalSecretController.SetupWithManager(mgr); err != nil {

@@ -36,6 +36,7 @@ func TestKlusterletReconcile(t *testing.T) {
 	ESCtrl := &ExternalSecretController{
 		spokeClient: client,
 		hubClient:   client,
+		clusterName: "local-cluster",
 		log:         zapr.NewLogger(zapLog),
 	}
 

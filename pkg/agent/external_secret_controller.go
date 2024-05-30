@@ -25,6 +25,7 @@ const (
 type ExternalSecretController struct {
 	hubClient   client.Client
 	spokeClient client.Client
+	clusterName string
 	log         logr.Logger
 }
 
@@ -61,6 +62,8 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 
 	_, hostedClusterName, _ := strings.Cut(req.Name, "klusterlet-")
 
+	_, discoveredHostedClusterName, _ := strings.Cut(req.Name, "klusterlet-"+c.clusterName+"-")
+
 	lo := &client.ListOptions{}
 	hostedClusters := &hyperv1beta1.HostedClusterList{}
 
@@ -76,6 +79,16 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		if hc.Name == hostedClusterName {
 			hostedClusterObj = &hostedClusters.Items[index]
 			break
+		}
+	}
+
+	if hostedClusterObj.Name == "" && c.clusterName != "local-cluster" {
+		// Loop over the list of HostedCluster objects and find the one with the specified name
+		for index, hc := range hostedClusters.Items {
+			if hc.Name == discoveredHostedClusterName {
+				hostedClusterObj = &hostedClusters.Items[index]
+				break
+			}
 		}
 	}
 
