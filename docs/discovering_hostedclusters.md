@@ -325,3 +325,13 @@ When a discovered hosted cluster is auto-imported into ACM, all ACM addons are e
 ## Hosted cluster life-cycle management
 
 The hosted cluster is also auto-imported into MCE. Through the MCE console, you can manage the hosted cluster's life-cycle. You cannot manage the hosted cluster life-cycle from the ACM console.
+
+This is the MCE console.
+
+<img width="1638" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/c8eab313-ffa5-4996-bca8-ece5b3838f29">
+
+<img width="1375" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/41cee271-6d83-4701-b47e-221d21bc2b59">
+
+<img width="1389" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/29ffd0f7-3b69-4ea6-917c-6f7838a6c070">
+
+
