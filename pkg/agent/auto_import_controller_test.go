@@ -438,7 +438,8 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
 			Etcd: hyperv1beta1.EtcdSpec{
 				ManagementType: hyperv1beta1.Managed,
 			},
-			InfraID: hcNN.Name + "-abcdef",
+			InfraID:   hcNN.Name + "-abcdef",
+			ClusterID: clusterID,
 		},
 		Status: hyperv1beta1.HostedClusterStatus{
 			KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"},
