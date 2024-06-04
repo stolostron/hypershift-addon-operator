@@ -20,6 +20,7 @@ import (
 const managedMCEClusterName = "managed-mce"
 const hcNamespace = "clusters"
 const hcName = "hc-1"
+const clusterID = "89693e2e-1198-4710-a254-c8277db50779"
 
 var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 	ctx := context.Background()
@@ -86,7 +87,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 
 			Eventually(func() bool {
 				if err := k8sClient.Get(ctx,
-					types.NamespacedName{Namespace: managedMCEClusterName, Name: hcName},
+					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID},
 					discoveredCluster); err != nil {
 					return false
 				}
@@ -120,7 +121,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 			discoveredCluster := &discoveryv1.DiscoveredCluster{}
 			Eventually(func() bool {
 				if err := k8sClient.Get(ctx,
-					types.NamespacedName{Namespace: managedMCEClusterName, Name: hcName},
+					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID},
 					discoveredCluster); err != nil {
 					return false
 				}
@@ -133,7 +134,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 					return false
 				}
 
-				return discoveredCluster.Name == hcName
+				return discoveredCluster.Name == clusterID
 			}).Should(BeTrue())
 		})
 	})
@@ -152,7 +153,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 			discoveredCluster := &discoveryv1.DiscoveredCluster{}
 			Eventually(func() bool {
 				err := k8sClient.Get(ctx,
-					types.NamespacedName{Namespace: managedMCEClusterName, Name: hcName},
+					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID},
 					discoveredCluster)
 
 				return apierrors.IsNotFound(err)
@@ -186,7 +187,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 			discoveredCluster := &discoveryv1.DiscoveredCluster{}
 			Consistently(func() bool {
 				err := k8sClient.Get(ctx,
-					types.NamespacedName{Namespace: managedMCEClusterName, Name: hcName},
+					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID},
 					discoveredCluster)
 
 				return apierrors.IsNotFound(err)

@@ -157,7 +157,7 @@ func (c *DiscoveryAgent) getDiscoveredCluster(hc hyperv1beta1.HostedCluster) *di
 			APIVersion: "discovery.open-cluster-management.io/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      hc.Name,
+			Name:      hc.Spec.ClusterID,
 			Namespace: c.clusterName,
 			Labels: map[string]string{
 				util.HostedClusterNameLabel:      hc.Name,
@@ -167,7 +167,7 @@ func (c *DiscoveryAgent) getDiscoveredCluster(hc hyperv1beta1.HostedCluster) *di
 		Spec: discoveryv1.DiscoveredClusterSpec{
 			APIURL:                 getAPIServerURL(hc.Status),
 			DisplayName:            getDiscoveredClusterName(c.clusterName, hc.Name),
-			Name:                   hc.Name,
+			Name:                   hc.Spec.ClusterID,
 			IsManagedCluster:       false,
 			ImportAsManagedCluster: false,
 			Type:                   "MultiClusterEngineHCP",
