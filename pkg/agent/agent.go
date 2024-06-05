@@ -245,7 +245,10 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 
 	aCtrl.SetHCPSizingBaseline(ctx)
 
-	aCtrl.calculateCapacitiesToHostHCPs()
+	err = aCtrl.calculateCapacitiesToHostHCPs()
+	if err != nil {
+		log.Error(err, "failed to calculate the cluster capacity for HCPs")
+	}
 
 	log.Info("starting manager")
 
@@ -400,6 +403,7 @@ func createClient(ctx context.Context, client client.Client, host, bearerToken s
 				TLSClientConfig: &tls.Config{
 					RootCAs:    roots,
 					ServerName: host,
+					MinVersion: tls.VersionTLS12,
 				},
 			},
 		),
@@ -619,7 +623,9 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
-	c.calculateCapacitiesToHostHCPs()
+	if err := c.calculateCapacitiesToHostHCPs(); err != nil {
+		c.log.Error(err, "failed to calculate the cluster capacity for HCPs")
+	}
 
 	if !hc.GetDeletionTimestamp().IsZero() {
 		c.log.Info(fmt.Sprintf("hostedcluster %s has deletionTimestamp %s. Skip reconciling klusterlet secrets", hc.Name, hc.GetDeletionTimestamp().String()))
