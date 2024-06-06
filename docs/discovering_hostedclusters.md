@@ -150,7 +150,7 @@ spec:
        postfix: mce-import
 ```
 
-#### Importing MCE using 
+#### Importing MCE 
 
 In ACM cluster, create a `ManagedCluster` resource manually to start importing an MCE cluster. For example, create the following resource to import an MCE and name the managed cluster `mce-a`.
 
