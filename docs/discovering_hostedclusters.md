@@ -19,6 +19,8 @@ Since the hosted control planes run on the managed MCE clusters' nodes, the numb
 
 ### Importing an MCE cluster into ACM
 
+#### Configurations before import
+
 MCE has a self-managed cluster called `local-cluster` and the default addons are enabled for this managed cluster.
 
 ```
@@ -134,8 +136,51 @@ klusterlet-addon-workmgr             1/1     1            1           24h
 managed-serviceaccount-addon-agent   1/1     1            1           24h
 ```
 
+We are going to create a `KlusterletConfig` resource that is going to be used by `ManagedCluster` resources to import MCEs. When a `ManagedCluster` references this `KlusterletConfig` resource, the managed cluster klusterlet gets installed in the namepspace that is specified in the `KlusterletConfig`. This allows the importing ACM's klusterlet to be installed in a different namespace than the MCE's klusterlet for its self-managed local-cluster managed cluster in the MCE cluster.
 
-MCE clusters are now ready to be imported into an ACM hub cluster. Follow this [documentation on importing a cluster.](https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.10/html-single/clusters/index#import-intro).
+```
+kind: KlusterletConfig
+apiVersion: config.open-cluster-management.io/v1alpha1
+metadata:
+  name: mce-import-klusterlet-config
+spec:
+  installMode:
+    type: noOperator
+    noOperator:
+       postfix: mce-import
+```
+
+#### Importing MCE using 
+
+In ACM cluster, create a `ManagedCluster` resource manually to start importing an MCE cluster. For example, create the following resource to import an MCE and name the managed cluster `mce-a`.
+
+```
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  annotations:
+    agent.open-cluster-management.io/klusterlet-config: mce-import-klusterlet-config
+  name: mce-a
+spec:
+  hubAcceptsClient: true
+  leaseDurationSeconds: 60
+```
+
+Note that it has the annotation `agent.open-cluster-management.io/klusterlet-config: mce-import-klusterlet-config`. This annotation references the `KlusterletConfig` resource that was created in the previous step to install the ACM's klusterlet into a different namespace in MCE.
+
+Now the managed cluster and its namespace should be created in the ACM cluster. 
+
+Follow https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.10/html-single/clusters/index#importing-clusters-auto-import-secret to create the auto-import secret to complete the MCE auto-import process. Once the auto import secret is created in the MCE managed cluster namespace in the ACM cluster, the managed cluster gets registered and you should see the managed cluster status like this.
+
+
+```
+% oc get managedcluster
+NAME            HUB ACCEPTED   MANAGED CLUSTER URLS                                         JOINED   AVAILABLE   AGE
+local-cluster   true           https://api.acm-hub-hs-aws.dev09.red-chesterfield.com:6443   True     True        44h
+mce-a           true           https://api.clc-hs-mce-a.dev09.red-chesterfield.com:6443     True     True        27s
+```
+
+Important: DO NOT enable any other ACM addons for the imported MCE.
 
 ## Enabling the hypershift addon for MCE
 
