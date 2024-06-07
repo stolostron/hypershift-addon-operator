@@ -7,7 +7,7 @@ IMG ?= $(REPO)hypershift-addon-operator:latest
 IMG_CANARY ?= $(REPO)hypershift-addon-operator-canary-test:latest
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.22
+ENVTEST_K8S_VERSION = 1.19.x!
 
 KUBECTL?=kubectl
 
