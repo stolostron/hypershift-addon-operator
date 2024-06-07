@@ -7,7 +7,7 @@ IMG ?= $(REPO)hypershift-addon-operator:latest
 IMG_CANARY ?= $(REPO)hypershift-addon-operator-canary-test:latest
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.22
+ENVTEST_K8S_VERSION = 1.19.x!
 
 KUBECTL?=kubectl
 
@@ -90,7 +90,7 @@ ifndef ignore-not-found
 endif
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
-ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@v0.0.0-20230216140739-c98506dc3b8e
 .PHONY: envtest
 envtest: ## Download envtest-setup locally if necessary.
 	$(call go-get-tool,$(ENVTEST),$(ENVTEST_PACKAGE))
