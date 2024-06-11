@@ -252,9 +252,8 @@ Setting the `spec.importAsManagedCluster` to `true` triggers ACM's discovery ope
 
 <img width="1645" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/68fe947a-702c-4e24-a57c-2719b71eea5a">
 
-
-Setting `spec.importAsManagedCluster` to `true` can be automated by applying the following policy to ACM. This policy ensures that a DiscoveredCluster with type `MultiClusterEngineHCP` is set for auto-importing. Once this policy is applied, you need to set this policy's `remediationAction` to `ennforce` or alternatively, set `spec.remediationAction: enforce` before applying the policy.
-
+Setting `spec.importAsManagedCluster` to `true` can be automated by applying the following policy to ACM. This policy ensures that a DiscoveredCluster with type `MultiClusterEngineHCP` is set for auto-importing.
+ 
 ```
 apiVersion: policy.open-cluster-management.io/v1
 kind: Policy
@@ -267,12 +266,12 @@ metadata:
     policy.open-cluster-management.io/controls: CM-2 Baseline Configuration
     policy.open-cluster-management.io/description: Discovered clusters that are of
       type MultiClusterEngineHCP can be automatically imported into ACM as managed clusters.
-      This policy helps you select those managed clusters and configure them so the import
-      will happen. Fine tuning MultiClusterEngineHCP clusters to be automatically imported
+      This policy configure those discovered clusters so they are automatically imported. 
+      Fine tuning MultiClusterEngineHCP clusters to be automatically imported
       can be done by configure filters at the configMap or add annotation to the discoverd cluster.
 spec:
   # Remove the default remediation below to enforce the policies.
-  remediationAction: inform
+  # remediationAction: inform
   disabled: false
   policy-templates:
     - objectDefinition:
@@ -329,13 +328,35 @@ spec:
               {{- end }}
             {{- end }}
 ---
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: policy-mce-hcp-autoimport-placement
+  namespace: open-cluster-management-global-set
+spec:
+  tolerations:
+    - key: cluster.open-cluster-management.io/unreachable
+      operator: Exists
+    - key: cluster.open-cluster-management.io/unavailable
+      operator: Exists
+  clusterSets:
+    - global
+  predicates:
+    - requiredClusterSelector:
+        labelSelector:
+          matchExpressions:
+            - key: local-cluster
+              operator: In
+              values:
+                - "true"
+---
 apiVersion: policy.open-cluster-management.io/v1
 kind: PlacementBinding
 metadata:
   name: policy-mce-hcp-autoimport-placement-binding
   namespace: open-cluster-management-global-set
 placementRef:
-  name: global
+  name: policy-mce-hcp-autoimport-placement
   apiGroup: cluster.open-cluster-management.io
   kind: Placement
 subjects:
