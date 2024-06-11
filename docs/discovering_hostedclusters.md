@@ -383,3 +383,12 @@ This is the MCE console.
 ## Detaching hosted clusters from ACM
 
 An imported hosted cluster can be detached from ACM using the detach option in the ACM console or by removing the corresponsing `ManagedCluster` CR from the command line. It is recommended to detach the managed hosted cluster before destroying the hosted cluster.
+
+When a discovered cluster is detached, the following annotation is added to the DiscoveredCluster resource to prevent the policy to import the discovered cluster again.
+
+```
+  annotations:
+    discovery.open-cluster-management.io/previously-auto-imported: "true"
+```
+
+If you want the detached discovered cluster to be re-imported, this annotation needs to be remove
