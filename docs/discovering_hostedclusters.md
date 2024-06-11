@@ -7,7 +7,7 @@ You have one or more MCE clusters hosting many hosted clusters. How do you bring
 Clusters in this topology:
 
 - ACM cluster as a hub cluster
-- One ore more MCE clusters as managed clusters
+- One or more MCE hosting clusters as managed clusters (Having ACM on these clusters it not supported)
 
 <img width="532" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/55b83d78-7172-4434-bef5-9deec75c23f5">
 
