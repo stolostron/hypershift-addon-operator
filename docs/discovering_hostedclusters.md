@@ -392,3 +392,9 @@ When a discovered cluster is detached, the following annotation is added to the 
 ```
 
 If you want the detached discovered cluster to be re-imported, this annotation needs to be remove
+
+## Limitations
+
+- The discovered cluster name link on the discovered cluster list UI does not open the console for discovered cluster with `MultiClusterEngineHCP` type.
+
+- The "Import cluster" discovered cluster action menu option should not be used to import `MultiClusterEngineHCP` type discovered clusters. The only way to import them is through the auto-import policy.
