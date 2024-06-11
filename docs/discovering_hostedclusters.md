@@ -392,3 +392,15 @@ When a discovered cluster is detached, the following annotation is added to the 
 ```
 
 If you want the detached discovered cluster to be re-imported, this annotation needs to be remove
+
+## Limitations
+
+- The discovered cluster name link on the discovered cluster list UI does not open the console for discovered cluster with `MultiClusterEngineHCP` type.
+
+<img width="1098" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/ae9efc82-f4b2-462c-862f-0da62e8f1b87">
+
+- The "Import cluster" discovered cluster action menu option should not be used to import `MultiClusterEngineHCP` type discovered clusters. The only way to import them is through the auto-import policy.
+
+<img width="1138" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/a86a0f73-04e0-4a89-a355-43c15565ef66">
+
+- The "Last active" column for `MultiClusterEngineHCP` type discovered clusters is always "N/A".
