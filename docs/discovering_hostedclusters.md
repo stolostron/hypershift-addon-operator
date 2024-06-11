@@ -253,7 +253,7 @@ Setting the `spec.importAsManagedCluster` to `true` triggers ACM's discovery ope
 <img width="1645" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/68fe947a-702c-4e24-a57c-2719b71eea5a">
 
 
-Setting `spec.importAsManagedCluster` to `true` can be automated by applying the following [policy](https://github.com/serngawy/policy-collection/blob/policy-mcehcp/community/CM-Configuration-Management/policy-mce-hcp-autoimport.yaml) to ACM. This policy ensures that a DiscoveredCluster with type `MultiClusterEngineHCP` is set for auto-importing.
+Setting `spec.importAsManagedCluster` to `true` can be automated by applying the following policy to ACM. This policy ensures that a DiscoveredCluster with type `MultiClusterEngineHCP` is set for auto-importing. Once this policy is applied, you need to set this policy's `remediationAction` to `ennforce` or alternatively, set `spec.remediationAction: enforce` before applying the policy.
 
 ```
 apiVersion: policy.open-cluster-management.io/v1
@@ -271,6 +271,8 @@ metadata:
       will happen. Fine tuning MultiClusterEngineHCP clusters to be automatically imported
       can be done by configure filters at the configMap or add annotation to the discoverd cluster.
 spec:
+  # Remove the default remediation below to enforce the policies.
+  remediationAction: inform
   disabled: false
   policy-templates:
     - objectDefinition:
@@ -326,43 +328,20 @@ spec:
                   importAsManagedCluster: true
               {{- end }}
             {{- end }}
-    - objectDefinition:
-        apiVersion: policy.open-cluster-management.io/v1
-        kind: ConfigurationPolicy
-        metadata:
-          name: policy-mce-hcp-managedcluster-status
-        spec:
-          remediationAction: inform
-          severity: low
-          object-templates-raw: |
-            {{- /* Use the same DiscoveredCluster list to check ManagedCluster status */ -}}
-            {{- range $dc := (lookup "discovery.open-cluster-management.io/v1" "DiscoveredCluster" "" "").items }}
-              {{- /* Check for the flag that indicates the import should be skipped */ -}}
-              {{- $skip := "false" -}}
-              {{- range $key, $value := $dc.metadata.annotations }}
-                {{- if and (eq $key "discovery.open-cluster-management.io/previously-auto-imported")
-                           (eq $value "true") }}
-                  {{- $skip = "true" }}
-                {{- end }}
-              {{- end }}
-              {{- /* if the type is MultiClusterEngineHCP and the status is Active */ -}}
-              {{- if and (eq $dc.spec.status "Active")
-                         (contains (fromConfigMap "open-cluster-management-global-set" "discovery-config" "mce-hcp-filter") $dc.spec.displayName)
-                         (eq $dc.spec.type "MultiClusterEngineHCP")
-                         (eq $skip "false") }}
-            - complianceType: musthave
-              objectDefinition:
-                apiVersion: cluster.open-cluster-management.io/v1
-                kind: ManagedCluster
-                metadata:
-                  name: {{ $dc.spec.displayName }}
-                  namespace: {{ $dc.spec.displayName }}
-                status:
-                  conditions:
-                    - type: ManagedClusterConditionAvailable
-                      status: "True"
-              {{- end }}
-            {{- end }}
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: policy-mce-hcp-autoimport-placement-binding
+  namespace: open-cluster-management-global-set
+placementRef:
+  name: global
+  apiGroup: cluster.open-cluster-management.io
+  kind: Placement
+subjects:
+  - name: policy-mce-hcp-autoimport
+    apiGroup: policy.open-cluster-management.io
+    kind: Policy
 ```
 
 When a discovered hosted cluster is auto-imported into ACM, all ACM addons are enabled as well so you can start managing the hosted clusters using the available management tools.
