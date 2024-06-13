@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -105,9 +104,8 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 
 	//Could not find hosted cluster
 	if hostedClusterObj.Name == "" {
-		errh := errors.New("could not retrieve hosted cluster")
-		c.log.Error(errh, fmt.Sprintf("unable to find hosted cluster with name %s", hostedClusterName))
-		return ctrl.Result{Requeue: false}, errh
+		c.log.Info(fmt.Sprintf("unable to find hosted cluster with name %s", hostedClusterName))
+		return ctrl.Result{RequeueAfter: time.Duration(2) * time.Minute}, nil
 	}
 
 	originalHC := hostedClusterObj.DeepCopy()
