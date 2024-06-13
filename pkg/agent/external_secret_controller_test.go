@@ -76,6 +76,11 @@ func TestKlusterletReconcile(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "klusterlet-hd-1",
 		},
+		Spec: operatorapiv1.KlusterletSpec{
+			DeployOption: operatorapiv1.KlusterletDeployOption{
+				Mode: operatorapiv1.InstallModeSingletonHosted,
+			},
+		},
 	}
 
 	hcNN := types.NamespacedName{Name: "hd-1", Namespace: "clusters"}
@@ -110,7 +115,7 @@ func TestKlusterletReconcile(t *testing.T) {
 
 	//Nothing should happen to hosted cluster
 	_, err = ESCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: klusterletNamespaceNsn})
-	assert.Nil(t, err, "err nil when reconcile is successful")
+	assert.NotNil(t, err, "the klusterlet is deleted so the reconcile fails to find it")
 
 	//Annotation should still exist and be unchanged
 	err = ESCtrl.hubClient.Get(ctx, HCNamespaceNsn, gotH)
@@ -121,6 +126,11 @@ func TestKlusterletReconcile(t *testing.T) {
 	kl = &operatorapiv1.Klusterlet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "klusterlet-hd-1",
+		},
+		Spec: operatorapiv1.KlusterletSpec{
+			DeployOption: operatorapiv1.KlusterletDeployOption{
+				Mode: operatorapiv1.InstallModeSingletonHosted,
+			},
 		},
 	}
 
@@ -185,6 +195,11 @@ func TestNoHCReconcile(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "klusterlet-hd-1",
 		},
+		Spec: operatorapiv1.KlusterletSpec{
+			DeployOption: operatorapiv1.KlusterletDeployOption{
+				Mode: operatorapiv1.InstallModeSingletonHosted,
+			},
+		},
 	}
 
 	err := ESCtrl.hubClient.Create(ctx, apiService)
@@ -213,6 +228,11 @@ func TestNoHCReconcile(t *testing.T) {
 	kl = &operatorapiv1.Klusterlet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "klusterlet-hd-1",
+		},
+		Spec: operatorapiv1.KlusterletSpec{
+			DeployOption: operatorapiv1.KlusterletDeployOption{
+				Mode: operatorapiv1.InstallModeSingletonHosted,
+			},
 		},
 	}
 
