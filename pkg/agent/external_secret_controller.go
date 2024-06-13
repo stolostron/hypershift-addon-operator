@@ -60,6 +60,17 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, nil //No need to error
 	}
 
+	klusterlet := &operatorapiv1.Klusterlet{}
+	if err := c.spokeClient.Get(ctx, req.NamespacedName, klusterlet); err != nil {
+		c.log.Error(err, "unable to find the klusterlet")
+		return ctrl.Result{Requeue: false}, err
+	}
+
+	if klusterlet.Spec.DeployOption.Mode != operatorapiv1.InstallModeSingletonHosted {
+		c.log.Info("this klusterlet's install mode is not SingletonHosted. Skip reconciling.")
+		return ctrl.Result{}, nil
+	}
+
 	_, hostedClusterName, _ := strings.Cut(req.Name, "klusterlet-")
 
 	_, discoveredHostedClusterName, _ := strings.Cut(req.Name, "klusterlet-"+c.clusterName+"-")
@@ -96,7 +107,7 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 	if hostedClusterObj.Name == "" {
 		errh := errors.New("could not retrieve hosted cluster")
 		c.log.Error(errh, fmt.Sprintf("unable to find hosted cluster with name %s", hostedClusterName))
-		return ctrl.Result{}, errh
+		return ctrl.Result{Requeue: false}, errh
 	}
 
 	originalHC := hostedClusterObj.DeepCopy()
