@@ -240,8 +240,9 @@ func TestNoHCReconcile(t *testing.T) {
 	err = ESCtrl.hubClient.Create(ctx, kl)
 	assert.Nil(t, err, "err nil when klusterlet is created successfully")
 
-	_, err = ESCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: klusterletNamespaceNsn})
-	assert.NotNil(t, err, "err not nil when no associated hosted cluster")
+	result, err := ESCtrl.Reconcile(ctx, ctrl.Request{NamespacedName: klusterletNamespaceNsn})
+	assert.Nil(t, err, "err not expected when no associated hosted cluster")
+	assert.Equal(t, time.Duration(2)*time.Minute, result.RequeueAfter)
 
 }
 
