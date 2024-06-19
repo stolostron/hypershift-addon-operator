@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"errors"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -140,7 +141,7 @@ func deployHCPCLIDownload(hubclient client.Client, cliImage string, log logr.Log
 	log.Info("deploying hcp CLI download in namespace " + installNamespace)
 
 	// Deployment
-	deployment, err := getCLIDeployment(cliImage, envVars, log, installNamespace)
+	deployment, err := getCLIDeployment(cliImage, envVars, log, installNamespace, hubclient)
 	if err != nil {
 		log.Error(err, "failed to prepare hcp-cli-download deployment")
 		return err
@@ -291,7 +292,7 @@ func removeHypershiftCLIDownload(hubclient client.Client, installNamespace strin
 	}
 }
 
-func getCLIDeployment(cliImage string, envVars []corev1.EnvVar, log logr.Logger, installNamespace string) (*appsv1.Deployment, error) {
+func getCLIDeployment(cliImage string, envVars []corev1.EnvVar, log logr.Logger, installNamespace string, hubclient client.Client) (*appsv1.Deployment, error) {
 	depFile, err := fs.ReadFile("manifests/cli/deployment.yaml")
 	if err != nil {
 		log.Error(err, "failed to read manifests/cli/deployment.yaml")
@@ -310,6 +311,15 @@ func getCLIDeployment(cliImage string, envVars []corev1.EnvVar, log logr.Logger,
 	// set the deployment with the hypershift_cli image from CSV
 	dep.Spec.Template.Spec.Containers[0].Image = cliImage
 
+	tolerations := getAddonManagerTolerations(hubclient, log)
+	if tolerations != nil {
+		log.Info("adding the following tolerations to the cli deployment")
+		for _, tol := range tolerations {
+			log.Info("key = " + tol.Key + ", operator = " + string(tol.Operator) + ", effect = " + string(tol.Effect))
+		}
+		dep.Spec.Template.Spec.Tolerations = tolerations
+	}
+
 	// set proxy environment variables if exist in the addon manager deployment
 	containerEnvVars := []corev1.EnvVar{}
 	for _, envVar := range envVars {
@@ -323,6 +333,28 @@ func getCLIDeployment(cliImage string, envVars []corev1.EnvVar, log logr.Logger,
 	}
 
 	return dep, nil
+}
+
+func getAddonManagerTolerations(hubclient client.Client, log logr.Logger) []corev1.Toleration {
+	selfPodNamespace := os.Getenv("POD_NAMESPACE")
+	if len(selfPodNamespace) == 0 {
+		return nil
+	}
+
+	selfPodName := os.Getenv("POD_NAME")
+	if len(selfPodName) == 0 {
+		return nil
+	}
+
+	// Get the hypershift addon manager pod's tolerations
+	selfPod := &corev1.Pod{}
+	err := hubclient.Get(context.TODO(), types.NamespacedName{Namespace: selfPodNamespace, Name: selfPodName}, selfPod)
+	if err != nil {
+		log.Error(err, "failed to find the hypershift addon manager pod") // is it possible?
+		return nil
+	}
+
+	return selfPod.Spec.Tolerations
 }
 
 func getService(log logr.Logger, installNamespace string) (*corev1.Service, error) {
