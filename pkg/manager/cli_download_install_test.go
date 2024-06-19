@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -172,6 +173,14 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownload() {
 	suite.Nil(err, "err nil when addon deployment is created successfully")
 	defer o.Client.Delete(context.TODO(), dep)
 
+	pod := getTestAddonManagerPod()
+	err = o.Client.Create(context.TODO(), pod)
+	suite.Nil(err, "err nil when addon manager pod is created successfully")
+	defer o.Client.Delete(context.TODO(), pod)
+
+	os.Setenv("POD_NAME", "hypershift-addon-manager-pod")
+	os.Setenv("POD_NAMESPACE", "multicluster-engine")
+
 	//
 	// Create the hypershift clusterrole which is going to be the owner
 	// of hypershift ConsoleCLIDownload which is cluster scoped resource.
@@ -230,6 +239,19 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownload() {
 	suite.True(strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[0].Name, "_PROXY"))
 	suite.True(strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[1].Name, "_PROXY"))
 	suite.True(strings.HasSuffix(cliDeployment.Spec.Template.Spec.Containers[0].Env[2].Name, "_PROXY"))
+
+	foundToleration1 := false
+	foundToleration2 := false
+	for _, toleration := range cliDeployment.Spec.Template.Spec.Tolerations {
+		if toleration.Key == "toleration-key1" {
+			foundToleration1 = true
+		}
+		if toleration.Key == "toleration-key2" {
+			foundToleration2 = true
+		}
+	}
+	suite.True(foundToleration1)
+	suite.True(foundToleration2)
 
 	// Check hypershift CLI service
 	cliService := &corev1.Service{}
@@ -589,6 +611,41 @@ func getHypershiftCLIDeployment() *appsv1.Deployment {
 	return deployment
 }
 
+func getTestAddonManagerPod() *corev1.Pod {
+	container := corev1.Container{
+		Name:  "operator",
+		Image: "https://hypershift.addon.image.io",
+	}
+	pod := &corev1.Pod{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Pod",
+			APIVersion: "v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hypershift-addon-manager-pod",
+			Namespace: "multicluster-engine",
+			//	Labels:    map[string]string{"app": "hypershift-addon-manager"},
+		},
+		Spec: corev1.PodSpec{
+			Containers: []corev1.Container{container},
+			Tolerations: []corev1.Toleration{
+				{
+					Key:      "toleration-key1",
+					Operator: "Exists",
+					Effect:   "NoSchedule",
+				},
+				{
+					Key:      "toleration-key2",
+					Operator: "Exists",
+					Effect:   "NoSchedule",
+				},
+			},
+		},
+	}
+
+	return pod
+}
+
 func getTestAddonDeployment() *appsv1.Deployment {
 	container := corev1.Container{
 		Name:  "operator",
@@ -605,6 +662,22 @@ func getTestAddonDeployment() *appsv1.Deployment {
 			{
 				Name:  "NO_PROXY",
 				Value: "9.1.2.3",
+			},
+			{
+				Name: "POD_NAME",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.name",
+					},
+				},
+			},
+			{
+				Name: "POD_NAMESPACE",
+				ValueFrom: &corev1.EnvVarSource{
+					FieldRef: &corev1.ObjectFieldSelector{
+						FieldPath: "metadata.namespace",
+					},
+				},
 			},
 		},
 	}
@@ -626,6 +699,18 @@ func getTestAddonDeployment() *appsv1.Deployment {
 			Template: corev1.PodTemplateSpec{
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{container},
+					Tolerations: []corev1.Toleration{
+						{
+							Key:      "toleration-key1",
+							Operator: "Exists",
+							Effect:   "NoSchedule",
+						},
+						{
+							Key:      "toleration-key2",
+							Operator: "Exists",
+							Effect:   "NoSchedule",
+						},
+					},
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{"app": "hypershift-addon-manager"},
