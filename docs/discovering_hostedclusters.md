@@ -127,11 +127,36 @@ spec:
     type: Placements
 ```
 
+Do the same update for `cluster-proxy` addon.
+
+```
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: ClusterManagementAddOn
+metadata:
+  name: cluster-proxy
+spec:
+  addOnMeta:
+    displayName: cluster-proxy
+  installStrategy:
+    placements:
+    - name: global
+      namespace: open-cluster-management-global-set
+      rolloutStrategy:
+        type: All
+      configs:
+      - group: addon.open-cluster-management.io
+        name: addon-ns-config
+        namespace: multicluster-engine
+        resource: addondeploymentconfigs
+    type: Placements
+```
+
 Once you make these changes in ACM, you will notice that these addons for ACM's `local-cluster` and all other managed clusters are re-installed into the specified namespace.
 
 ```
 % oc get deployment -n open-cluster-management-agent-addon-discovery
 NAME                                 READY   UP-TO-DATE   AVAILABLE   AGE
+cluster-proxy-proxy-agent            1/1     1            1           24h
 klusterlet-addon-workmgr             1/1     1            1           24h
 managed-serviceaccount-addon-agent   1/1     1            1           24h
 ```
