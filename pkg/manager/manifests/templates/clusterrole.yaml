@@ -46,7 +46,7 @@ rules:
     resources: ["servicemonitors", "prometheusrules"]
     verbs: ["update", "patch", "create"]
   - apiGroups: ["monitoring.rhobs"]
-    resources: ["servicemonitors", "prometheusrules"]
+    resources: ["servicemonitors", "prometheusrules", "podmonitors"]
     verbs: ["get", "list", "watch", "create", "patch", "update", "delete"] 
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
