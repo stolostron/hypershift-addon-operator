@@ -175,6 +175,19 @@ spec:
        postfix: mce-import
 ```
 
+### Backup and restore consideration
+
+When the ACM hub is restored in a disaster recovery scenario, the imported MCE clusters and the hosted clusters are going to be imported into the new ACM hub. The above configurations need to be restored as part of ACM hub restore by adding the backup label to those resources.
+
+```
+% oc label addondeploymentconfig addon-ns-config -n multicluster-engine cluster.open-cluster-management.io/backup=true
+% oc label addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine cluster.open-cluster-management.io/backup=true
+% oc label clustermanagementaddon work-manager cluster.open-cluster-management.io/backup=true
+% oc label clustermanagementaddon cluster-proxy cluster.open-cluster-management.io/backup=true
+% oc label clustermanagementaddon managed-serviceaccount cluster.open-cluster-management.io/backup=true
+% oc label KlusterletConfig mce-import-klusterlet-config cluster.open-cluster-management.io/backup=true
+```
+
 #### Importing MCE 
 
 In ACM cluster, create a `ManagedCluster` resource manually to start importing an MCE cluster. For example, create the following resource to import an MCE and name the managed cluster `mce-a`.
