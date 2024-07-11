@@ -197,7 +197,9 @@ See [Hypershift addon status](https://github.com/stolostron/hypershift-addon-ope
 
 ## Provision a hosted cluster on AWS
 
-After setting up the hypershift command line and enabling `local-cluster` cluster as the hosting cluster, you can provision a hosted cluster via `hypershift` command line.
+The `hcp` CLI for AWS requires a role ARN and STS credentials. Refer to this [doc] (https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/creating_role_sts_aws.md).
+
+After setting up the `hcp` command line and creating the role ARN and the STS credentials, you can provision a hosted cluster via `hcp` command line.
 
 1. Set the following environment variables
 
@@ -206,8 +208,9 @@ After setting up the hypershift command line and enabling `local-cluster` cluste
     export CLUSTER_NAME=clc-dhu-hs1
     export INFRA_ID=clc-dhu-hs1
     export BASE_DOMAIN=dev09.red-chesterfield.com
-    export AWS_CREDS=$HOME/dhu-aws
-    export PULL_SECRET=/Users/dhuynh/dhu-pull-secret.txt
+    export STS_CREDS=$HOME/sts-creds
+    export ROLE_ARN=arn:aws:iam::1111111111111:user/testuser
+    export PULL_SECRET=/Users/testuser/dhu-pull-secret.txt
     export BUCKET_NAME=acmqe-hypershift
     export BUCKET_REGION=us-east-1
     ```
@@ -215,7 +218,7 @@ After setting up the hypershift command line and enabling `local-cluster` cluste
     For description of each variable, run:
 
     ```bash
-    hypershift create cluster aws --help
+    hcp create cluster aws --help
     ```
 
 2. Ensure you are logged into your hub (`local-cluster`) cluster.
@@ -223,10 +226,11 @@ After setting up the hypershift command line and enabling `local-cluster` cluste
 3. If you want to create the hypershift infrastructure and IAM pieces separately, refer to the [How do I create the hypershift infrastructure and IAM pieces separately?](#how-do-i-create-the-hypershift-infrastructure-and-iam-pieces-separately) section at the end. Otherwise run the following command to create the hosted cluster:
 
     ```bash
-    $ hypershift create cluster aws \
+    $ hcp create cluster aws \
         --name $CLUSTER_NAME \
         --infra-id $INFRA_ID \
-        --aws-creds $AWS_CREDS \
+        --sts-creds $STS_CREDS \
+        --role-arn $ROLE_ARN \
         --pull-secret $PULL_SECRET \
         --region $REGION \
         --generate-ssh \
