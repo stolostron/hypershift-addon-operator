@@ -48,6 +48,7 @@ Log into ACM.
 Create this `AddOnDeploymentConfig` resource to specify a different addon installation namespace.
 
 ```
+cat <<EOF | oc apply -f -
 apiVersion: addon.open-cluster-management.io/v1alpha1
 kind: AddOnDeploymentConfig
 metadata:
@@ -55,6 +56,7 @@ metadata:
   namespace: multicluster-engine
 spec:
   agentInstallNamespace: open-cluster-management-agent-addon-discovery
+EOF
 ```
 
 Update the existing `ClusterManagementAddOn` resources for these addons so that the addons pick up the new installation namespace from the `AddOnDeploymentConfig` resource we created.
@@ -164,6 +166,7 @@ managed-serviceaccount-addon-agent   1/1     1            1           24h
 We are going to create a `KlusterletConfig` resource that is going to be used by `ManagedCluster` resources to import MCEs. When a `ManagedCluster` references this `KlusterletConfig` resource, the managed cluster klusterlet gets installed in the namepspace that is specified in the `KlusterletConfig`. This allows the importing ACM's klusterlet to be installed in a different namespace than the MCE's klusterlet for its self-managed local-cluster managed cluster in the MCE cluster.
 
 ```
+cat <<EOF | oc apply -f -
 kind: KlusterletConfig
 apiVersion: config.open-cluster-management.io/v1alpha1
 metadata:
@@ -173,6 +176,7 @@ spec:
     type: noOperator
     noOperator:
        postfix: mce-import
+EOF
 ```
 
 ### Backup and restore consideration
@@ -193,6 +197,7 @@ When the ACM hub is restored in a disaster recovery scenario, the imported MCE c
 In ACM cluster, create a `ManagedCluster` resource manually to start importing an MCE cluster. For example, create the following resource to import an MCE and name the managed cluster `mce-a`.
 
 ```
+cat <<EOF | oc apply -f -
 apiVersion: cluster.open-cluster-management.io/v1
 kind: ManagedCluster
 metadata:
@@ -202,6 +207,7 @@ metadata:
 spec:
   hubAcceptsClient: true
   leaseDurationSeconds: 60
+EOF
 ```
 
 Note that it has the annotation `agent.open-cluster-management.io/klusterlet-config: mce-import-klusterlet-config`. This annotation references the `KlusterletConfig` resource that was created in the previous step to install the ACM's klusterlet into a different namespace in MCE.
