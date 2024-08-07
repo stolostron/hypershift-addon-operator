@@ -99,6 +99,11 @@ func TestNoACMAutoImport(t *testing.T) {
 	annotations := gotMC.GetAnnotations()
 	assert.Equal(t, createdViaHypershift, annotations[createdViaAnno])
 
+	// Check to make sure the addition of custom labels on the HC
+	// are synced to the MC
+	labels := gotMC.GetLabels()
+	assert.Equal(t, "CustomLabelValue", labels["CustomLabelKey"])
+
 	//check klusterletaddonconfing doesnt exist
 	gotKAC := &agentv1.KlusterletAddonConfig{}
 	err = AICtrl.hubClient.Get(ctx, types.NamespacedName{Name: hcNN.Name, Namespace: hcNN.Name}, gotKAC)
@@ -421,6 +426,9 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hcNN.Name,
 			Namespace: hcNN.Namespace,
+			Labels: map[string]string{
+				"CustomLabelKey": "CustomLabelValue",
+			},
 		},
 		Spec: hyperv1beta1.HostedClusterSpec{
 			Platform: hyperv1beta1.PlatformSpec{
