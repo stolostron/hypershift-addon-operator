@@ -36,6 +36,11 @@ var (
 		Name:      util.HypershiftOperatorName,
 		Namespace: util.HypershiftOperatorNamespace,
 	}
+
+	externalDNSOperatorKey = types.NamespacedName{
+		Name:      util.HypershiftOperatorExternalDNSName,
+		Namespace: util.HypershiftOperatorNamespace,
+	}
 )
 
 func (c *UpgradeController) RunHypershiftCmdWithRetires(
@@ -411,6 +416,12 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		c.log.Error(err, "failed to update the hypershift operator deployment")
 	}
 
+	// Add label and update image pull secret in external DNS deployment
+	err = c.updateExtDnsDeployment(ctx)
+	if err != nil {
+		c.log.Error(err, "failed to update the external DNS operator deployment")
+	}
+
 	return nil
 }
 
@@ -593,17 +604,33 @@ func (c *UpgradeController) saveConfigmapLocally(ctx context.Context, hubConfigm
 }
 
 func (c *UpgradeController) ensurePullSecret(ctx context.Context) error {
-	mcePullSecret := &corev1.Secret{}
-	mcePullSecretKey := types.NamespacedName{Name: c.pullSecret, Namespace: c.addonNamespace}
+	hoPullSecret := &corev1.Secret{}
+	hoPullSecretKey := types.NamespacedName{Name: util.HypershiftOperatorPullSecret, Namespace: c.clusterName}
 
-	if err := c.spokeUncachedClient.Get(ctx, mcePullSecretKey, mcePullSecret); err != nil {
+	hoPullSecretFound := true
+
+	if err := c.hubClient.Get(ctx, hoPullSecretKey, hoPullSecret); err != nil {
+		hoPullSecretFound = false
 		if apierrors.IsNotFound(err) {
-			c.log.Info("mce pull secret not found, skip copy it to the hypershift namespace",
-				"namespace", c.addonNamespace, "name", c.pullSecret)
-			return nil
+			c.log.Info("hypershift operator pull secret not found, skip copy it to the hypershift namespace",
+				"namespace", c.clusterName, "name", util.HypershiftOperatorPullSecret)
+		} else {
+			c.log.Error(err, "failed to get hypershift operator pull secret")
 		}
+	}
 
-		return fmt.Errorf("failed to get mce pull secret, err: %w", err)
+	if !hoPullSecretFound {
+		mcePullSecretKey := types.NamespacedName{Name: c.pullSecret, Namespace: c.addonNamespace}
+
+		if err := c.spokeUncachedClient.Get(ctx, mcePullSecretKey, hoPullSecret); err != nil {
+			if apierrors.IsNotFound(err) {
+				c.log.Info("mce pull secret not found, skip copy it to the hypershift namespace",
+					"namespace", c.addonNamespace, "name", c.pullSecret)
+				return nil
+			}
+
+			return fmt.Errorf("failed to get mce pull secret, err: %w", err)
+		}
 	}
 
 	hsPullSecret := &corev1.Secret{
@@ -615,8 +642,8 @@ func (c *UpgradeController) ensurePullSecret(ctx context.Context) error {
 
 	c.log.Info(fmt.Sprintf("createorupdate the pull secret (%s/%s)", hsPullSecret.Namespace, hsPullSecret.Name))
 	_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, hsPullSecret, func() error {
-		hsPullSecret.Data = mcePullSecret.Data
-		hsPullSecret.Type = mcePullSecret.Type
+		hsPullSecret.Data = hoPullSecret.Data
+		hsPullSecret.Type = hoPullSecret.Type
 
 		return nil
 	})
@@ -671,6 +698,44 @@ func (c *UpgradeController) updateHyperShiftDeployment(ctx context.Context) erro
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
+		return err
+	}
+
+	// Update pull image
+	if c.pullSecret != "" {
+		addonPullSecretKey := types.NamespacedName{Namespace: c.addonNamespace, Name: c.pullSecret}
+		addonPullSecret := &corev1.Secret{}
+		if err := c.spokeUncachedClient.Get(ctx, addonPullSecretKey, addonPullSecret); err == nil {
+			if obj.Spec.Template.Spec.ImagePullSecrets == nil {
+				obj.Spec.Template.Spec.ImagePullSecrets = make([]corev1.LocalObjectReference, 0)
+			}
+			//Make sure we do not duplicate the ImagePullSecret name
+			newImagePullSecrets := append(obj.Spec.Template.Spec.ImagePullSecrets,
+				corev1.LocalObjectReference{Name: c.pullSecret})
+			for _, secret := range obj.Spec.Template.Spec.ImagePullSecrets {
+				if secret.Name == addonPullSecret.Name {
+					// Secret name reference already found, revert the ImagePullSecrets
+					newImagePullSecrets = obj.Spec.Template.Spec.ImagePullSecrets
+					break
+				}
+			}
+			obj.Spec.Template.Spec.ImagePullSecrets = newImagePullSecrets
+		} else {
+			c.log.Info("mce pull secret not found, skip update HyperShift operator to use the pull secret")
+		}
+	}
+
+	if err := c.spokeUncachedClient.Update(ctx, obj); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *UpgradeController) updateExtDnsDeployment(ctx context.Context) error {
+	obj := &appsv1.Deployment{}
+
+	if err := c.spokeUncachedClient.Get(ctx, externalDNSOperatorKey, obj); err != nil {
 		return err
 	}
 
