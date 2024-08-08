@@ -16,8 +16,10 @@ spec:
         app: {{ .AddonName }}
     spec:
       serviceAccountName: {{ .AgentServiceAccountName }}
+{{- if ne .aroHcp "true" }}
       securityContext:
         runAsNonRoot: true
+{{- end }}
       containers:
 {{- if ne .disableMetrics "true" }}
       - name: kube-rbac-proxy

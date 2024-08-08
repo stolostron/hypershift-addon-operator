@@ -39,6 +39,7 @@ const (
 	HypershiftOperatorNamespace       = "hypershift"
 	HypershiftOperatorName            = "operator"
 	HypershiftOperatorExternalDNSName = "external-dns"
+	HypershiftOperatorPullSecret      = "ho-pull-secret"
 
 	// Labels for resources to reference the Hosted Cluster
 	HypershiftClusterNameLabel           = "hypershiftdeployments.cluster.open-cluster-management.io/cluster-name"
