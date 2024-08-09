@@ -7,8 +7,12 @@ This document describes how to configure MCE or ACM in an AKS cluster for the hy
 When you install MCE or ACM, it enables the hypershift addon for `local-cluster` by default. When the hypershift addon agent starts up, it installs the hypershift operator automatically unless the hypershift operator management is disabled. If you do not want the hypershift addon agent to install and manage the hypershift operator, run the following command to disable it. This command also disables prometheus metrics which currently relies on OpenShift.
 
 ```
-oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=merge -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value": "true"},{"name":"disableHOManagement","value": "true"}]}}'
+oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=merge -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value": "true"},{"name":"disableHOManagement","value": "true"},{"name":"aroHcp","value":"true"}]}}'
 ```
+
+- `disableMetrics=true` disables the prometheus metrics service which depnds on OpenShift service monitor.
+- `disableHOManagement=true` disables installing and managing the hypershift operator. With this setting, the hypershift operator needs to be installed manually. The hypershift addon agent will contantly fail until the hypershift operator and its CRDs are installed in the cluster.
+- `aroHcp=true` is the indicator for the addon agent that the agent is run in non-OCP cluster.
 
 ## Configuring Hypershift Operator installation
 
@@ -25,11 +29,15 @@ oc apply -f https://raw.githubusercontent.com/prometheus-operator/prometheus-ope
 oc apply -f https://raw.githubusercontent.com/openshift/api/master/route/v1/zz_generated.crd-manifests/routes-Default.crd.yaml
 ```
 
-Disable the prometheus metrics service.
+Disable the prometheus metrics service and indicate that the addon is for an AKS cluster.
 
 ```
-oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=merge -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value": "true"}]}}'
+oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=merge -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value": "true"},{"name":"disableHOManagement","value": "false"},{"name":"aroHcp","value":"true"}]}}'
 ```
+
+- `disableMetrics=true` disables the prometheus metrics service which depnds on OpenShift service monitor.
+- `disableHOManagement=false` enables installing and managing the hypershift operator. With this setting, the hypershift operator is installed by the hypershift addon agent.
+- `aroHcp=true` is the indicator for the addon agent that the agent is run in non-OCP cluster.
 
 Create `ho-pull-secret` secret in `local-cluster` namespace. Replace `/Users/user/pull-secret.txt` with your own pull-secret which has access to `registry.redhat.io` registry. This pull secret is used by the hypershift operator installation to pull the external DNS image.
 
