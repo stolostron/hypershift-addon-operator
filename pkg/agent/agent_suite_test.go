@@ -87,6 +87,7 @@ func (suite *AgentTestSuite) SetupSuite() {
 		hubClient:           suite.testKubeClient,
 		log:                 zapr.NewLogger(zapLog),
 		clusterName:         "local-cluster",
+		localClusterName:    "local-cluster",
 	}
 
 	errClient := initReconcileErrorClient()
