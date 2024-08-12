@@ -35,10 +35,11 @@ const (
 )
 
 type AutoImportController struct {
-	hubClient   client.Client
-	spokeClient client.Client
-	clusterName string
-	log         logr.Logger
+	hubClient        client.Client
+	spokeClient      client.Client
+	clusterName      string
+	localClusterName string
+	log              logr.Logger
 }
 
 var AutoImportPredicateFunctions = predicate.Funcs{
@@ -73,8 +74,8 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// if this agent is not for self managed cluster aka local-cluster, skip auto-import
-	if !strings.EqualFold(c.clusterName, "local-cluster") { // we can use hardcoded local-cluster for now
-		c.log.Info("this is local-cluster agent, skip discovering")
+	if !strings.EqualFold(c.clusterName, c.localClusterName) {
+		c.log.Info("this is local cluster agent, skip discovering")
 		return ctrl.Result{}, nil
 	}
 
@@ -126,7 +127,7 @@ func (c *AutoImportController) createManagedCluster(hc hyperv1beta1.HostedCluste
 	err := c.spokeClient.Get(ctx, types.NamespacedName{Name: mc.Name}, &mc)
 	if apierrors.IsNotFound(err) {
 		c.log.Info(fmt.Sprintf("creating managed cluster (%s)", mc.Name))
-		populateManagedClusterData(&mc, &hc)
+		populateManagedClusterData(&mc, &hc, c.localClusterName)
 		if err = c.spokeClient.Create(ctx, &mc, &client.CreateOptions{}); err != nil {
 			c.log.Error(err, fmt.Sprintf("failed at creating managed cluster (%s)", mc.Name))
 			return err
@@ -136,7 +137,7 @@ func (c *AutoImportController) createManagedCluster(hc hyperv1beta1.HostedCluste
 }
 
 // populate managed cluster data for creation
-func populateManagedClusterData(mc *clusterv1.ManagedCluster, hc *hyperv1beta1.HostedCluster) {
+func populateManagedClusterData(mc *clusterv1.ManagedCluster, hc *hyperv1beta1.HostedCluster, hostingClusterName string) {
 	mc.Spec.HubAcceptsClient = true
 	mc.Spec.LeaseDurationSeconds = 60
 	if mc.Labels == nil {
@@ -169,7 +170,7 @@ func populateManagedClusterData(mc *clusterv1.ManagedCluster, hc *hyperv1beta1.H
 	}
 	annotations := map[string]string{
 		klueterletDeployMode:   "Hosted",
-		hostingClusterNameAnno: "local-cluster",
+		hostingClusterNameAnno: hostingClusterName,
 		createdViaAnno:         createdViaHypershift,
 	}
 	for key, value := range annotations {

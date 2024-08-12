@@ -24,10 +24,11 @@ import (
 )
 
 type DiscoveryAgent struct {
-	hubClient   client.Client
-	spokeClient client.Client
-	clusterName string
-	log         logr.Logger
+	hubClient        client.Client
+	spokeClient      client.Client
+	clusterName      string
+	localClusterName string
+	log              logr.Logger
 }
 
 // This predicate is used as an event filter
@@ -64,8 +65,8 @@ func (c *DiscoveryAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.
 	}
 
 	// if this agent is for self managed cluster aka local-cluster, skip discovery
-	if strings.EqualFold(c.clusterName, "local-cluster") { // we can use hardcoded local-cluster for now
-		c.log.Info("this is local-cluster agent, skip discovering")
+	if strings.EqualFold(c.clusterName, c.localClusterName) {
+		c.log.Info("this is local cluster agent, skip discovering")
 		return ctrl.Result{}, nil
 	}
 

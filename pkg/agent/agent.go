@@ -275,8 +275,14 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		return fmt.Errorf("unable to update initial addon status: err: %w", err)
 	}
 
+	aCtrl.localClusterName = getSelfManagedClusterName(ctx, spokeKubeClient, o.Log)
+
 	externalSecretController := &ExternalSecretController{
-		hubClient: hubClient, spokeClient: spokeKubeClient, clusterName: aCtrl.clusterName, log: o.Log.WithName("external-secret-controller"),
+		hubClient:        hubClient,
+		spokeClient:      spokeKubeClient,
+		clusterName:      aCtrl.clusterName,
+		localClusterName: aCtrl.localClusterName,
+		log:              o.Log.WithName("external-secret-controller"),
 	}
 
 	if err = externalSecretController.SetupWithManager(mgr); err != nil {
@@ -285,7 +291,11 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	autoImportController := &AutoImportController{
-		hubClient: hubClient, spokeClient: spokeKubeClient, clusterName: aCtrl.clusterName, log: o.Log.WithName("auto-import-controller"),
+		hubClient:        hubClient,
+		spokeClient:      spokeKubeClient,
+		clusterName:      aCtrl.clusterName,
+		localClusterName: aCtrl.localClusterName,
+		log:              o.Log.WithName("auto-import-controller"),
 	}
 
 	if err = autoImportController.SetupWithManager(mgr); err != nil {
@@ -294,7 +304,11 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	}
 
 	discoveryAgent := &DiscoveryAgent{
-		hubClient: hubClient, spokeClient: spokeKubeClient, clusterName: aCtrl.clusterName, log: o.Log.WithName("discovery-controller"),
+		hubClient:        hubClient,
+		spokeClient:      spokeKubeClient,
+		clusterName:      aCtrl.clusterName,
+		localClusterName: aCtrl.localClusterName,
+		log:              o.Log.WithName("discovery-controller"),
 	}
 
 	if err = discoveryAgent.SetupWithManager(mgr); err != nil {
@@ -423,6 +437,7 @@ type agentController struct {
 	log                         logr.Logger
 	recorder                    events.Recorder
 	clusterName                 string
+	localClusterName            string
 	maxHostedClusterCount       int
 	thresholdHostedClusterCount int
 	hcpSizingBaseline           HCPSizingBaseline
@@ -469,7 +484,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 		managedClusterName = hc.Name
 	}
 
-	if !strings.EqualFold(os.Getenv("DISABLE_HC_DISCOVERY"), "true") && !strings.EqualFold(c.clusterName, "local-cluster") {
+	if !strings.EqualFold(os.Getenv("DISABLE_HC_DISCOVERY"), "true") && !strings.EqualFold(c.clusterName, c.localClusterName) {
 		managedClusterName = getDiscoveredClusterName(c.clusterName, hc.Name)
 		c.log.Info(fmt.Sprintf("Hosted cluster discovery is enabled. Using klusterlet-%s as the hosted cluster's klusterlet namespace.", managedClusterName))
 	}
