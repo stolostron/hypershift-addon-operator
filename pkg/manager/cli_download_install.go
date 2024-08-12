@@ -127,82 +127,9 @@ func getHypershiftCLIDownloadImage(csv *operatorsv1alpha1.ClusterServiceVersion,
 }
 
 func deployHCPCLIDownload(hubclient client.Client, cliImage string, log logr.Logger) error {
-	// Set owner reference to the addon manager deployment so that when the feature is disabled, HypershiftCLIDownload
-	// is uninstalled
-	ownerRef, envVars, installNamespace, err := getOwnerRef(hubclient, log)
-	if err != nil {
-		log.Error(err, "failed to get owner reference for hcp-cli-download. abort.")
-		return err
-	}
-
-	// CLI download resources are renamed. Remove resources with old names
-	removeHypershiftCLIDownload(hubclient, installNamespace, log)
-
-	log.Info("deploying hcp CLI download in namespace " + installNamespace)
-
-	// Deployment
-	deployment, err := getCLIDeployment(cliImage, envVars, log, installNamespace, hubclient)
-	if err != nil {
-		log.Error(err, "failed to prepare hcp-cli-download deployment")
-		return err
-	}
-	// set ownerRef for garbage collection after the hypershift feature is disabled
-	deployment.SetOwnerReferences([]metav1.OwnerReference{*ownerRef})
-	_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, deployment, func() error { return nil })
-	if err != nil {
-		log.Error(err, "failed to create or update hcp-cli-download deployment")
-		return err
-	}
-	log.Info("hcp-cli-download deployment was applied successfully")
-
-	// Service
-	service, err := getService(log, installNamespace)
-	if err != nil {
-		log.Error(err, "failed to prepare hcp-cli-download service")
-		return err
-	}
-	// set ownerRef for garbage collection after the hypershift feature is disabled
-	service.SetOwnerReferences([]metav1.OwnerReference{*ownerRef})
-	_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, service, func() error { return nil })
-	if err != nil {
-		log.Error(err, "failed to create or update hcp-cli-download service")
-		return err
-	}
-	log.Info("hcp-cli-download service was applied successfully")
-
-	// Route
-	route, err := getRoute(log, installNamespace)
-	if err != nil {
-		log.Error(err, "failed to prepare hcp-cli-download route")
-		return err
-	}
-	// set ownerRef for garbage collection after the hypershift feature is disabled
-	route.SetOwnerReferences([]metav1.OwnerReference{*ownerRef})
-	_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, route, func() error { return nil })
-	if err != nil {
-		log.Error(err, "failed to create or update hcp-cli-download route")
-		return err
-	}
-	log.Info("hcp-cli-download route was applied successfully")
-
-	// Get the route to get the URL
-	err = hubclient.Get(context.TODO(), types.NamespacedName{Namespace: route.Namespace, Name: route.Name}, route)
-	if err != nil {
-		log.Error(err, "failed to get hcp-cli-download route")
-		return err
-	}
-
-	// ConsoleCLIDownload is a cluster scoped resource so we need to set the owner reference with a cluster scoped resource
-	// The hypershift addon cluster role is a cluster scroped.
-	clusterScopedOwnerRef, err := getClusterScopedOwnerRef(hubclient, log)
-	if err != nil {
-		log.Error(err, "failed to get cluster scoped owner reference for hcp-cli-download. abort.")
-		return err
-	}
-
 	enableCLIDownload := false
 	cliDownloadList := &consolev1.ConsoleCLIDownloadList{}
-	err = hubclient.List(context.TODO(), cliDownloadList)
+	err := hubclient.List(context.TODO(), cliDownloadList)
 	if err != nil {
 		log.Error(err, "failed to get cliDownloadList. Skip installing the hcp CLI download.")
 	} else {
@@ -213,6 +140,79 @@ func deployHCPCLIDownload(hubclient client.Client, cliImage string, log logr.Log
 	}
 
 	if enableCLIDownload {
+		// Set owner reference to the addon manager deployment so that when the feature is disabled, HypershiftCLIDownload
+		// is uninstalled
+		ownerRef, envVars, installNamespace, err := getOwnerRef(hubclient, log)
+		if err != nil {
+			log.Error(err, "failed to get owner reference for hcp-cli-download. abort.")
+			return err
+		}
+
+		// CLI download resources are renamed. Remove resources with old names
+		removeHypershiftCLIDownload(hubclient, installNamespace, log)
+
+		log.Info("deploying hcp CLI download in namespace " + installNamespace)
+
+		// Deployment
+		deployment, err := getCLIDeployment(cliImage, envVars, log, installNamespace, hubclient)
+		if err != nil {
+			log.Error(err, "failed to prepare hcp-cli-download deployment")
+			return err
+		}
+		// set ownerRef for garbage collection after the hypershift feature is disabled
+		deployment.SetOwnerReferences([]metav1.OwnerReference{*ownerRef})
+		_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, deployment, func() error { return nil })
+		if err != nil {
+			log.Error(err, "failed to create or update hcp-cli-download deployment")
+			return err
+		}
+		log.Info("hcp-cli-download deployment was applied successfully")
+
+		// Service
+		service, err := getService(log, installNamespace)
+		if err != nil {
+			log.Error(err, "failed to prepare hcp-cli-download service")
+			return err
+		}
+		// set ownerRef for garbage collection after the hypershift feature is disabled
+		service.SetOwnerReferences([]metav1.OwnerReference{*ownerRef})
+		_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, service, func() error { return nil })
+		if err != nil {
+			log.Error(err, "failed to create or update hcp-cli-download service")
+			return err
+		}
+		log.Info("hcp-cli-download service was applied successfully")
+
+		// Route
+		route, err := getRoute(log, installNamespace)
+		if err != nil {
+			log.Error(err, "failed to prepare hcp-cli-download route")
+			return err
+		}
+		// set ownerRef for garbage collection after the hypershift feature is disabled
+		route.SetOwnerReferences([]metav1.OwnerReference{*ownerRef})
+		_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, route, func() error { return nil })
+		if err != nil {
+			log.Error(err, "failed to create or update hcp-cli-download route")
+			return err
+		}
+		log.Info("hcp-cli-download route was applied successfully")
+
+		// Get the route to get the URL
+		err = hubclient.Get(context.TODO(), types.NamespacedName{Namespace: route.Namespace, Name: route.Name}, route)
+		if err != nil {
+			log.Error(err, "failed to get hcp-cli-download route")
+			return err
+		}
+
+		// ConsoleCLIDownload is a cluster scoped resource so we need to set the owner reference with a cluster scoped resource
+		// The hypershift addon cluster role is a cluster scroped.
+		clusterScopedOwnerRef, err := getClusterScopedOwnerRef(hubclient, log)
+		if err != nil {
+			log.Error(err, "failed to get cluster scoped owner reference for hcp-cli-download. abort.")
+			return err
+		}
+
 		// Construct and apply ConsoleCLIDownload
 		cliDownload, err := getConsoleDownload(route.Spec.Host, log)
 		if err != nil {
