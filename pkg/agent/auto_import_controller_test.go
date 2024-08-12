@@ -42,10 +42,11 @@ func TestNoACMAutoImport(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 
 	AICtrl := &AutoImportController{
-		spokeClient: client,
-		hubClient:   client,
-		clusterName: "local-cluster",
-		log:         zapr.NewLogger(zapLog),
+		spokeClient:      client,
+		hubClient:        client,
+		clusterName:      "local-cluster",
+		localClusterName: "local-cluster",
+		log:              zapr.NewLogger(zapLog),
 	}
 
 	apiService := &corev1.Service{
@@ -117,10 +118,11 @@ func TestACMAutoImport(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 
 	AICtrl := &AutoImportController{
-		spokeClient: client,
-		hubClient:   client,
-		clusterName: "local-cluster",
-		log:         zapr.NewLogger(zapLog),
+		spokeClient:      client,
+		hubClient:        client,
+		clusterName:      "local-cluster",
+		localClusterName: "local-cluster",
+		log:              zapr.NewLogger(zapLog),
 	}
 
 	apiService := &corev1.Service{
@@ -197,10 +199,11 @@ func TestToggleAutoImport(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 
 	AICtrl := &AutoImportController{
-		spokeClient: client,
-		hubClient:   client,
-		clusterName: "local-cluster",
-		log:         zapr.NewLogger(zapLog),
+		spokeClient:      client,
+		hubClient:        client,
+		clusterName:      "local-cluster",
+		localClusterName: "local-cluster",
+		log:              zapr.NewLogger(zapLog),
 	}
 
 	apiService := &corev1.Service{
@@ -285,10 +288,11 @@ func TestHCPUnavailable(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 
 	AICtrl := &AutoImportController{
-		spokeClient: client,
-		hubClient:   client,
-		clusterName: "local-cluster",
-		log:         zapr.NewLogger(zapLog),
+		spokeClient:      client,
+		hubClient:        client,
+		clusterName:      "local-cluster",
+		localClusterName: "local-cluster",
+		log:              zapr.NewLogger(zapLog),
 	}
 
 	apiService := &corev1.Service{

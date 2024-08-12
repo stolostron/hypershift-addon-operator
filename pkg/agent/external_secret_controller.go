@@ -22,10 +22,11 @@ const (
 )
 
 type ExternalSecretController struct {
-	hubClient   client.Client
-	spokeClient client.Client
-	clusterName string
-	log         logr.Logger
+	hubClient        client.Client
+	spokeClient      client.Client
+	clusterName      string
+	localClusterName string
+	log              logr.Logger
 }
 
 var ExternalSecretPredicateFunctions = predicate.Funcs{
@@ -92,7 +93,7 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		}
 	}
 
-	if hostedClusterObj.Name == "" && c.clusterName != "local-cluster" {
+	if hostedClusterObj.Name == "" && !strings.EqualFold(c.clusterName, c.localClusterName) {
 		// Loop over the list of HostedCluster objects and find the one with the specified name
 		for index, hc := range hostedClusters.Items {
 			if hc.Name == discoveredHostedClusterName {
