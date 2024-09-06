@@ -289,6 +289,21 @@ func removeHypershiftCLIDownload(hubclient client.Client, installNamespace strin
 			log.Error(err, "failed to find hypershift-cli-download Deployment")
 		}
 	}
+
+	// Remove the current deployment if exists
+	// This ensures that the hcp cli gets upgraded
+	currentCliDeployment := &appsv1.Deployment{}
+	err = hubclient.Get(context.TODO(), types.NamespacedName{Namespace: installNamespace, Name: "hcp-cli-download"}, currentCliDeployment)
+	if err == nil {
+		deleteErr := hubclient.Delete(context.TODO(), currentCliDeployment)
+		if deleteErr != nil {
+			log.Error(err, "failed to delete hcp-cli-download Deployment")
+		}
+	} else {
+		if !apierrors.IsNotFound(err) {
+			log.Error(err, "failed to find hcp-cli-download Deployment")
+		}
+	}
 }
 
 func getCLIDeployment(cliImage string, envVars []corev1.EnvVar, log logr.Logger, installNamespace string) (*appsv1.Deployment, error) {
