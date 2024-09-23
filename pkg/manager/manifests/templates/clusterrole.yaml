@@ -52,7 +52,7 @@ rules:
     resources: ["roles", "clusterroles", "rolebindings", "clusterrolebindings"]
     verbs: ["*"]   
   - apiGroups: ["monitoring.coreos.com"]
-    resources: ["servicemonitors", "prometheusrules"]
+    resources: ["servicemonitors", "prometheusrules", "podmonitors"]
     verbs: ["update", "patch", "create"]
   - apiGroups: ["monitoring.rhobs"]
     resources: ["servicemonitors", "prometheusrules", "podmonitors"]
