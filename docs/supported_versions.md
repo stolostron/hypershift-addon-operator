@@ -1,7 +1,7 @@
 # OCP Version Support
 
 ## MCE hub (management or hosting) Cluster
-[Multi-Cluster Engine](https://docs.openshift.com/container-platform/4.17/architecture/mce-overview-ocp.html) (MCE), which is available through OpenShift's OperatorHub, require specific OCP versions for the Management Cluster to remain in a supported state.
+[Multi-Cluster Engine](https://docs.openshift.com/container-platform/4.17/architecture/mce-overview-ocp.html) (MCE), which is available through OpenShift's OperatorHub, requires specific OCP versions for the Management Cluster to remain in a supported state.
 
 Each version documents its own support matrix. For example, 
 
