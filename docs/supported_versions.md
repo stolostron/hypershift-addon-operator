@@ -1,10 +1,11 @@
 # OCP Version Support
 
 ## MCE hub (management or hosting) Cluster
-[Multi-Cluster Engine](https://docs.openshift.com/container-platform/4.17/architecture/mce-overview-ocp.html) (MCE), which is available through OpenShift's OperatorHub, require specific OCP versions for the Management Cluster to remain in a supported state.
+[Multi-Cluster Engine](https://docs.openshift.com/container-platform/4.17/architecture/mce-overview-ocp.html) (MCE), which is available through OpenShift's OperatorHub, requires specific OCP versions for the Management Cluster to remain in a supported state.
 
 Each version documents its own support matrix. For example, 
 
+- [MCE 2.7](https://access.redhat.com/articles/7086906)
 - [MCE 2.6](https://access.redhat.com/articles/7073030)
 - [MCE 2.5](https://access.redhat.com/articles/7056007)
 - [MCE 2.4](https://access.redhat.com/articles/7027079)
@@ -37,7 +38,7 @@ metadata:
     uid: f6336f91-33d3-472d-b747-94abae725f70
 ```
 
-It is important to note that you cannot install hosted clusters outside of this support version range. In the example above, hosted clusters using OCP release images greater than 4.17 cannot be created. If you want to deploy a higher version, you need to upgrade MCE to a new y-stream release to deploy a new version of the hypershift operator. Upgrading MCE to a new z-release updates the hypershift operator but does not upgrade its version.  
+It is important to note that you cannot install hosted clusters outside of this support version range. In the example above, hosted clusters using OCP release images greater than 4.17 cannot be created. If you want to deploy a higher version of OCP hosted cluster, you need to upgrade MCE to a new y-stream release to deploy a new version of the hypershift operator. Upgrading MCE to a new z-release does not upgrade the hypershift operator to the next version.  
 
 Running the `hcp version` command will also show the OCP version support information against your KUBECONFIG that connects to the management cluster.
 
@@ -60,7 +61,7 @@ This allows there to be two separate procedures a cluster service provider or cl
 
 Control plane upgrades are driven by the HostedCluster custom resource, while node upgrades are driven by its respective NodePool custom resource. Both the HostedCluster and NodePool custom resources expose a `.release` field where the OCP release image can be specified.
 
-For a cluster to keep fully operational during an upgrade process, control plane and nodes upgrades need to be orchestrated while satisfying [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) at any time. The supported OCP versions are dictated by the running HyperShift Operator [see here](../reference/versioning-support.md) for more details on versioning.
+For a cluster to keep fully operational during an upgrade process, control plane and nodes upgrades need to be orchestrated while satisfying [Kubernetes version skew policy](https://kubernetes.io/releases/version-skew-policy/) at any time. The supported OCP versions are dictated by the running HyperShift Operator.
 
 ## Getting Available Upgrade Versions
 HyperShift exposes available upgrades in HostedCluster.Status by bubbling up the status of the ClusterVersion resource inside a hosted cluster. This info is purely informational and doesn't determine upgradability, which is dictated by the `.spec.release`. This does result in the loss of some of the builtin features and guardrails from CVO like recommendations, allowed upgrade paths, risks, etc. However, this information is still available in the HostedCluster.Status field for consumers to read. 
@@ -192,15 +193,13 @@ The HostedControlPlane orchestrates the rollout of the new version of the Contro
 - autoscaler
 - infra resources needed to enable ingress for control plane endpoints (KAS, ignition, konnectivity, etc.)
 
-Traditionally, in standalone OCP, the CVO has been the sole source of truth for upgrades. In hosted OCP cluster, the responsibility is currently split between Control Plane Operator (CPO) and CVO. This enabled the flexibility and speed the HyperShift project needed for the CPO to support the management/guest cluster topology and the multiple customizations needed for manifests that otherwise would have needed to be segregated in the payload.
-
 Using the information from the `status.version.availableUpdates` and `status.version.conditionalUpdates` described in the previous section, you can set the `.spec.release` in the HostedCluster custom resource to start the control plane upgrade.
 
 ## NodePools
 `.spec.release` dictates the version of any particular NodePool.
 
-A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. See [NodePool Upgrades](./automated-machine-management/nodepool-lifecycle.md#upgrades-and-data-propagation) for details. Using the available upgrades information from the `status.version.availableUpdates` described in the previous section, you can set the `.spec.release` in the NodePool custom resources to start the data plane upgrade.
+A NodePool will perform a Replace/InPlace rolling upgrade according to `.spec.management.upgradeType`. Replace upgrade will create new instances in the new version while removing old nodes in a rolling fashion. This is usually a good choice in cloud environments where this level of immutability is cost effective. InPlace upgrade will directly perform updates to the Operating System of the existing instances. This is usually a good choice for environments where the infrastructure constraints are higher e.g. bare metal. Using the available upgrades information from the `status.version.availableUpdates` described in the previous section, you can set the `.spec.release` in the NodePool custom resources to start the data plane upgrade.
 
 ## Upgrading Hosted Clusters via MCE Console
-In the MCE console, select `All clusters` view at the top and navigate to Infrastructure -> Clusters to view managed hosted clusters with the `Upgrade available` link. You can also click on a managed hosted cluster to view the cluster details which also shows the `Upgrade available` link. You can update the control plane and nodepools by clicking the link. The list of the available updates is not from the hosted cluster's CVO and can be different than the available updates from the HostedCluster's `status.version.availableUpdates` and `status.version.conditionalUpdates`. Therefore, referring to the hosted cluster's available and conditional updates in the status is recommended.
+In the MCE console, select `All clusters` view at the top and navigate to Infrastructure -> Clusters to view managed hosted clusters with the `Upgrade available` link. You can also click on a managed hosted cluster to view the cluster details which also shows the `Upgrade available` link. You can update the control plane and nodepools by clicking the link. The list of the available updates is not from the hosted cluster's CVO and can be different than the available updates from the HostedCluster's `status.version.availableUpdates` and `status.version.conditionalUpdates`. Choosing a wrong release version from the console drop down list that is not recommended in the HostedCluster's `status.version.availableUpdates` and `status.version.conditionalUpdates` could break the hosted cluster. Therefore, referring to the hosted cluster's available and conditional updates in the status is required.
 
