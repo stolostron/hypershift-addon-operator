@@ -10,7 +10,7 @@ Each version documents its own support matrix. For example,
 - [MCE 2.5](https://access.redhat.com/articles/7056007)
 - [MCE 2.4](https://access.redhat.com/articles/7027079)
 
-As a heuristic, OCP versions that MCE supports are:
+As a heuristic, OCP versions MCE supports are:
 
 - The latest, yet to be released version (N+1) of OpenShift
 - The latest GA version (N) of OpenShift
