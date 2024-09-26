@@ -193,7 +193,7 @@ The HostedControlPlane orchestrates the rollout of the new version of the Contro
 - autoscaler
 - infra resources needed to enable ingress for control plane endpoints (KAS, ignition, konnectivity, etc.)
 
-Using the information from the `status.version.availableUpdates` and `status.version.conditionalUpdates` described in the previous section, you can set the `.spec.release` in the HostedCluster custom resource to start the control plane upgrade. For example, using the `status.version.conditionalUpdates.conditions.release.image` from the previous section, you can upgrade both the hosted control plane and nodepools by setting the `.spec.release` to `quay.io/openshift-release-dev/ocp-release@sha256:fb321a3f50596b43704dbbed2e51fdefd7a7fd488ee99655d03784d0cd02283f` which is OCP 4.16.7.
+Using the information from the `status.version.availableUpdates` and `status.version.conditionalUpdates` described in the previous section, you can set the `.spec.release` in the HostedCluster custom resource to start the control plane upgrade. For example, using the `status.version.conditionalUpdates.conditions.release.image` from the previous section, you can upgrade both the hosted control plane and nodepools by setting the `.spec.release.image` to `quay.io/openshift-release-dev/ocp-release@sha256:fb321a3f50596b43704dbbed2e51fdefd7a7fd488ee99655d03784d0cd02283f` which is OCP 4.16.7.
 
 ## NodePools
 `.spec.release` dictates the version of any particular NodePool.
