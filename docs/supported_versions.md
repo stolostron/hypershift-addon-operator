@@ -49,7 +49,9 @@ Server Version: 05864f61f24a8517731664f8091cedcfc5f9b60d
 Server Supports OCP Versions: 4.17, 4.16, 4.15, 4.14
 ```
 
-In this example, both the hypershift operator on the management cluster and the HCP CLI client support OCP version 4.17, 4.16, 4.15, 4.14. However, the operator and the CLI are at different build levels.
+In this example, both the hypershift operator on the management cluster and the HCP CLI client support OCP version 4.17, 4.16, 4.15, 4.14. However, the operator and the CLI are at different build levels. 
+
+*Note: Although the hypershift operator supports a range of OCP versions to be deployed as hosted clusters, MCE can manage only between n+1 and n-2 OCP versions. Check the MCE support matrix to ensure the hosted clusters are within the supported OCP range to be managed by MCE.
 
 The HCP CLI is available through download from MCE or https://developers.redhat.com/content-gateway/rest/browse/pub/mce/clients/hcp-cli/. 
 
