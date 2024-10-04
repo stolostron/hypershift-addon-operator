@@ -272,7 +272,7 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownload() {
 	cliDownloadNN := types.NamespacedName{Name: NewCLIDownloadResourceName}
 	err = o.Client.Get(context.TODO(), cliDownloadNN, cliDownload)
 	suite.Nil(err, "err nil when hypershift CLI download ConsoleCLIDownload exists")
-	suite.Equal("open-cluster-management:hypershift-preview:hypershift-addon-manager", cliDownload.OwnerReferences[0].Name)
+	suite.Equal("open-cluster-management:hypershift:hypershift-addon-manager", cliDownload.OwnerReferences[0].Name)
 
 	// Check the old hypershift-cli-download resources are deleted
 	removedCliDeployment := &appsv1.Deployment{}
@@ -729,7 +729,7 @@ func getTestClusterRole() *rbacv1.ClusterRole {
 			APIVersion: "rbac.authorization.k8s.io/v1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "open-cluster-management:hypershift-preview:hypershift-addon-manager",
+			Name: "open-cluster-management:hypershift:hypershift-addon-manager",
 		},
 	}
 	return clusterRole

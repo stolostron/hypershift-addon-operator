@@ -83,7 +83,7 @@ if [ $? -ne 0 ]; then
 fi
 
 oc create secret generic hypershift-operator-oidc-provider-s3-credentials --from-file=credentials=${S3_CREDS} --from-literal=bucket=${BUCKET_NAME} --from-literal=region=${BUCKET_REGION} -n local-cluster
-oc patch multiclusterengine ${mce_name} --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+oc patch multiclusterengine ${mce_name} --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift","enabled": true}]}}}'
 
 echo "Waiting for the local-cluster managed cluster to be available ..."
 oc wait --for=condition=ManagedClusterConditionAvailable managedcluster/local-cluster --timeout=600s
