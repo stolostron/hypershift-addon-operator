@@ -559,9 +559,9 @@ enableHypershiftForLocalCluster() {
     fi
 
     # Enable the hypershift feature. This also installs the hypershift addon for local-cluster
-    ${KUBECTL_COMMAND} patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+    ${KUBECTL_COMMAND} patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift","enabled": true}]}}}'
     if [ $? -ne 0 ]; then
-        echo "$(date) failed to enable hypershift-preview in MCE"
+        echo "$(date) failed to enable hypershift in MCE"
         exit 1
     fi
 

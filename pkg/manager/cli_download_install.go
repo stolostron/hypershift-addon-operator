@@ -501,9 +501,9 @@ func getOwnerRef(hubclient client.Client, log logr.Logger) (*metav1.OwnerReferen
 
 func getClusterScopedOwnerRef(hubclient client.Client, log logr.Logger) (*metav1.OwnerReference, error) {
 	clusterRole := &rbacv1.ClusterRole{}
-	err := hubclient.Get(context.TODO(), types.NamespacedName{Name: "open-cluster-management:hypershift-preview:hypershift-addon-manager"}, clusterRole)
+	err := hubclient.Get(context.TODO(), types.NamespacedName{Name: "open-cluster-management:hypershift:hypershift-addon-manager"}, clusterRole)
 	if err != nil {
-		log.Error(err, "failed to get open-cluster-management:hypershift-preview:hypershift-addon-manager clusterrole")
+		log.Error(err, "failed to get open-cluster-management:hypershift:hypershift-addon-manager clusterrole")
 		return nil, err
 	}
 

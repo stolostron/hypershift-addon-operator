@@ -2,7 +2,7 @@
 
 ## Pre-reqs
 
-1. Enable hypershift-preview feature in MCE. https://github.com/stolostron/hypershift-deployment-controller/blob/main/docs/provision_hypershift_clusters_by_mce.md#enable-the-hosted-control-planes-related-components-on-the-hub-cluster
+1. Enable hypershift feature in MCE. https://github.com/stolostron/hypershift-deployment-controller/blob/main/docs/provision_hypershift_clusters_by_mce.md#enable-the-hosted-control-planes-related-components-on-the-hub-cluster
 
 2. Enable hypershift addon to turn an ACM managed cluster into a hypershift management cluster. https://github.com/stolostron/hypershift-deployment-controller/blob/main/docs/provision_hypershift_clusters_by_mce.md#turn-one-of-the-managed-clusters-into-the-hypershift-management-cluster
 
