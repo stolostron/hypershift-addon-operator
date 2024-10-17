@@ -9,7 +9,7 @@ Clusters in this topology:
 - ACM cluster as a hub cluster
 - One or more MCE hosting clusters as managed clusters (Having ACM on these clusters it not supported)
 
-<img width="532" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/55b83d78-7172-4434-bef5-9deec75c23f5">
+<img width="681" alt="image" src="./images/discovery1.png">
 
 In this topology, the managed clusters are MCE clusters. One of the reasons why you want managed clusters to be MCE clusters instead of vanilla OCP is that MCE installs other operators like hive and BareMetal infrastructure operators that you can take advantage of.
 
@@ -257,7 +257,7 @@ managed-serviceaccount-addon-agent   1/1     1            1           24h
 This hypershift addon deployed by ACM acts as a discovery agent that discovers hosted clusters from MCE and create corresponding `DiscoveredCluster` CR in the MCE's managed cluster namespace in the ACM hub cluster when the hosted cluster's kube API server becomes available. Log into ACM hub console, navigate to All Clusters -> Infrastructure -> Clusters and `Discovered clusters` tab to view all discovered hosted clusters from MCE with type `MultiClusterEngineHCP`. 
 
 
-<img width="1641" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/b2739520-413a-4cd8-8a59-29d2e6837967">
+<img width="1483" alt="image" src="./images/discovery2.png">
 
 
 
@@ -294,7 +294,7 @@ spec:
 
 Setting the `spec.importAsManagedCluster` to `true` triggers ACM's discovery operator to start the auto-importing process and soon, you will see a managed cluster that is named the same as `spec.displayName` in the `DiscoveredCluster`. 
 
-<img width="1645" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/68fe947a-702c-4e24-a57c-2719b71eea5a">
+<img width="1469" alt="image" src="./images/discovery3.png">
 
 Setting `spec.importAsManagedCluster` to `true` can be automated by applying the following policy to ACM. This policy ensures that a DiscoveredCluster with type `MultiClusterEngineHCP` is set for auto-importing.
  
@@ -417,11 +417,9 @@ The hosted cluster is also auto-imported into MCE. Through the MCE console, you 
 
 This is the MCE console.
 
-<img width="1638" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/c8eab313-ffa5-4996-bca8-ece5b3838f29">
+<img width="1489" alt="image" src="./images/discovery4.png">
 
-<img width="1375" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/41cee271-6d83-4701-b47e-221d21bc2b59">
-
-<img width="1389" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/29ffd0f7-3b69-4ea6-917c-6f7838a6c070">
+<img width="1100" alt="image" src="./images/discovery5.png">
 
 
 ## Detaching hosted clusters from ACM
@@ -441,10 +439,8 @@ If you want the detached discovered cluster to be re-imported, this annotation n
 
 - The discovered cluster name link on the discovered cluster list UI does not open the console for discovered cluster with `MultiClusterEngineHCP` type.
 
-<img width="1098" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/ae9efc82-f4b2-462c-862f-0da62e8f1b87">
+<img width="1160" alt="image" src="./images/discovery6.png">
 
 - The "Import cluster" discovered cluster action menu option should not be used to import `MultiClusterEngineHCP` type discovered clusters. The only way to import them is through the auto-import policy.
-
-<img width="1138" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/a86a0f73-04e0-4a89-a355-43c15565ef66">
 
 - The "Last active" column for `MultiClusterEngineHCP` type discovered clusters is always "N/A".
