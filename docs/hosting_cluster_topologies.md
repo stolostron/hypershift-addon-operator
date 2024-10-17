@@ -6,7 +6,7 @@ This document describes various ways to deploy hosted clusters on a single or mu
 
 This is the default hosting cluster topology where MCE hub cluster is the only hosting cluster for all hosted control planes. 
 
-<img width="450" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/019242d5-9ada-4a28-bfeb-549b0f47571a">
+<img width="637" alt="image" src="./images/topology1.png">
 
 
 When MCE is installed and MultiClusterEngine instance is created, it auto-enables the following components.
@@ -115,7 +115,7 @@ Clusters in this scenario:
 - MCE cluster
 - OCP cluster that is imported into MCE as a managed cluster
 
-<img width="534" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/1cc46a6a-b52f-4c4c-98ca-6bb6f4f2e870">
+<img width="944" alt="image" src="./images/topology2.png">
 
 This is a topology where your MCE hub cluster has one or more remote managed OCP clusters and you want to have hosted control planes in those clusters instead of or on top of having hosted control planes in the hub cluster. Unlike how the `hypershift-addon` managed cluster addon is automatically enabled for `local-cluster` in the default topology described above, this topology requires you to enable the `hypershift-addon` managed cluster addon manually for the remote managed cluster.
 
@@ -236,12 +236,12 @@ Once hosted cluster `managed-ocp-cluster-hcp-1` creation is completed in `manage
 
 ## MCE as a hosting cluster managed by ACM
 
+**Note:** This section is replaced by [discovering hosted clusters](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/discovering_hostedclusters.md).
+
 Clusters in this topology:
 
 - ACM or MCE cluster as a hub cluster
 - One ore more MCE clusters as managed clusters
-
-<img width="532" alt="image" src="https://github.com/rokej/hypershift-addon-operator/assets/41969005/55b83d78-7172-4434-bef5-9deec75c23f5">
 
 In the previous topology, the managed clusters are vanilla OCP clusters and we turned them into hosting clusters by enabling the hypershift addon. In this topology, the managed clusters are MCE clusters. One of the reasons why you want managed clusters to be MCE clusters instead of vanilla OCP is that MCE installs other operators like hive and BareMetal infrastructure operators that you can take advantage of.
 
