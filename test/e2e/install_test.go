@@ -179,7 +179,7 @@ var _ = ginkgo.Describe("Install", func() {
 					for _, p := range podList.Items {
 						if strings.HasPrefix(p.Name, "hypershift-addon-agent") {
 							addonAgentPod = &p
-							ginkgo.By("Found addon agent pod" + p.Name)
+							ginkgo.By("Found addon agent pod " + p.Name)
 
 							break
 						}

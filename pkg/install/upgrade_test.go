@@ -2,6 +2,7 @@ package install
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -615,4 +616,89 @@ func TestInstallFlagChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
 
 	controller.Stop()
+}
+
+func TestDeploymentArgMismatch(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	controller := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+		bucketSecret:              corev1.Secret{},
+	}
+
+	localOidcSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftBucketSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"bucket":      []byte(`my-bucket`),
+			"region":      []byte(`us-east-1`),
+			"credentials": []byte(`myCredential`),
+		},
+	}
+	operatorDeployment := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "operator",
+			Namespace: "hypershift",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "nginx",
+						Image: "nginx:1.14.2",
+						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+					}},
+				},
+			},
+		},
+	}
+
+	//Create deployment
+	controller.hubClient.Create(ctx, operatorDeployment)
+	defer controller.hubClient.Delete(ctx, operatorDeployment)
+
+	defer deleteAllInstallJobs(ctx, controller.spokeUncachedClient, controller.addonNamespace)
+
+	// create oidc secret
+	controller.hubClient.Create(ctx, localOidcSecret)
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftBucketSecretName}, theSecret)
+		return err == nil
+	}, 10*time.Second, 1*time.Second, "The test oidc secret was created successfully")
+
+	// Installing first time, reinstall needed
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "First time install, \"reinstall\" needed")
+	controller.Stop()
+
+	//Remove args from deployment
+	operatorDeployment.Spec.Template.Spec.Containers[0].Args = []string{"sample-arg-no-oidc"}
+	if err := controller.hubClient.Update(ctx, operatorDeployment); err != nil {
+		fmt.Println("could not update deployment")
+	}
+	// oidc secret exists but not present in deployment args, should reinstall
+	controller.Start()
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The oidc secret exists but not among operator args. The hypershift operator needs to be re-installed")
+	controller.Stop()
+
 }
