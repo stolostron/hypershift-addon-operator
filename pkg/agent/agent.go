@@ -485,7 +485,7 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 	}
 
 	if !strings.EqualFold(os.Getenv("DISABLE_HC_DISCOVERY"), "true") && !strings.EqualFold(c.clusterName, c.localClusterName) {
-		managedClusterName = getDiscoveredClusterName(c.clusterName, hc.Name)
+		managedClusterName = getDiscoveredClusterName(c.clusterName, hc.Name, c.log)
 		c.log.Info(fmt.Sprintf("Hosted cluster discovery is enabled. Using klusterlet-%s as the hosted cluster's klusterlet namespace.", managedClusterName))
 	}
 

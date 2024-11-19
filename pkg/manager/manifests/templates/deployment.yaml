@@ -98,6 +98,10 @@ spec:
         - name: ENABLE_HC_DISCOVERY
           value: "{{ .enableHCDiscovery }}"
 {{- end }}
+{{- if .discoveryPrefix }}
+        - name: DISCOVERY_PREFIX
+          value: "{{ .discoveryPrefix }}"
+{{- end }}
 {{- if ne .disableMetrics "true" }}
         ports:
         - name: metrics

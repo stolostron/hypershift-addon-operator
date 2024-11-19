@@ -167,7 +167,7 @@ func (c *DiscoveryAgent) getDiscoveredCluster(hc hyperv1beta1.HostedCluster) *di
 		},
 		Spec: discoveryv1.DiscoveredClusterSpec{
 			APIURL:                 getAPIServerURL(hc.Status),
-			DisplayName:            getDiscoveredClusterName(c.clusterName, hc.Name),
+			DisplayName:            getDiscoveredClusterName(c.clusterName, hc.Name, c.log),
 			Name:                   hc.Spec.ClusterID,
 			IsManagedCluster:       false,
 			ImportAsManagedCluster: false,
@@ -261,6 +261,20 @@ func (c *DiscoveryAgent) getOCPVersion(status hyperv1beta1.HostedClusterStatus) 
 	return ""
 }
 
-func getDiscoveredClusterName(spokeClusterName, hcName string) string {
+func getDiscoveredClusterName(spokeClusterName, hcName string, log logr.Logger) string {
+	prefix, set := os.LookupEnv("DISCOVERY_PREFIX")
+
+	if set {
+		if len(prefix) > 0 {
+			log.Info(fmt.Sprintf("The prefix of discovered hosted clusters is set to %s", prefix))
+			log.Info(fmt.Sprintf("Setting the discovered hosted cluster name to %s", prefix+"-"+hcName))
+			return prefix + "-" + hcName
+		}
+
+		log.Info("No prefix option was configured for discovered hosted clusters")
+		log.Info(fmt.Sprintf("Setting the discovered hosted cluster name to %s", hcName))
+		return hcName
+	}
+
 	return spokeClusterName + "-" + hcName
 }
