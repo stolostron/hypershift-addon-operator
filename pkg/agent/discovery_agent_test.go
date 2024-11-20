@@ -20,7 +20,11 @@ import (
 const managedMCEClusterName = "managed-mce"
 const hcNamespace = "clusters"
 const hcName = "hc-1"
+const hcName2 = "hc-2"
+const hcName3 = "hc-3"
 const clusterID = "89693e2e-1198-4710-a254-c8277db50779"
+const clusterID2 = "89693e2e-2246-4710-a254-c8277db50779"
+const clusterID3 = "89693e2e-3397-4710-a254-c8277db50779"
 
 var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 	ctx := context.Background()
@@ -93,8 +97,72 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 				}
 				return true
 			}).Should(BeTrue())
-			//Expect(discoveredCluster.Spec.OpenshiftVersion).To(Equal("0.0.0")) // No version available yet
+			Expect(discoveredCluster.Spec.DisplayName).To(Equal(managedMCEClusterName + "-" + hcName))
 
+		})
+	})
+
+	Context("When the hosted cluster display name prefix is configured", func() {
+		It("Should use the prefix to name the discover hosted clusters", func() {
+			By("Configuring the name prefix to none")
+			os.Setenv("DISCOVERY_PREFIX", "")
+
+			By("Creating a hosted cluster with kube API server ready")
+
+			hc := getHostedCluster(types.NamespacedName{Namespace: hcNamespace, Name: hcName2})
+			hc.Spec.ClusterID = clusterID2
+			Expect(k8sClient.Create(ctx, hc)).Should(Succeed())
+
+			err := k8sClient.Get(ctx, types.NamespacedName{Namespace: hcNamespace, Name: hcName2}, hc)
+			Expect(err).NotTo(HaveOccurred())
+
+			newHC := hc.DeepCopy()
+			newCondition := []metav1.Condition{{
+				Type:               string(hyperv1beta1.HostedClusterAvailable),
+				Status:             metav1.ConditionTrue,
+				Reason:             hyperv1beta1.AsExpectedReason,
+				LastTransitionTime: metav1.Time{Time: time.Now()},
+			}}
+			newHC.Status.Conditions = newCondition
+			Expect(k8sClient.Status().Update(ctx, newHC)).Should(Succeed())
+
+			discoveredCluster := &discoveryv1.DiscoveredCluster{}
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx,
+					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID2},
+					discoveredCluster); err != nil {
+					return false
+				}
+				return true
+			}).Should(BeTrue())
+			Expect(discoveredCluster.Spec.DisplayName).To(Equal(hcName2))
+
+			By("Configuring the name prefix to something else")
+			os.Setenv("DISCOVERY_PREFIX", "abcd")
+
+			By("Creating a hosted cluster with kube API server ready")
+
+			hc = getHostedCluster(types.NamespacedName{Namespace: hcNamespace, Name: hcName3})
+			hc.Spec.ClusterID = clusterID3
+			Expect(k8sClient.Create(ctx, hc)).Should(Succeed())
+
+			err = k8sClient.Get(ctx, types.NamespacedName{Namespace: hcNamespace, Name: hcName3}, hc)
+			Expect(err).NotTo(HaveOccurred())
+
+			newHC = hc.DeepCopy()
+			newHC.Status.Conditions = newCondition
+			Expect(k8sClient.Status().Update(ctx, newHC)).Should(Succeed())
+
+			discoveredCluster = &discoveryv1.DiscoveredCluster{}
+			Eventually(func() bool {
+				if err := k8sClient.Get(ctx,
+					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID3},
+					discoveredCluster); err != nil {
+					return false
+				}
+				return true
+			}).Should(BeTrue())
+			Expect(discoveredCluster.Spec.DisplayName).To(Equal("abcd" + "-" + hcName3))
 		})
 	})
 
