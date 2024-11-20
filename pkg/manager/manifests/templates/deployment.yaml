@@ -98,7 +98,7 @@ spec:
         - name: ENABLE_HC_DISCOVERY
           value: "{{ .enableHCDiscovery }}"
 {{- end }}
-{{- if .discoveryPrefix }}
+{{- if or (eq .discoveryPrefix "") (.discoveryPrefix)}}
         - name: DISCOVERY_PREFIX
           value: "{{ .discoveryPrefix }}"
 {{- end }}
