@@ -259,6 +259,15 @@ This hypershift addon deployed by ACM acts as a discovery agent that discovers h
 
 <img width="1483" alt="image" src="./images/discovery2.png">
 
+### Naming Convention 
+
+When a discovered hosted cluster is auto-imported into the ACM hub, it becomes ACM's managed cluster and the naming convention of the managed cluster is `mce-cluster-name`-`hosted-cluster-name`. If all the hosted clusters are named uniquely across the fleet, you can configure `discoveryPrefix` in the `hypershift-addon-deploy-config` `addondeploymentconfig` in the previous step so that no prefix is used to name the discovered cluster.
+
+```
+% oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=merge -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value": "true"},{"name":"disableHOManagement","value": "true"},{"name":"discoveryPrefix","value": ""}]}}'
+```
+
+You can also set the `discoveryPrefix` to some other string to use it as a prefix replacing `mce-cluster-name`.
 
 
 ## Auto-importing the discovered hosted clusters

@@ -16,6 +16,7 @@ require (
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.63.0
 	github.com/prometheus/client_golang v1.19.0
 	github.com/prometheus/common v0.48.0
+	github.com/rung/go-safecast v1.0.1
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
 	github.com/stolostron/backplane-operator v0.0.0-20240209003542-4def396a0ac1
