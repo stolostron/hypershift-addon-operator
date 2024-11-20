@@ -42,6 +42,7 @@ import (
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
 	prometheusapi "github.com/prometheus/client_golang/api"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
+	safecast "github.com/rung/go-safecast"
 	discoveryv1 "github.com/stolostron/discovery/api/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/install"
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
@@ -1001,10 +1002,16 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup b
 		}
 	} else {
 		hcCount := len(hcList.Items)
+		hcCountValue, err := safecast.Int32(hcCount)
+		if err != nil {
+			c.log.Error(err, "failed to convert HC count to int32")
+			metrics.PlacementScoreFailureCount.Inc()
+			return err
+		}
 		scores := []clusterv1alpha1.AddOnPlacementScoreItem{
 			{
 				Name:  util.HostedClusterScoresScoreName,
-				Value: int32(hcCount),
+				Value: hcCountValue,
 			},
 		}
 
