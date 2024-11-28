@@ -87,7 +87,7 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// check if controlplane is available, if not then requeue until it is
-	if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || !isHostedControlPlaneAvailable(hc.Status) {
+	if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || !isHostedControlPlaneAvailable(*hc) {
 		// wait for cluster to become available, check again in a minute
 		c.log.Info(fmt.Sprintf("hosted control plane of (%s) is unavailable, retrying in 1 minute", req.NamespacedName))
 		return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
