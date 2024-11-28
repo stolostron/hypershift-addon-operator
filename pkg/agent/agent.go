@@ -557,6 +557,18 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 
 	c.log.Info("createOrUpdate external-managed-kubeconfig secret", "secret", client.ObjectKeyFromObject(secret))
 
+	// Get the CreationTimestamp
+	extKubeconfigSecret := &corev1.Secret{}
+	secretNamespaceNsn := types.NamespacedName{Namespace: "klusterlet-" + managedClusterName, Name: "external-managed-kubeconfig"}
+	if err := c.spokeClient.Get(ctx, secretNamespaceNsn, extKubeconfigSecret); err != nil {
+		c.log.Error(err, fmt.Sprintf("failed to find the external-managed-kubeconfig secret in the klusterlet namespace: %s ", klusterletNamespaceNsn.Name))
+		return err
+	}
+
+	if !extKubeconfigSecret.CreationTimestamp.IsZero() {
+		metrics.ExtManagedKubeconfigCreatedTSGaugeVec.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.InfraID).Set(float64(extKubeconfigSecret.CreationTimestamp.Unix()))
+	}
+
 	return nil
 }
 
@@ -654,7 +666,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 ||
-		!isHostedControlPlaneAvailable(hc.Status) {
+		!isHostedControlPlaneAvailable(*hc) {
 		// Wait for secrets to exist
 		c.log.Info(fmt.Sprintf("hostedcluster %s's control plane is not ready yet.", hc.Name))
 		return ctrl.Result{}, nil
@@ -707,6 +719,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 				extSecret := se.DeepCopy()
 
+				// TODO Generate metrics with this timestamp only for the initial create
 				errExt := c.generateExtManagedKubeconfigSecret(ctx, extSecret.Data, *hc)
 
 				if errExt != nil {
@@ -719,6 +732,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 				} else {
 					c.log.Info("Successfully generated external-managed-kubeconfig secret")
+
 				}
 
 				// Replace certificate-authority-data from admin-kubeconfig
@@ -791,9 +805,13 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	return ctrl.Result{}, nil
 }
 
-func isHostedControlPlaneAvailable(status hyperv1beta1.HostedClusterStatus) bool {
+func isHostedControlPlaneAvailable(hc hyperv1beta1.HostedCluster) bool {
+	status := hc.Status
 	for _, condition := range status.Conditions {
 		if condition.Reason == hyperv1beta1.AsExpectedReason && condition.Status == metav1.ConditionTrue && condition.Type == string(hyperv1beta1.HostedClusterAvailable) {
+			if !condition.LastTransitionTime.IsZero() {
+				metrics.HCPAPIServerAvailableTSGaugeVec.WithLabelValues(hc.Namespace, hc.Name, hc.Spec.InfraID).Set(float64(condition.LastTransitionTime.Unix()))
+			}
 			return true
 		}
 	}
@@ -1023,7 +1041,8 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup b
 		deletingHcNum := 0
 
 		for _, hc := range hcList.Items {
-			if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || isHostedControlPlaneAvailable(hc.Status) {
+			if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 ||
+				isHostedControlPlaneAvailable(hc) {
 				availableHcpNum++
 			}
 
