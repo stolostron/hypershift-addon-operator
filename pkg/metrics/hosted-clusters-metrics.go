@@ -40,6 +40,21 @@ var HostedControlPlaneStatusGaugeVec = prometheus.NewGaugeVec(
 	[]string{"hcp_namespace", "hcp_name", "ready", "version"},
 )
 
+var HCPAPIServerAvailableTSGaugeVec = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "mce_hcp_api_server_avail_ts_gauge",
+		Help: "Hosted control plane API server ready timestamp",
+	},
+	[]string{"hc_namespace", "hcp_name", "infra_id"},
+)
+var ExtManagedKubeconfigCreatedTSGaugeVec = prometheus.NewGaugeVec(
+	prometheus.GaugeOpts{
+		Name: "mce_hcp_ext_managed_kubeconfig_ts_gauge",
+		Help: "external-managed-kubeconfig creation timestamp",
+	},
+	[]string{"hc_namespace", "hcp_name", "infra_id"},
+)
+
 func init() {
 	CollectorsForRegistration = append(CollectorsForRegistration,
 		TotalHostedClusterGauge,
@@ -48,5 +63,7 @@ func init() {
 		HostedClusterBeingDeletedGauge,
 		MaxNumHostedClustersGauge,
 		ThresholdNumHostedClustersGauge,
-		HostedControlPlaneStatusGaugeVec)
+		HostedControlPlaneStatusGaugeVec,
+		HCPAPIServerAvailableTSGaugeVec,
+		ExtManagedKubeconfigCreatedTSGaugeVec)
 }
