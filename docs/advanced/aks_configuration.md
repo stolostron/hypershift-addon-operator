@@ -32,11 +32,12 @@ oc apply -f https://raw.githubusercontent.com/openshift/api/master/route/v1/zz_g
 Disable the prometheus metrics service and indicate that the addon is for an AKS cluster.
 
 ```
-oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=merge -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value": "true"},{"name":"disableHOManagement","value": "false"},{"name":"aroHcp","value":"true"}]}}'
+oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=merge -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value": "true"},{"name":"disableHOManagement","value": "false"},{"name":"autoImportDisabled","value": "true"},{"name":"aroHcp","value":"true"}]}}'
 ```
 
 - `disableMetrics=true` disables the prometheus metrics service which depnds on OpenShift service monitor.
 - `disableHOManagement=false` enables installing and managing the hypershift operator. With this setting, the hypershift operator is installed by the hypershift addon agent.
+- `autoImportDisabled=true` disables automatically importing a hosted cluster into the hub. When this is disabled, the hosted cluster needs to be either manually imported into the hub or some other controller needs to import it. For the import process, refer to [this](https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/provision_hosted_cluster_on_mce_local_cluster.md#importing-the-hosted-cluster-into-mce-via-cli)  
 - `aroHcp=true` is the indicator for the addon agent that the agent is run in non-OCP cluster.
 
 Create `ho-pull-secret` secret in `local-cluster` namespace. Replace `/Users/user/pull-secret.txt` with your own pull-secret which has access to `registry.redhat.io` registry. This pull secret is used by the hypershift operator installation to pull the external DNS image.
