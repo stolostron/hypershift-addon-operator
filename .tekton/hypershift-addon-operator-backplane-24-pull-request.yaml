@@ -128,12 +128,6 @@ spec:
         value: $(params.rebuild)
       - name: skip-checks
         value: $(params.skip-checks)
-      - name: skip-optional
-        value: $(params.skip-optional)
-      - name: pipelinerun-name
-        value: $(context.pipelineRun.name)
-      - name: pipelinerun-uid
-        value: $(context.pipelineRun.uid)
       taskRef:
         bundle: quay.io/redhat-appstudio-tekton-catalog/task-init:0.2@sha256:ad2c6461433b867a5b8c5243048014f71295f4f7b0b684e6289246e37f698204
         name: init
