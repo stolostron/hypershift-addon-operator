@@ -255,9 +255,14 @@ spec:
         workspace: workspace
     - name: deprecated-base-image-check
       params:
+      - name: IMAGE_URL
+        value: $(tasks.build-container.results.IMAGE_URL)
+      - name: IMAGE_DIGEST
+        value: $(tasks.build-container.results.IMAGE_DIGEST)
       taskRef:
-        bundle: quay.io/redhat-appstudio-tekton-catalog/task-deprecated-image-check:0.4@sha256:0ad98ffb3409f87f94ac7608838a142fed3eace02d7b815c0c63f4232b988e1a
-        name: deprecated-image-check
+         params:
+         - name: name
+           value: deprecated-image-check
       when:
       - input: $(params.skip-checks)
         operator: in
