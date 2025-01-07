@@ -195,30 +195,9 @@ spec:
       workspaces:
       - name: source
         workspace: workspace
-    - name: inspect-image
-      params:
-      - name: IMAGE_URL
-        value: $(tasks.build-container.results.IMAGE_URL)
-      - name: IMAGE_DIGEST
-        value: $(tasks.build-container.results.IMAGE_DIGEST)
-      - name: DOCKER_AUTH
-        value: $(tasks.init.results.container-registry-secret)
-      runAfter:
-      - build-container
-      taskRef:
-        bundle: quay.io/redhat-appstudio-tekton-catalog/task-inspect-image:0.2@sha256:382b85c31d6beecfe7d7abebb5d192473f8e49d43cc7a3463550b67d938ac1ac
-        name: inspect-image
-      when:
-      - input: $(params.skip-checks)
-        operator: in
-        values:
-        - "false"
-      workspaces:
-      - name: source
-        workspace: workspace
     - name: label-check
       runAfter:
-      - inspect-image
+      - build-image-index
       taskRef:
         bundle: quay.io/redhat-appstudio-tekton-catalog/task-label-check:0.1@sha256:0c0739fdda24cd1e3587bbab9b07d4493efc21884baac7723f4b446e95bf1fd3
         name: label-check
@@ -235,7 +214,7 @@ spec:
       - name: POLICY_NAMESPACE
         value: optional_checks
       runAfter:
-      - inspect-image
+      - build-image-index
       taskRef:
         bundle: quay.io/redhat-appstudio-tekton-catalog/task-label-check:0.1@sha256:0c0739fdda24cd1e3587bbab9b07d4493efc21884baac7723f4b446e95bf1fd3
         name: label-check
