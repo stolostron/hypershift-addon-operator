@@ -318,7 +318,7 @@ You can also import the hosted cluster into MCE using custom resources in comman
         cloud: auto-detect    
         cluster.open-cluster-management.io/clusterset: default    
         name: $CLUSTER_NAME   
-        vendor: OpenShift  
+        vendor: auto-detect  
       name: $CLUSTER_NAME
     spec:  
       hubAcceptsClient: true  
