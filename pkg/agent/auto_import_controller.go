@@ -145,7 +145,7 @@ func populateManagedClusterData(mc *clusterv1.ManagedCluster, hc *hyperv1beta1.H
 	}
 	labels := map[string]string{
 		"name":          mc.Name,
-		"vendor":        "OpenShift",   // This is always true
+		"vendor":        "auto-detect",
 		"cloud":         "auto-detect", // Work addon will use this to detect cloud provider, like: GCP,AWS
 		clusterSetLabel: "default",
 	}
@@ -207,8 +207,8 @@ func (c *AutoImportController) createKlusterletAddonConfig(hcName string, ctx co
 	if kac.Spec.ClusterLabels == nil {
 		kac.Spec.ClusterLabels = make(map[string]string)
 	}
-	kac.Spec.ClusterLabels["cloud"] = "Amazon"
-	kac.Spec.ClusterLabels["vendor"] = "Openshift"
+	kac.Spec.ClusterLabels["cloud"] = "auto-detect"
+	kac.Spec.ClusterLabels["vendor"] = "auto-detect"
 
 	kac.Spec.ApplicationManagerConfig.Enabled = true
 	kac.Spec.SearchCollectorConfig.Enabled = true
