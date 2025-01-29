@@ -62,7 +62,7 @@ metadata:
     cloud: auto-detect
     cluster.open-cluster-management.io/clusterset: default
     name: my-hosted-cluster-12345
-    vendor: OpenShift
+    vendor: auto-detect
 spec:
   hubAcceptsClient: true
   leaseDurationSeconds: 60
