@@ -198,6 +198,9 @@ kind: ManagedCluster
 metadata:
   annotations:
     agent.open-cluster-management.io/klusterlet-config: mce-import-klusterlet-config
+  labels:
+    cloud: auto-detect
+    vendor: auto-detect
   name: mce-a
 spec:
   hubAcceptsClient: true

@@ -32,6 +32,7 @@ const (
 	createdViaAnno            = "open-cluster-management/created-via"
 	clusterSetLabel           = "cluster.open-cluster-management.io/clusterset"
 	createdViaHypershift      = "hypershift"
+	autoDetect                = "auto-detect"
 )
 
 type AutoImportController struct {
@@ -144,8 +145,8 @@ func populateManagedClusterData(mc *clusterv1.ManagedCluster) {
 	}
 	labels := map[string]string{
 		"name":          mc.Name,
-		"vendor":        "OpenShift",   // This is always true
-		"cloud":         "auto-detect", // Work addon will use this to detect cloud provider, like: GCP,AWS
+		"vendor":        autoDetect,
+		"cloud":         autoDetect, // Work addon will use this to detect cloud provider, like: GCP,AWS
 		clusterSetLabel: "default",
 	}
 	for key, value := range labels {
@@ -196,8 +197,8 @@ func (c *AutoImportController) createKlusterletAddonConfig(hcName string, ctx co
 	if kac.Spec.ClusterLabels == nil {
 		kac.Spec.ClusterLabels = make(map[string]string)
 	}
-	kac.Spec.ClusterLabels["cloud"] = "Amazon"
-	kac.Spec.ClusterLabels["vendor"] = "Openshift"
+	kac.Spec.ClusterLabels["cloud"] = autoDetect
+	kac.Spec.ClusterLabels["vendor"] = autoDetect
 
 	kac.Spec.ApplicationManagerConfig.Enabled = true
 	kac.Spec.SearchCollectorConfig.Enabled = true
