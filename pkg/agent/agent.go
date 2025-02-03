@@ -586,7 +586,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 	}
 
 	// Delete HC secrets on the hub using labels for HC and the hosting NS
-	deleteMirrorSecrets := func() error {
+	deleteMirrorSecrets := func(secretName string) error {
 		secretSelector, err := metav1.LabelSelectorAsSelector(&metav1.LabelSelector{
 			MatchLabels: map[string]string{
 				util.HypershiftClusterNameLabel:      req.Name,
@@ -612,9 +612,12 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		for i := range hcHubSecretList.Items {
 			se := hcHubSecretList.Items[i]
 			c.log.V(4).Info(fmt.Sprintf("deleting secret(%s) on hub", client.ObjectKeyFromObject(&se)))
-			if err := c.hubClient.Delete(ctx, &se); err != nil && !apierrors.IsNotFound(err) {
-				lastErr = err
-				c.log.Error(err, fmt.Sprintf("failed to delete secret(%s) on hub", client.ObjectKeyFromObject(&se)))
+			// Delete both kubeconfig and password secrets or only the specified one
+			if secretName == "" || strings.HasSuffix(se.Name, secretName) {
+				if err := c.hubClient.Delete(ctx, &se); err != nil && !apierrors.IsNotFound(err) {
+					lastErr = err
+					c.log.Error(err, fmt.Sprintf("failed to delete secret(%s) on hub", client.ObjectKeyFromObject(&se)))
+				}
 			}
 		}
 
@@ -626,7 +629,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		if apierrors.IsNotFound(err) {
 			c.log.Info(fmt.Sprintf("remove hostedcluster(%s) secrets on hub, since hostedcluster is gone", req.NamespacedName))
 
-			return ctrl.Result{}, deleteMirrorSecrets()
+			return ctrl.Result{}, deleteMirrorSecrets("")
 		}
 
 		c.log.Error(err, "failed to get the hostedcluster")
@@ -681,6 +684,7 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 					// this secret will not be created if a custom identity provider
 					// is configured in configuration.oauth.identityProviders
 					c.log.Info("cannot find the kubeadmin password secret yet.")
+					_ = deleteMirrorSecrets("kubeadmin-password") // delete the mirrorred kubeadmin-password secrets it exists
 					continue
 				}
 			}
