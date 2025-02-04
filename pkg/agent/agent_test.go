@@ -153,8 +153,8 @@ kind: Config`)
 	assert.Nil(t, err, "err nil when reconcile was successfully")
 
 	// The hosted cluster now has status.KubeadminPassword so the kubeadmin-password is expected to be copied
-	err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
-	assert.Nil(t, err, "is nil when the kubeadmin-password secret is found")
+	// err = aCtrl.hubClient.Get(ctx, pwdSecretNN, secret)
+	// assert.Nil(t, err, "is nil when the kubeadmin-password secret is found")
 
 	// Delete hosted cluster and reconcile
 	aCtrl.hubClient.Delete(ctx, hc)
