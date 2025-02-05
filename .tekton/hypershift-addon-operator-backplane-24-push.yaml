@@ -97,8 +97,7 @@ spec:
       name: snyk-secret
       type: string
     - default: ""
-      description: Image tag expiration time, time values could be something like
-        1h, 2d, 3w for hours, days, and weeks, respectively.
+      description: Image tag expiration time, time values could be something like 1h, 2d, 3w for hours, days, and weeks, respectively.
       name: image-expires-after
     results:
     - description: ""
@@ -283,8 +282,12 @@ spec:
       params:
       - name: SNYK_SECRET
         value: $(params.snyk-secret)
+      - name: image-digest
+        value: $(tasks.build-container.results.IMAGE_DIGEST)
+      - name: image-url
+        value: $(tasks.build-container.results.IMAGE_URL)
       runAfter:
-      - clone-repository
+      - build-container
       taskRef:
         bundle: quay.io/redhat-appstudio-tekton-catalog/task-sast-snyk-check:0.3@sha256:4ada9949fd195b50e33605ef06bb52a9bfb523d88529392972ac7a051d5bb549
         name: sast-snyk-check
