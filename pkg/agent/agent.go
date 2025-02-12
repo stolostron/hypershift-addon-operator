@@ -409,10 +409,13 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 
 	c.log.Info("Set the cluster server URL in external-managed-kubeconfig secret", "apiServerURL", apiServerURL)
 
-	nilFunc := func() error { return nil }
-
 	// 3. Create the admin kubeconfig secret as external-managed-kubeconfig in klusterlet-<infraID> namespace
-	_, err = controllerutil.CreateOrUpdate(ctx, c.spokeClient, secret, nilFunc)
+	_, err = controllerutil.CreateOrUpdate(ctx, c.spokeClient, secret, func() error {
+		secret.Data = map[string][]byte{
+			"kubeconfig": newKubeconfig,
+		}
+		return nil
+	})
 	if err != nil {
 		c.log.Error(err, "failed to createOrUpdate external-managed-kubeconfig secret", "secret", client.ObjectKeyFromObject(secret))
 		return err
