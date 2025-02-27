@@ -31,7 +31,14 @@ type ExternalSecretController struct {
 
 var ExternalSecretPredicateFunctions = predicate.Funcs{
 	CreateFunc: func(e event.CreateEvent) bool {
-		return true
+		newKlusterlet, newOK := e.Object.(*operatorapiv1.Klusterlet)
+
+		if !newOK {
+			return false
+		}
+
+		// Only for hosted cluster klusterlets
+		return newKlusterlet.Spec.DeployOption.Mode == operatorapiv1.InstallModeSingletonHosted
 	},
 	UpdateFunc: func(e event.UpdateEvent) bool {
 		return false
