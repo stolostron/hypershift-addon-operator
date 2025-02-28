@@ -19,8 +19,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 type DiscoveryAgent struct {
@@ -30,29 +28,12 @@ type DiscoveryAgent struct {
 	log         logr.Logger
 }
 
-// This predicate is used as an event filter
-var DiscoveryPredicateFunctions = predicate.Funcs{
-	CreateFunc: func(e event.CreateEvent) bool {
-		return true
-	},
-	UpdateFunc: func(e event.UpdateEvent) bool {
-		return true
-	},
-	DeleteFunc: func(e event.DeleteEvent) bool {
-		return true
-	},
-	//GenericEvent is an event where the operation type is unknown in which case, do not request reconciliation
-	GenericFunc: func(e event.GenericEvent) bool {
-		return false
-	},
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (c *DiscoveryAgent) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		WithEventFilter(DiscoveryPredicateFunctions).
+		WithEventFilter(hostedClusterEventFilters()).
 		Complete(c)
 }
 

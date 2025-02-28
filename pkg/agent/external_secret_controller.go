@@ -30,7 +30,14 @@ type ExternalSecretController struct {
 
 var ExternalSecretPredicateFunctions = predicate.Funcs{
 	CreateFunc: func(e event.CreateEvent) bool {
-		return true
+		newKlusterlet, newOK := e.Object.(*operatorapiv1.Klusterlet)
+
+		if !newOK {
+			return false
+		}
+
+		// Only for hosted cluster klusterlets
+		return newKlusterlet.Spec.DeployOption.Mode == operatorapiv1.InstallModeSingletonHosted
 	},
 	UpdateFunc: func(e event.UpdateEvent) bool {
 		return false
@@ -63,11 +70,6 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 	if err := c.spokeClient.Get(ctx, req.NamespacedName, klusterlet); err != nil {
 		c.log.Error(err, "unable to find the klusterlet")
 		return ctrl.Result{Requeue: false}, err
-	}
-
-	if klusterlet.Spec.DeployOption.Mode != operatorapiv1.InstallModeSingletonHosted {
-		c.log.Info("this klusterlet's install mode is not SingletonHosted. Skip reconciling.")
-		return ctrl.Result{}, nil
 	}
 
 	_, hostedClusterName, _ := strings.Cut(req.Name, "klusterlet-")
