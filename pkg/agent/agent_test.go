@@ -839,7 +839,7 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
 	hc := &hyperv1beta1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "HostedCluster",
-			APIVersion: "hypershift.openshift.io/v1alpha1",
+			APIVersion: "hypershift.openshift.io/v1beta1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hcNN.Name,
