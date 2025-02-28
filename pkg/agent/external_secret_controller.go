@@ -73,11 +73,6 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{Requeue: false}, err
 	}
 
-	if klusterlet.Spec.DeployOption.Mode != operatorapiv1.InstallModeSingletonHosted {
-		c.log.Info("this klusterlet's install mode is not SingletonHosted. Skip reconciling.")
-		return ctrl.Result{}, nil
-	}
-
 	_, hostedClusterName, _ := strings.Cut(req.Name, "klusterlet-")
 
 	_, discoveredHostedClusterName, _ := strings.Cut(req.Name, "klusterlet-"+c.clusterName+"-")
