@@ -839,7 +839,7 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
 	hc := &hyperv1beta1.HostedCluster{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "HostedCluster",
-			APIVersion: "hypershift.openshift.io/v1alpha1",
+			APIVersion: "hypershift.openshift.io/v1beta1",
 		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      hcNN.Name,
@@ -850,7 +850,9 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
 				Type: hyperv1beta1.AWSPlatform,
 			},
 			Networking: hyperv1beta1.ClusterNetworking{
-				NetworkType: hyperv1beta1.OpenShiftSDN,
+				NetworkType:    hyperv1beta1.OpenShiftSDN,
+				ServiceNetwork: []hyperv1beta1.ServiceNetworkEntry{},
+				ClusterNetwork: []hyperv1beta1.ClusterNetworkEntry{},
 			},
 			Services: []hyperv1beta1.ServicePublishingStrategyMapping{},
 			Release: hyperv1beta1.Release{
@@ -859,7 +861,8 @@ func getHostedCluster(hcNN types.NamespacedName) *hyperv1beta1.HostedCluster {
 			Etcd: hyperv1beta1.EtcdSpec{
 				ManagementType: hyperv1beta1.Managed,
 			},
-			InfraID: "infra-abcdef",
+			InfraID:   "infra-abcdef",
+			ClusterID: "89693e2e-1198-4710-a254-c8277db50779",
 		},
 		Status: hyperv1beta1.HostedClusterStatus{
 			KubeConfig: &corev1.LocalObjectReference{Name: "kubeconfig"},

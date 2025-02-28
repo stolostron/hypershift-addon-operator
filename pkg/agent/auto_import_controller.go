@@ -19,8 +19,6 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/event"
-	"sigs.k8s.io/controller-runtime/pkg/predicate"
 )
 
 const (
@@ -40,27 +38,12 @@ type AutoImportController struct {
 	log         logr.Logger
 }
 
-var AutoImportPredicateFunctions = predicate.Funcs{
-	CreateFunc: func(e event.CreateEvent) bool {
-		return true
-	},
-	UpdateFunc: func(e event.UpdateEvent) bool {
-		return false
-	},
-	DeleteFunc: func(e event.DeleteEvent) bool {
-		return false
-	},
-	GenericFunc: func(e event.GenericEvent) bool {
-		return false
-	},
-}
-
 // SetupWithManager sets up the controller with the Manager.
 func (c *AutoImportController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		WithEventFilter(AutoImportPredicateFunctions).
+		WithEventFilter(hostedClusterEventFilters()).
 		Complete(c)
 }
 
@@ -80,9 +63,8 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	// check if controlplane is available, if not then requeue until it is
 	if hc.Status.Conditions == nil || len(hc.Status.Conditions) == 0 || !c.isHostedControlPlaneAvailable(hc.Status) {
-		// wait for cluster to become available, check again in a minute
-		c.log.Info(fmt.Sprintf("hosted control plane of (%s) is unavailable, retrying in 1 minute", req.NamespacedName))
-		return ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}, nil
+		c.log.Info(fmt.Sprintf("hostedcluster %s's control plane is not ready yet.", hc.Name))
+		return ctrl.Result{}, nil
 	}
 	// once available, create managed cluster
 	if err := c.createManagedCluster(*hc, ctx); err != nil {

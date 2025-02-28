@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -34,7 +35,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 
 	hyperv1beta1 "github.com/openshift/hypershift/api/v1beta1"
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
@@ -283,6 +286,15 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	if err = autoImportController.SetupWithManager(mgr); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to create auto-import controller: %s, err: %w", util.AutoImportControllerName, err)
+	}
+
+	HcpKubeconfigChangeWatcher := &HcpKubeconfigChangeWatcher{
+		hubClient: hubClient, spokeClient: spokeKubeClient, log: o.Log.WithName("hcp-kubeconfig-watcher"),
+	}
+
+	if err = HcpKubeconfigChangeWatcher.SetupWithManager(mgr); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
+		return fmt.Errorf("unable to create hcp kubeconfig watcher: %s, err: %w", "HcpKubeconfigChangeWatcher", err)
 	}
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
@@ -1138,8 +1150,76 @@ func (c *agentController) deleteManagedCluster(ctx context.Context, hc *hyperv1b
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&hyperv1beta1.HostedCluster{}).
-		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
+		WithOptions(controller.Options{MaxConcurrentReconciles: 10}).
+		WithEventFilter(hostedClusterEventFilters()).
 		Complete(c)
+}
+
+func hostedClusterEventFilters() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return false
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			newHc, newOK := e.ObjectNew.(*hyperv1beta1.HostedCluster)
+			oldHc, oldOK := e.ObjectOld.(*hyperv1beta1.HostedCluster)
+
+			if !newOK || !oldOK {
+				return false
+			}
+
+			if newHc.DeletionTimestamp != nil {
+				return false
+			}
+
+			newKASCondition := metav1.Condition{}
+			oldKASCondition := metav1.Condition{}
+
+			for _, condition := range newHc.Status.Conditions {
+				if condition.Type == string(hyperv1beta1.HostedClusterAvailable) {
+					newKASCondition = condition
+					break
+				}
+			}
+
+			for _, condition := range oldHc.Status.Conditions {
+				if condition.Type == string(hyperv1beta1.HostedClusterAvailable) {
+					oldKASCondition = condition
+					break
+				}
+			}
+
+			if newKASCondition.Status == metav1.ConditionTrue && (newKASCondition.Status != oldKASCondition.Status) {
+				return true
+			}
+
+			if !reflect.DeepEqual(oldHc.GetAnnotations(), newHc.GetAnnotations()) {
+				return true
+			}
+
+			if !reflect.DeepEqual(oldHc.Status.KubeConfig, newHc.Status.KubeConfig) {
+				return true
+			}
+
+			if !reflect.DeepEqual(oldHc.Status.KubeadminPassword, newHc.Status.KubeadminPassword) {
+				return true
+			}
+
+			if oldHc.Status.Version != nil && newHc.Status.Version != nil {
+				if !reflect.DeepEqual(oldHc.Status.Version.History, newHc.Status.Version.History) {
+					return true
+				}
+			}
+
+			return false
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return true
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
 }
 
 func NewCleanupCommand(addonName string, logger logr.Logger) *cobra.Command {
