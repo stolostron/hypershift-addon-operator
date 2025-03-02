@@ -90,6 +90,13 @@ var _ = BeforeSuite(func() {
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
 
+	err = (&HcpKubeconfigChangeWatcher{
+		spokeClient: k8sManager.GetClient(),
+		hubClient:   k8sManager.GetClient(),
+		log:         zapLogger.WithName("hcp-kubeconfig-watcher-test"),
+	}).SetupWithManager(k8sManager)
+	Expect(err).ToNot(HaveOccurred())
+
 	go func() {
 		defer GinkgoRecover()
 		err = k8sManager.Start(ctx)
