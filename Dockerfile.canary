@@ -1,6 +1,6 @@
 ARG FOUNDATION_IMAGE_TAG=latest
 FROM quay.io/stolostron/foundation-e2e:$FOUNDATION_IMAGE_TAG AS foundation-canary
-FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # Install utils
 RUN  microdnf update -y \
