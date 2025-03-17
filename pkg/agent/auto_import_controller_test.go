@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"testing"
-	"time"
 
 	"github.com/go-logr/zapr"
 	configv1 "github.com/openshift/api/config/v1"
@@ -332,8 +331,8 @@ func TestHCPUnavailable(t *testing.T) {
 
 	res, err := AICtrl.Reconcile(ctx, ctrl.Request{NamespacedName: hcNN})
 	assert.Nil(t, err, "no error when waiting for control plane")
-	checkRes := ctrl.Result{Requeue: true, RequeueAfter: time.Duration(1) * time.Minute}
-	assert.EqualValues(t, checkRes, res, "should requeue")
+	checkRes := ctrl.Result{}
+	assert.EqualValues(t, checkRes, res, "should not requeue")
 
 }
 

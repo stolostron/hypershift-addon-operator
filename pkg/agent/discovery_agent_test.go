@@ -87,6 +87,16 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 				LastTransitionTime: metav1.Time{Time: time.Now()},
 			}}
 			newHC.Status.Conditions = newCondition
+
+			newHC.Status.ControlPlaneEndpoint.Host = "test.com"
+			newHC.Status.ControlPlaneEndpoint.Port = 6444
+			newHC.Status.Version = &hyperv1beta1.ClusterVersionStatus{
+				History: []configv1.UpdateHistory{{
+					State:       configv1.CompletedUpdate,
+					Version:     "4.15.12",
+					StartedTime: metav1.Time{Time: time.Now()},
+				}},
+			}
 			Expect(k8sClient.Status().Update(ctx, newHC)).Should(Succeed())
 
 			Eventually(func() bool {
