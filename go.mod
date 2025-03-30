@@ -22,7 +22,7 @@ require (
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/pflag v1.0.6-0.20210604193023-d5e0c0615ace
 	github.com/stolostron/backplane-operator v0.0.0-20240209003542-4def396a0ac1
-	github.com/stolostron/discovery v0.0.0-20240429203137-9ccf847f7f5d
+	github.com/stolostron/discovery 9e2f974462e7
 	github.com/stolostron/klusterlet-addon-controller v0.0.0-20240229083605-8bd4a2ae81c0
 	github.com/stretchr/testify v1.9.0
 	go.uber.org/zap v1.27.0
