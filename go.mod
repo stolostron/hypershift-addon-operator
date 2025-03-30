@@ -9,7 +9,7 @@ require (
 	github.com/hashicorp/go-version v1.6.0
 	github.com/onsi/ginkgo/v2 v2.15.0
 	github.com/onsi/gomega v1.31.1
-	github.com/openshift/api v0.0.0-20231206170337-f356bd9e2ff6
+	github.com/openshift/api v0.0.0-20240830023148-b7d0481c9094
 	github.com/openshift/hypershift v0.1.17-0.20240209143413-a8479785e49f
 	github.com/openshift/library-go v0.0.0-20240126152712-771c6734dc24
 	github.com/operator-framework/api v0.17.4-0.20230223191600-0131a6301e42
@@ -25,13 +25,13 @@ require (
 	go.uber.org/zap v1.27.0
 	go.withmatt.com/size v0.0.0-20221118222007-0d9da7819356
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.29.3
-	k8s.io/apimachinery v0.29.3
-	k8s.io/client-go v0.29.3
+	k8s.io/api v0.29.9
+	k8s.io/apimachinery v0.29.9
+	k8s.io/client-go v0.29.9
 	k8s.io/component-base v0.29.3
 	open-cluster-management.io/addon-framework v0.9.2
 	open-cluster-management.io/api v0.13.0
-	sigs.k8s.io/controller-runtime v0.17.2
+	sigs.k8s.io/controller-runtime v0.17.6
 )
 
 require (
@@ -117,7 +117,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b // indirect
 	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1 // indirect
-	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f // indirect
+	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250324094320-633957e81ebd // indirect
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
@@ -180,7 +180,7 @@ require (
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
 	open-cluster-management.io/sdk-go v0.13.1-0.20240416030555-aa744f426379 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.28.0 // indirect
-	sigs.k8s.io/cluster-api v1.6.1 // indirect
+	sigs.k8s.io/cluster-api v1.7.6 // indirect
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.2.4 // indirect
 	sigs.k8s.io/cluster-api-provider-azure v1.11.5 // indirect
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.6.0 // indirect
