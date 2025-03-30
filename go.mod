@@ -11,7 +11,7 @@ require (
 	github.com/hashicorp/go-version v1.6.0
 	github.com/onsi/ginkgo/v2 v2.15.0
 	github.com/onsi/gomega v1.31.1
-	github.com/openshift/api v0.0.0-20231206170337-f356bd9e2ff6
+	github.com/openshift/api 4521905c611e
 	github.com/openshift/hypershift v0.1.17-0.20240209143413-a8479785e49f
 	github.com/openshift/library-go v0.0.0-20240126152712-771c6734dc24
 	github.com/operator-framework/api v0.17.4-0.20230223191600-0131a6301e42
