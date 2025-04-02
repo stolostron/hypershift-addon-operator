@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-logr/logr"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 
 	operatorapiv1 "open-cluster-management.io/api/operator/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -51,6 +52,7 @@ var ExternalSecretPredicateFunctions = predicate.Funcs{
 // SetupWithManager sets up the controller with the Manager.
 func (c *ExternalSecretController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named(util.ExternalSecretControllerName).
 		For(&operatorapiv1.Klusterlet{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		WithEventFilter(ExternalSecretPredicateFunctions).

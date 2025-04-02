@@ -1202,6 +1202,7 @@ func (c *agentController) deleteManagedCluster(ctx context.Context, hc *hyperv1b
 
 func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named(util.AddonControllerName).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 10}).
 		WithEventFilter(hostedClusterEventFilters()).
