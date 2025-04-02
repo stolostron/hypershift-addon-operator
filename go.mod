@@ -181,7 +181,7 @@ require (
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
 	open-cluster-management.io/sdk-go v0.16.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.0 // indirect
-	sigs.k8s.io/cluster-api v1.9.4 // indirect
+	sigs.k8s.io/cluster-api v1.9.5 // indirect
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.7.1 // indirect
 	sigs.k8s.io/cluster-api-provider-azure v1.18.0 // indirect
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0 // indirect
@@ -198,5 +198,4 @@ require (
 replace (
 	cloud.google.com/go/compute => cloud.google.com/go v0.93.3
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.18.0
-	sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.6.1
 )
