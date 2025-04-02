@@ -1,13 +1,13 @@
 ARG FOUNDATION_IMAGE_TAG=latest
 FROM quay.io/stolostron/foundation-e2e:$FOUNDATION_IMAGE_TAG AS foundation-canary
-FROM registry.access.redhat.com/ubi8/ubi-minimal:latest
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # Install utils
 RUN  microdnf update -y \
-        && microdnf install uuid \
-        && microdnf install jq \
-        && microdnf install openssh-clients \
-        && microdnf install tar \
+        && microdnf install uuid -y \
+        && microdnf install jq -y \
+        && microdnf install openssh-clients -y \
+        && microdnf install tar -y \
         && microdnf clean all
 
 # Install the kubectl binary
