@@ -58,6 +58,7 @@ var HcpKubeconfigChangeWatcherPredicateFunctions = predicate.Funcs{
 // SetupWithManager sets up the controller with the Manager.
 func (c *HcpKubeconfigChangeWatcher) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named("HcpKubeconfigChangeWatcher").
 		For(&corev1.Secret{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 5}).
 		WithEventFilter(HcpKubeconfigChangeWatcherPredicateFunctions).
