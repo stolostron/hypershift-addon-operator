@@ -23,6 +23,30 @@ spec:
       containers:
 {{- if ne .disableMetrics "true" }}
       - name: kube-rbac-proxy
+{{- with .ResourceRequirements}}
+    {{- $matchedIndex := -1 }}
+    {{- range $index, $item := . }}
+        {{- if regexMatch $item.ContainerIDRegex "deployments:hypershift-addon-agent:kube-rbac-proxy" }}
+          {{- $matchedIndex = $index }}
+        {{- end }}
+    {{- end }}
+    {{- if ne $matchedIndex -1 }}
+        {{- $matched := index . $matchedIndex }}
+        resources:
+        {{- if $matched.Resources.Requests}}
+          requests:
+          {{- range $key, $value := $matched.Resources.Requests }}
+            "{{ $key }}": "{{ $value }}"
+          {{- end }}
+        {{- end }}
+        {{- if $matched.Resources.Limits}}
+          limits:
+          {{- range $key, $value := $matched.Resources.Limits }}
+            "{{ $key }}": "{{ $value }}"
+          {{- end }}
+        {{- end }}
+    {{- end }}
+{{- end }}
         image: {{ .KubeRbacProxyImage }}
         imagePullPolicy: IfNotPresent
         securityContext:

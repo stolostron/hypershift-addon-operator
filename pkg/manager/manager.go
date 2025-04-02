@@ -182,6 +182,7 @@ func getAgentAddon(componentName string, o *override, controllerContext *control
 			addonfactory.GetAddOnDeploymentConfigValues(
 				addonutil.NewAddOnDeploymentConfigGetter(addonClient),
 				addonfactory.ToAddOnDeploymentConfigValues,
+				addonfactory.ToAddOnResourceRequirementsValues,
 			)).
 		WithAgentRegistrationOption(registrationOption).
 		WithAgentInstallNamespace(addonutil.AgentInstallNamespaceFromDeploymentConfigFunc(
