@@ -23,6 +23,30 @@ spec:
       containers:
 {{- if ne .disableMetrics "true" }}
       - name: kube-rbac-proxy
+{{- with .ResourceRequirements}}
+    {{- $matchedIndex := -1 }}
+    {{- range $index, $item := . }}
+        {{- if regexMatch $item.ContainerIDRegex "deployments:hypershift-addon-agent:kube-rbac-proxy" }}
+          {{- $matchedIndex = $index }}
+        {{- end }}
+    {{- end }}
+    {{- if ne $matchedIndex -1 }}
+        {{- $matched := index . $matchedIndex }}
+        resources:
+        {{- if $matched.Resources.Requests}}
+          requests:
+          {{- range $key, $value := $matched.Resources.Requests }}
+            "{{ $key }}": "{{ $value }}"
+          {{- end }}
+        {{- end }}
+        {{- if $matched.Resources.Limits}}
+          limits:
+          {{- range $key, $value := $matched.Resources.Limits }}
+            "{{ $key }}": "{{ $value }}"
+          {{- end }}
+        {{- end }}
+    {{- end }}
+{{- end }}
         image: {{ .KubeRbacProxyImage }}
         imagePullPolicy: IfNotPresent
         securityContext:
@@ -50,6 +74,35 @@ spec:
           readOnly: true
 {{- end }}
       - name: {{ .AddonName }}
+{{- with .ResourceRequirements}}
+    {{- $matchedIndex := -1 }}
+    {{- range $index, $item := . }}
+        {{- if regexMatch $item.ContainerIDRegex "deployments:hypershift-addon-agent:hypershift-addon-agent" }}
+          {{- $matchedIndex = $index }}
+        {{- end }}
+    {{- end }}
+    {{- if ne $matchedIndex -1 }}
+        {{- $matched := index . $matchedIndex }}
+        resources:
+        {{- if $matched.Resources.Requests}}
+          requests:
+          {{- range $key, $value := $matched.Resources.Requests }}
+            "{{ $key }}": "{{ $value }}"
+          {{- end }}
+        {{- end }}
+        {{- if $matched.Resources.Limits}}
+          limits:
+          {{- range $key, $value := $matched.Resources.Limits }}
+            "{{ $key }}": "{{ $value }}"
+          {{- end }}
+        {{- end }}
+    {{- else }}
+        resources:
+          requests:
+            cpu: "2m"
+            memory: "256Mi"
+    {{- end }}
+{{- end }}
         image: {{ .Image }}
         imagePullPolicy: IfNotPresent
         securityContext:
@@ -69,10 +122,6 @@ spec:
           - "--hypershfit-operator-image={{ .HypershiftOperatorImage }}"
           - "--multicluster-pull-secret={{ .MulticlusterEnginePullSecret }}"
           - --metrics-bind-address=0.0.0.0:8383
-        resources:
-          requests:
-            cpu: "2m"
-            memory: "256Mi"
         env:
 {{- if .hcMaxNumber }}
         - name: HC_MAX_NUMBER
