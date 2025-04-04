@@ -1,6 +1,6 @@
 module github.com/stolostron/hypershift-addon-operator
 
-go 1.23.0
+go 1.23.4
 
 toolchain go1.23.7
 
@@ -15,14 +15,14 @@ require (
 	github.com/openshift/hypershift v0.1.56
 	github.com/openshift/hypershift/api v0.0.0-20250402075621-3283bb995a26
 	github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2
-	github.com/operator-framework/api v0.22.0
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.74.0
+	github.com/operator-framework/api v0.23.0
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/common v0.63.0
 	github.com/rung/go-safecast v1.0.1
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.6
-	github.com/stolostron/backplane-operator v0.0.0-20240209003542-4def396a0ac1
+	github.com/stolostron/backplane-operator v0.0.0-20250227134641-0389b06daaff
 	github.com/stolostron/discovery v0.0.0-20240429203137-9ccf847f7f5d
 	github.com/stolostron/klusterlet-addon-controller v0.0.0-20240229083605-8bd4a2ae81c0
 	github.com/stretchr/testify v1.10.0
@@ -169,7 +169,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	helm.sh/helm/v3 v3.14.2 // indirect
+	helm.sh/helm/v3 v3.14.3 // indirect
 	k8s.io/apiextensions-apiserver v0.32.2 // indirect
 	k8s.io/apiserver v0.32.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
