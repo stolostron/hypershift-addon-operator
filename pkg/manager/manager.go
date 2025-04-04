@@ -24,6 +24,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/component-base/version"
+	"k8s.io/utils/clock"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	consolev1 "github.com/openshift/api/console/v1"
@@ -149,7 +150,7 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 	}
 
 	cmdConfig := controllercmd.
-		NewControllerCommandConfig(componentName, version.Get(), runController)
+		NewControllerCommandConfig(componentName, version.Get(), runController, clock.RealClock{})
 
 	cmd := cmdConfig.NewCommand()
 	cmd.Use = "manager"
@@ -181,6 +182,7 @@ func getAgentAddon(componentName string, o *override, controllerContext *control
 			addonfactory.GetAddOnDeploymentConfigValues(
 				addonutil.NewAddOnDeploymentConfigGetter(addonClient),
 				addonfactory.ToAddOnDeploymentConfigValues,
+				addonfactory.ToAddOnResourceRequirementsValues,
 			)).
 		WithAgentRegistrationOption(registrationOption).
 		WithAgentInstallNamespace(addonutil.AgentInstallNamespaceFromDeploymentConfigFunc(

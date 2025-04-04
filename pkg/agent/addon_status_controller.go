@@ -55,6 +55,7 @@ var AddonStatusPredicateFunctions = predicate.Funcs{
 // SetupWithManager sets up the controller with the Manager.
 func (c *AddonStatusController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named(util.AddonStatusControllerName).
 		For(&appsv1.Deployment{}).
 		WithEventFilter(AddonStatusPredicateFunctions).
 		Complete(c)
