@@ -1,6 +1,6 @@
 module github.com/stolostron/hypershift-addon-operator
 
-go 1.23.0
+go 1.23.4
 
 toolchain go1.23.7
 
@@ -11,26 +11,26 @@ require (
 	github.com/hashicorp/go-version v1.7.0
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
-	github.com/openshift/api v0.0.0-20250130171037-7bb8a0201a56
+	github.com/openshift/api v0.0.0-20250327202946-4521905c611e
 	github.com/openshift/hypershift v0.1.56
 	github.com/openshift/hypershift/api v0.0.0-20250402075621-3283bb995a26
 	github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2
-	github.com/operator-framework/api v0.22.0
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.74.0
+	github.com/operator-framework/api v0.23.0
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/common v0.63.0
 	github.com/rung/go-safecast v1.0.1
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.6
-	github.com/stolostron/backplane-operator v0.0.0-20240209003542-4def396a0ac1
+	github.com/stolostron/backplane-operator v0.0.0-20250227134641-0389b06daaff
 	github.com/stolostron/discovery v0.0.0-20240429203137-9ccf847f7f5d
 	github.com/stolostron/klusterlet-addon-controller v0.0.0-20240229083605-8bd4a2ae81c0
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
 	go.withmatt.com/size v0.0.0-20221118222007-0d9da7819356
 	gopkg.in/yaml.v2 v2.4.0
-	k8s.io/api v0.32.2
-	k8s.io/apimachinery v0.32.2
+	k8s.io/api v0.32.3
+	k8s.io/apimachinery v0.32.3
 	k8s.io/client-go v0.32.2
 	k8s.io/component-base v0.32.2
 	k8s.io/utils v0.0.0-20241210054802-24370beab758
@@ -94,7 +94,7 @@ require (
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
-	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
+	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gophercloud/gophercloud/v2 v2.4.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
@@ -116,8 +116,8 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
-	github.com/openshift/client-go v0.0.0-20250131180035-f7ec47e2d87a // indirect
-	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250302080306-e87c2e03fc96 // indirect
+	github.com/openshift/client-go v0.0.0-20250330132942-bc2e3c2af6e1 // indirect
+	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250324094320-633957e81ebd // indirect
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -169,7 +169,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	helm.sh/helm/v3 v3.14.2 // indirect
+	helm.sh/helm/v3 v3.14.3 // indirect
 	k8s.io/apiextensions-apiserver v0.32.2 // indirect
 	k8s.io/apiserver v0.32.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
@@ -187,10 +187,10 @@ require (
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0 // indirect
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9 // indirect
 	sigs.k8s.io/cluster-api-provider-openstack v0.12.1 // indirect
-	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
+	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96 // indirect
 	sigs.k8s.io/secrets-store-csi-driver v1.4.8 // indirect
-	sigs.k8s.io/structured-merge-diff/v4 v4.4.2 // indirect
+	sigs.k8s.io/structured-merge-diff/v4 v4.6.0 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
 
