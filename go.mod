@@ -129,7 +129,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
-	github.com/stolostron/cluster-lifecycle-api v0.0.0-20240130112703-747158a63f05 // indirect
+	github.com/stolostron/cluster-lifecycle-api v0.0.0-20240918064238-a5e71b599118 // indirect
 	github.com/vincent-petithory/dataurl v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
