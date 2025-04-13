@@ -9,7 +9,7 @@ require (
 	github.com/go-logr/logr v1.4.2
 	github.com/go-logr/zapr v1.3.0
 	github.com/hashicorp/go-version v1.7.0
-	github.com/onsi/ginkgo/v2 v2.22.2
+	github.com/onsi/ginkgo/v2 v2.23.0
 	github.com/onsi/gomega v1.36.2
 	github.com/openshift/api v0.0.0-20250327202946-4521905c611e
 	github.com/openshift/hypershift v0.1.56
@@ -17,7 +17,7 @@ require (
 	github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2
 	github.com/operator-framework/api v0.23.0
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.0
-	github.com/prometheus/client_golang v1.20.5
+	github.com/prometheus/client_golang v1.21.1
 	github.com/prometheus/common v0.63.0
 	github.com/rung/go-safecast v1.0.1
 	github.com/spf13/cobra v1.8.1
@@ -36,7 +36,7 @@ require (
 	k8s.io/utils v0.0.0-20241210054802-24370beab758
 	open-cluster-management.io/addon-framework v0.12.0
 	open-cluster-management.io/api v0.16.0
-	sigs.k8s.io/controller-runtime v0.19.6
+	sigs.k8s.io/controller-runtime v0.19.7
 )
 
 require (
@@ -96,7 +96,7 @@ require (
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gophercloud/gophercloud/v2 v2.4.0 // indirect
+	github.com/gophercloud/gophercloud/v2 v2.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.24.0 // indirect
@@ -105,7 +105,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
-	github.com/k-orc/openstack-resource-controller v1.0.0 // indirect
+	github.com/k-orc/openstack-resource-controller v1.0.1 // indirect
 	github.com/kubernetes-csi/external-snapshotter/client/v6 v6.3.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -186,7 +186,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-azure v1.18.0 // indirect
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.7.0 // indirect
 	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9 // indirect
-	sigs.k8s.io/cluster-api-provider-openstack v0.12.1 // indirect
+	sigs.k8s.io/cluster-api-provider-openstack v0.12.2 // indirect
 	sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 // indirect
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96 // indirect
 	sigs.k8s.io/secrets-store-csi-driver v1.4.8 // indirect
