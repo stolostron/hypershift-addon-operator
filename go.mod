@@ -9,7 +9,7 @@ require (
 	github.com/go-logr/logr v1.4.2
 	github.com/go-logr/zapr v1.3.0
 	github.com/hashicorp/go-version v1.7.0
-	github.com/onsi/ginkgo/v2 v2.22.2
+	github.com/onsi/ginkgo/v2 v2.23.0
 	github.com/onsi/gomega v1.36.2
 	github.com/openshift/api v0.0.0-20250327202946-4521905c611e
 	github.com/openshift/hypershift v0.1.56
@@ -31,12 +31,12 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.32.3
 	k8s.io/apimachinery v0.32.3
-	k8s.io/client-go v0.32.2
+	k8s.io/client-go v0.32.3
 	k8s.io/component-base v0.32.2
 	k8s.io/utils v0.0.0-20241210054802-24370beab758
 	open-cluster-management.io/addon-framework v0.12.0
 	open-cluster-management.io/api v0.16.0
-	sigs.k8s.io/controller-runtime v0.19.6
+	sigs.k8s.io/controller-runtime v0.20.3
 )
 
 require (
@@ -89,14 +89,14 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/btree v1.1.2 // indirect
+	github.com/google/btree v1.1.3 // indirect
 	github.com/google/cel-go v0.22.0 // indirect
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/gofuzz v1.2.0 // indirect
 	github.com/google/pprof v0.0.0-20250317173921-a4b03ec1a45e // indirect
 	github.com/google/uuid v1.6.0 // indirect
-	github.com/gophercloud/gophercloud/v2 v2.4.0 // indirect
+	github.com/gophercloud/gophercloud/v2 v2.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.24.0 // indirect
