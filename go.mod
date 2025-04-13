@@ -173,7 +173,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.32.2 // indirect
 	k8s.io/apiserver v0.32.2 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/kms v0.32.2 // indirect
+	k8s.io/kms v0.32.3 // indirect
 	k8s.io/kube-aggregator v0.32.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20241105132330-32ad38e42d3f // indirect
 	kubevirt.io/api v1.4.0 // indirect
