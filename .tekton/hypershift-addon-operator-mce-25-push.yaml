@@ -368,7 +368,8 @@ spec:
     - name: workspace
     - name: git-auth
       optional: true
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-hypershift-addon-operator-mce-25
   workspaces:
   - name: workspace
     volumeClaimTemplate:
