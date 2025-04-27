@@ -117,7 +117,7 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0-rc2.0.20221005185240-3a7f492d3f1b // indirect
-	github.com/openshift/client-go v0.0.0-20230926161409-848405da69e1 // indirect
+	github.com/openshift/client-go 5f55ff6979a1 // indirect
 	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20230918065757-81658c4ddf2f // indirect
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 // indirect
 	github.com/pborman/uuid v1.2.1 // indirect
