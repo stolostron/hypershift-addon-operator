@@ -23,7 +23,7 @@ require (
 	github.com/stolostron/klusterlet-addon-controller v0.0.0-20230726064251-1a558f536b6c
 	github.com/stretchr/testify v1.8.0
 	go.uber.org/zap v1.21.0
-	go.withmatt.com/size v0.0.0-20221118222007-0d9da7819356
+	go.withmatt.com/size 11aee5773e67
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.25.2
 	k8s.io/apimachinery v0.25.2
