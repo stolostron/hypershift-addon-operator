@@ -1,0 +1,412 @@
+---
+lockfileVersion: 1
+lockfileVendor: redhat
+arches:
+- arch: aarch64
+  packages:
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/appstream/os/Packages/n/nmstate-2.2.40-1.el9_5.aarch64.rpm
+    repoid: rhel-9-for-aarch64-appstream-rpms
+    size: 3194677
+    checksum: sha256:e6004429a97d9028e72a76b352999cd19f7fa73bfc4b125c22b41afbdc0e2ba1
+    name: nmstate
+    evr: 2.2.40-1.el9_5
+    sourcerpm: nmstate-2.2.40-1.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/appstream/os/Packages/n/nmstate-libs-2.2.40-1.el9_5.aarch64.rpm
+    repoid: rhel-9-for-aarch64-appstream-rpms
+    size: 2500967
+    checksum: sha256:34074c01ba3ce260e30b6de14e8a8eaf1e3ca0cd5d564d3153330354441cbd28
+    name: nmstate-libs
+    evr: 2.2.40-1.el9_5
+    sourcerpm: nmstate-2.2.40-1.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/c/cryptsetup-libs-2.6.0-3.el9.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 488359
+    checksum: sha256:ead0459f79d24910094575220f25d74efcd11439013a7ca2d9df9e2291e374a3
+    name: cryptsetup-libs
+    evr: 2.6.0-3.el9
+    sourcerpm: cryptsetup-2.6.0-3.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/d/device-mapper-1.02.198-2.el9.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 144678
+    checksum: sha256:6a1d5b9da25b6da7692b2f46788b07424b16c53e936a0d985d9df0c409ba1055
+    name: device-mapper
+    evr: 9:1.02.198-2.el9
+    sourcerpm: lvm2-2.03.24-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/d/device-mapper-libs-1.02.198-2.el9.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 177854
+    checksum: sha256:93d9802a541c169182cd2b051c7541bdd3f54ab13b652b5d732092cd26d204d4
+    name: device-mapper-libs
+    evr: 9:1.02.198-2.el9
+    sourcerpm: lvm2-2.03.24-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/k/kbd-2.4.0-10.el9.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 419745
+    checksum: sha256:6a4a8333be2b498ad654dbf1f32fcadcec92b0a200794aafa0ceb602e0781b94
+    name: kbd
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/k/kbd-legacy-2.4.0-10.el9.noarch.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 579436
+    checksum: sha256:c87ebcade6eb08c02af4b70d6cd401ad79247d55987d94003752adc6319c58f9
+    name: kbd-legacy
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/k/kbd-misc-2.4.0-10.el9.noarch.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 1739270
+    checksum: sha256:d59424fc187ad85f33dd601a1a2dccbba26b727802c5e3ed430fbfad71ab2e0a
+    name: kbd-misc
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/k/kmod-28-10.el9.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 130824
+    checksum: sha256:02835d70e5283383d02367e1bb3431a74033bbd1be5e3961e572623e1cbca4ca
+    name: kmod
+    evr: 28-10.el9
+    sourcerpm: kmod-28-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/l/libndp-1.9-1.el9.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 40345
+    checksum: sha256:03cd94c63fae3d2479d57664591ffd4a6dc523338d6e98e83fea18cf39257b7d
+    name: libndp
+    evr: 1.9-1.el9
+    sourcerpm: libndp-1.9-1.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/n/NetworkManager-1.48.10-8.el9_5.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 2261687
+    checksum: sha256:f959c76b9e21f46716dd4e452ca4d387fde45d5ba3b8abe4842017054dce5102
+    name: NetworkManager
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/n/NetworkManager-config-server-1.48.10-8.el9_5.noarch.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 20720
+    checksum: sha256:13cb756ad957078737a6974bd8886a5f82fe49521d51f99f1844a94e99a7374c
+    name: NetworkManager-config-server
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/n/NetworkManager-libnm-1.48.10-8.el9_5.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 1856577
+    checksum: sha256:49617215d41db9565a8a0ce59554bc705f0e95071a94111e99fc9c1442940ab5
+    name: NetworkManager-libnm
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/aarch64/baseos/os/Packages/s/systemd-udev-252-32.el9_4.7.aarch64.rpm
+    repoid: rhel-9-for-aarch64-baseos-rpms
+    size: 1970677
+    checksum: sha256:5b837701e2597d9789a16f27f9a90683a5810f9d4485c44b8691ddce80e77dfe
+    name: systemd-udev
+    evr: 252-32.el9_4.7
+    sourcerpm: systemd-252-32.el9_4.7.src.rpm
+  source: []
+  module_metadata: []
+- arch: ppc64le
+  packages:
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/appstream/os/Packages/n/nmstate-2.2.40-1.el9_5.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-appstream-rpms
+    size: 3386890
+    checksum: sha256:c46abf58b19affa05f15c7019ed769adca4ef97bbbb2b2fff0d8248b6283f461
+    name: nmstate
+    evr: 2.2.40-1.el9_5
+    sourcerpm: nmstate-2.2.40-1.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/appstream/os/Packages/n/nmstate-libs-2.2.40-1.el9_5.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-appstream-rpms
+    size: 2662446
+    checksum: sha256:f8a05248c8a772498615ba149104c7ef866c99c20ce04aba76a0fc7773307a53
+    name: nmstate-libs
+    evr: 2.2.40-1.el9_5
+    sourcerpm: nmstate-2.2.40-1.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/c/cryptsetup-libs-2.6.0-3.el9.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 540615
+    checksum: sha256:46a9962b792da9809adf381e922aafed67b3726c43dbbe6ce8e570898c896c41
+    name: cryptsetup-libs
+    evr: 2.6.0-3.el9
+    sourcerpm: cryptsetup-2.6.0-3.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/d/device-mapper-1.02.198-2.el9.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 149115
+    checksum: sha256:ee9fda182e8b66b68775367f94b5f440cdeabc8da234c9367acd6b64b4f4c0ac
+    name: device-mapper
+    evr: 9:1.02.198-2.el9
+    sourcerpm: lvm2-2.03.24-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/d/device-mapper-libs-1.02.198-2.el9.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 195976
+    checksum: sha256:db5c466ce33c4c293fc246388597954216f71c4eaa874d19e5274040b06ba271
+    name: device-mapper-libs
+    evr: 9:1.02.198-2.el9
+    sourcerpm: lvm2-2.03.24-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/k/kbd-2.4.0-10.el9.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 428293
+    checksum: sha256:f943068fee8cf2488860b40d8cfe7256ff0e2cee44d90fbc659bcdd993537b16
+    name: kbd
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/k/kbd-legacy-2.4.0-10.el9.noarch.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 579436
+    checksum: sha256:c87ebcade6eb08c02af4b70d6cd401ad79247d55987d94003752adc6319c58f9
+    name: kbd-legacy
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/k/kbd-misc-2.4.0-10.el9.noarch.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 1739270
+    checksum: sha256:d59424fc187ad85f33dd601a1a2dccbba26b727802c5e3ed430fbfad71ab2e0a
+    name: kbd-misc
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/k/kmod-28-10.el9.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 144897
+    checksum: sha256:b2ad04f06f82864fd93ac6fd96fdedcaf90a498194b36b046e952ae8385e1b83
+    name: kmod
+    evr: 28-10.el9
+    sourcerpm: kmod-28-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/l/libndp-1.9-1.el9.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 41888
+    checksum: sha256:a69a9fcba75b395d41ed41edf9863dc9c67c2fdb143f392a61a725ccc18c691c
+    name: libndp
+    evr: 1.9-1.el9
+    sourcerpm: libndp-1.9-1.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/n/NetworkManager-1.48.10-8.el9_5.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 2536327
+    checksum: sha256:87974f5e4dca1c1be79d5f70bb2567bac73f562f75343969f26a775d12655508
+    name: NetworkManager
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/n/NetworkManager-config-server-1.48.10-8.el9_5.noarch.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 20720
+    checksum: sha256:13cb756ad957078737a6974bd8886a5f82fe49521d51f99f1844a94e99a7374c
+    name: NetworkManager-config-server
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/n/NetworkManager-libnm-1.48.10-8.el9_5.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 1928820
+    checksum: sha256:ffd99e58de117d12f8b3e2c6f57da91eadf0ce48a42e81ac0d317f5836c61dbe
+    name: NetworkManager-libnm
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/ppc64le/baseos/os/Packages/s/systemd-udev-252-32.el9_4.7.ppc64le.rpm
+    repoid: rhel-9-for-ppc64le-baseos-rpms
+    size: 1905134
+    checksum: sha256:76e9c35cd4010c779b3a4968cf041010bc1f53aaa06b34130eecb1a5fef83c34
+    name: systemd-udev
+    evr: 252-32.el9_4.7
+    sourcerpm: systemd-252-32.el9_4.7.src.rpm
+  source: []
+  module_metadata: []
+- arch: s390x
+  packages:
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/n/nmstate-2.2.40-1.el9_5.s390x.rpm
+    repoid: rhel-9-for-s390x-appstream-rpms
+    size: 3910591
+    checksum: sha256:3361a77a5ba7f16eaaf870410ff9b6ae9876956449235c88b76cb66ecfe593c9
+    name: nmstate
+    evr: 2.2.40-1.el9_5
+    sourcerpm: nmstate-2.2.40-1.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/appstream/os/Packages/n/nmstate-libs-2.2.40-1.el9_5.s390x.rpm
+    repoid: rhel-9-for-s390x-appstream-rpms
+    size: 3054314
+    checksum: sha256:9b1172ea96a2fc125cf9d44815c8c13962ef02604b0ebfd4d0819d1e837a602a
+    name: nmstate-libs
+    evr: 2.2.40-1.el9_5
+    sourcerpm: nmstate-2.2.40-1.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/c/cryptsetup-libs-2.6.0-3.el9.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 477909
+    checksum: sha256:ac02834ba525874855932a98179a698c01fd082e03ac706ec1b651f66935c5e9
+    name: cryptsetup-libs
+    evr: 2.6.0-3.el9
+    sourcerpm: cryptsetup-2.6.0-3.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/d/device-mapper-1.02.198-2.el9.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 143634
+    checksum: sha256:2fdf1429d481a6dd9a60af6c788922836d581afd85d315e85ecbde69a5921189
+    name: device-mapper
+    evr: 9:1.02.198-2.el9
+    sourcerpm: lvm2-2.03.24-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/d/device-mapper-libs-1.02.198-2.el9.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 177019
+    checksum: sha256:b9643a43daf0c9fcaccd15548b1f4b77fcc400c90cbaecd77991d95e2f7dba47
+    name: device-mapper-libs
+    evr: 9:1.02.198-2.el9
+    sourcerpm: lvm2-2.03.24-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/k/kbd-2.4.0-10.el9.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 416681
+    checksum: sha256:992c3746d31445d81bd5ae6b2b80c76929fa199edba4d9b6d16f2a1ef293645e
+    name: kbd
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/k/kbd-legacy-2.4.0-10.el9.noarch.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 579436
+    checksum: sha256:c87ebcade6eb08c02af4b70d6cd401ad79247d55987d94003752adc6319c58f9
+    name: kbd-legacy
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/k/kbd-misc-2.4.0-10.el9.noarch.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 1739270
+    checksum: sha256:d59424fc187ad85f33dd601a1a2dccbba26b727802c5e3ed430fbfad71ab2e0a
+    name: kbd-misc
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/k/kmod-28-10.el9.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 131701
+    checksum: sha256:fa01c99cf0fe119789f1774fd1f4c469e5e6ef6557d274c1c48bf7ddd780dbcd
+    name: kmod
+    evr: 28-10.el9
+    sourcerpm: kmod-28-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/l/libndp-1.9-1.el9.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 40572
+    checksum: sha256:f8b55391dcc85d5e004ec3f66854bb3a9795dcf03902a289876ebe613acce8ee
+    name: libndp
+    evr: 1.9-1.el9
+    sourcerpm: libndp-1.9-1.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/n/NetworkManager-1.48.10-8.el9_5.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 2264889
+    checksum: sha256:8391a3a071333447fa264043e7f48465372a3c1afb5b8dcb7c27f9e58cf455ae
+    name: NetworkManager
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/n/NetworkManager-config-server-1.48.10-8.el9_5.noarch.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 20720
+    checksum: sha256:13cb756ad957078737a6974bd8886a5f82fe49521d51f99f1844a94e99a7374c
+    name: NetworkManager-config-server
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/n/NetworkManager-libnm-1.48.10-8.el9_5.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 1858868
+    checksum: sha256:7d72d6d50df85a2bffcce4e3ec3c75a32d455455ee64fc557fdb39dc09e4f679
+    name: NetworkManager-libnm
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/s390x/baseos/os/Packages/s/systemd-udev-252-32.el9_4.7.s390x.rpm
+    repoid: rhel-9-for-s390x-baseos-rpms
+    size: 1873042
+    checksum: sha256:e58e7ae4ffcdfd93eb179fc6633e33a5f6799487846e95876ebe0ef701504733
+    name: systemd-udev
+    evr: 252-32.el9_4.7
+    sourcerpm: systemd-252-32.el9_4.7.src.rpm
+  source: []
+  module_metadata: []
+- arch: x86_64
+  packages:
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/n/nmstate-2.2.40-1.el9_5.x86_64.rpm
+    repoid: rhel-9-for-x86_64-appstream-rpms
+    size: 3402772
+    checksum: sha256:1f7f0e238a701c512babd01cde0bc97a5ec2c03b751fa34001f8e32557ecaf7b
+    name: nmstate
+    evr: 2.2.40-1.el9_5
+    sourcerpm: nmstate-2.2.40-1.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/appstream/os/Packages/n/nmstate-libs-2.2.40-1.el9_5.x86_64.rpm
+    repoid: rhel-9-for-x86_64-appstream-rpms
+    size: 2682445
+    checksum: sha256:4c42b7d98c2a30ab7246f5b1ed0d3505796a25cbc14811abf5ea7aad11fcbac5
+    name: nmstate-libs
+    evr: 2.2.40-1.el9_5
+    sourcerpm: nmstate-2.2.40-1.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/c/cryptsetup-libs-2.6.0-3.el9.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 488371
+    checksum: sha256:179bf940d5834cc65e7f6748ecfe24df15a7d00fe41d33e2b6193f95df2cf4ce
+    name: cryptsetup-libs
+    evr: 2.6.0-3.el9
+    sourcerpm: cryptsetup-2.6.0-3.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/d/device-mapper-1.02.198-2.el9.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 146675
+    checksum: sha256:c313defbc3c0c42b05ba9e5ed65f5f423440c673e01826504d23a4ce5086e691
+    name: device-mapper
+    evr: 9:1.02.198-2.el9
+    sourcerpm: lvm2-2.03.24-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/d/device-mapper-libs-1.02.198-2.el9.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 183726
+    checksum: sha256:81bca37cf48786b9806a43157e579011d6e79eec6f7ac3681a90ea018365c9d6
+    name: device-mapper-libs
+    evr: 9:1.02.198-2.el9
+    sourcerpm: lvm2-2.03.24-2.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/k/kbd-2.4.0-10.el9.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 434536
+    checksum: sha256:10052ec978295a1d7e635670fec3d92a913b1ca6f31721275225e304c2bf707d
+    name: kbd
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/k/kbd-legacy-2.4.0-10.el9.noarch.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 579436
+    checksum: sha256:c87ebcade6eb08c02af4b70d6cd401ad79247d55987d94003752adc6319c58f9
+    name: kbd-legacy
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/k/kbd-misc-2.4.0-10.el9.noarch.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 1739270
+    checksum: sha256:d59424fc187ad85f33dd601a1a2dccbba26b727802c5e3ed430fbfad71ab2e0a
+    name: kbd-misc
+    evr: 2.4.0-10.el9
+    sourcerpm: kbd-2.4.0-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/k/kmod-28-10.el9.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 132888
+    checksum: sha256:e9ccad17d4c6c30524ec5c2aab8d8d351f2776ab564baccdbd2df9b54e28baea
+    name: kmod
+    evr: 28-10.el9
+    sourcerpm: kmod-28-10.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/l/libndp-1.9-1.el9.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 41140
+    checksum: sha256:3862f042a5b5c98dee0a8b8dcc753ecef72cc65acc8c4a58cfe8f381b502be34
+    name: libndp
+    evr: 1.9-1.el9
+    sourcerpm: libndp-1.9-1.el9.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/n/NetworkManager-1.48.10-8.el9_5.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 2431548
+    checksum: sha256:8a0e77b4cc5df6e470b39a8a37e4b20bf9707f9bcdedb0713637134105b7b72d
+    name: NetworkManager
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/n/NetworkManager-config-server-1.48.10-8.el9_5.noarch.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 20720
+    checksum: sha256:13cb756ad957078737a6974bd8886a5f82fe49521d51f99f1844a94e99a7374c
+    name: NetworkManager-config-server
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/n/NetworkManager-libnm-1.48.10-8.el9_5.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 1884201
+    checksum: sha256:ef414d9218afa874dc94106d907d022ce39979c910c19fe58c78afc572ec2c07
+    name: NetworkManager-libnm
+    evr: 1:1.48.10-8.el9_5
+    sourcerpm: NetworkManager-1.48.10-8.el9_5.src.rpm
+  - url: https://cdn.redhat.com/content/dist/rhel9/9/x86_64/baseos/os/Packages/s/systemd-udev-252-32.el9_4.7.x86_64.rpm
+    repoid: rhel-9-for-x86_64-baseos-rpms
+    size: 2018876
+    checksum: sha256:f0b1a973c8ab5508044fe7c1e358d454116cb7931cca1d33af0d83a44f082715
+    name: systemd-udev
+    evr: 252-32.el9_4.7
+    sourcerpm: systemd-252-32.el9_4.7.src.rpm
+  source: []
+  module_metadata: []
