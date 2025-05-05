@@ -5,7 +5,7 @@ COPY . .
 ENV GO_PACKAGE github.com/stolostron/hypershift-addon-operator
 
 # Build
-RUN make build --warn-undefined-variables
+RUN make build-konflux
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
