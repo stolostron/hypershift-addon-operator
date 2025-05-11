@@ -22,7 +22,7 @@ require (
 	github.com/rung/go-safecast v1.0.1
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.6
-	github.com/stolostron/backplane-operator v0.0.0-20250227134641-0389b06daaff
+	github.com/stolostron/backplane-operator 464bf54a736a
 	github.com/stolostron/discovery v0.0.0-20240429203137-9ccf847f7f5d
 	github.com/stolostron/klusterlet-addon-controller v0.0.0-20240229083605-8bd4a2ae81c0
 	github.com/stretchr/testify v1.10.0
