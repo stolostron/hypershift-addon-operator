@@ -78,6 +78,12 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
+	// if the hosted cluster is being deleted, ignore the event.
+	if !hc.GetDeletionTimestamp().IsZero() {
+		c.log.Info(fmt.Sprintf("hostedcluster %s is being deleted.", hc.Name))
+		return ctrl.Result{}, nil
+	}
+
 	// once available, create managed cluster
 	if err := c.createManagedCluster(*hc, ctx); err != nil {
 		c.log.Error(err, fmt.Sprintf("could not create managed cluster for hosted cluster (%s)", hc.Name))
