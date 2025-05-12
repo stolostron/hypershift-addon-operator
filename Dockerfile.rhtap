@@ -13,3 +13,12 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # Add the binaries
 COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift-addon .
+
+LABEL com.redhat.component="multicluster-engine-hypershift-addon-operator-container" \
+      name="multicluster-engine/hypershift-addon-operator" \
+      version="2.9" \
+      summary="multicluster-engine-hypershift-addon-operator" \
+      io.openshift.tags="data,images" \
+      io.k8s.display-name="multicluster-engine-hypershift-addon-operator" \
+      io.k8s.description="MultiCluster Engine hypershift addon operator" \
+      description="multicluster-engine-hypershift-addon-operator"
