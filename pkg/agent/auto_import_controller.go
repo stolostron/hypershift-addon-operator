@@ -78,6 +78,8 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
+	c.log.Info(fmt.Sprintf("hostedcluster %v", hc))
+
 	// if the hosted cluster is being deleted, ignore the event.
 	if !hc.GetDeletionTimestamp().IsZero() {
 		c.log.Info(fmt.Sprintf("hostedcluster %s is being deleted.", hc.Name))
