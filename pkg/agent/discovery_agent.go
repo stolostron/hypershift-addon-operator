@@ -35,7 +35,7 @@ func (c *DiscoveryAgent) SetupWithManager(mgr ctrl.Manager) error {
 		Named(util.DiscoveryAgentName).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		WithEventFilter(hostedClusterEventFilters(false)).
+		WithEventFilter(hostedClusterEventFilters()).
 		Complete(c)
 }
 
