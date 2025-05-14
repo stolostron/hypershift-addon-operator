@@ -1205,11 +1205,11 @@ func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
 		Named(util.AddonControllerName).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 10}).
-		WithEventFilter(hostedClusterEventFilters()).
+		WithEventFilter(hostedClusterEventFilters(false)).
 		Complete(c)
 }
 
-func hostedClusterEventFilters() predicate.Predicate {
+func hostedClusterEventFilters(autoImport bool) predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			return false
@@ -1268,7 +1268,7 @@ func hostedClusterEventFilters() predicate.Predicate {
 			return false
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
-			return true
+			return true && !autoImport
 		},
 		GenericFunc: func(e event.GenericEvent) bool {
 			return false

@@ -48,7 +48,7 @@ func (c *AutoImportController) SetupWithManager(mgr ctrl.Manager) error {
 		Named(util.AutoImportControllerName).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
-		WithEventFilter(hostedClusterEventFilters()).
+		WithEventFilter(hostedClusterEventFilters(true)).
 		Complete(c)
 }
 
@@ -77,8 +77,6 @@ func (c *AutoImportController) Reconcile(ctx context.Context, req ctrl.Request) 
 		c.log.Info(fmt.Sprintf("hostedcluster %s's control plane is not ready yet.", hc.Name))
 		return ctrl.Result{}, nil
 	}
-
-	c.log.Info(fmt.Sprintf("hostedcluster %v", hc))
 
 	// if the hosted cluster is being deleted, ignore the event.
 	if !hc.GetDeletionTimestamp().IsZero() {
