@@ -14,7 +14,7 @@ require (
 	github.com/openshift/api v0.0.0-20250327202946-4521905c611e
 	github.com/openshift/hypershift v0.1.56
 	github.com/openshift/hypershift/api v0.0.0-20250402075621-3283bb995a26
-	github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2
+	github.com/openshift/library-go v0.0.0-20250609093359-ccdcf648dd95
 	github.com/operator-framework/api v0.23.0
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.0
 	github.com/prometheus/client_golang v1.20.5
