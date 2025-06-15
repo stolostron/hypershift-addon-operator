@@ -1,8 +1,8 @@
 module github.com/stolostron/hypershift-addon-operator
 
-go 1.23.4
+go 1.23.6
 
-toolchain go1.23.7
+toolchain go1.23.9
 
 require (
 	github.com/ghodss/yaml v1.0.1-0.20220118164431-d8423dcdf344
@@ -24,7 +24,7 @@ require (
 	github.com/spf13/pflag v1.0.6
 	github.com/stolostron/backplane-operator v0.0.0-20250227134641-0389b06daaff
 	github.com/stolostron/discovery v0.0.0-20240429203137-9ccf847f7f5d
-	github.com/stolostron/klusterlet-addon-controller v0.0.0-20240229083605-8bd4a2ae81c0
+	github.com/stolostron/klusterlet-addon-controller v0.0.0-20250526040617-f0c4cfd51078
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
 	go.withmatt.com/size v0.0.0-20221118222007-0d9da7819356
@@ -129,7 +129,7 @@ require (
 	github.com/sirupsen/logrus v1.9.3 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
-	github.com/stolostron/cluster-lifecycle-api v0.0.0-20240130112703-747158a63f05 // indirect
+	github.com/stolostron/cluster-lifecycle-api v0.0.0-20240813023109-42b5c115d0a3 // indirect
 	github.com/vincent-petithory/dataurl v1.0.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
@@ -153,7 +153,7 @@ require (
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
 	golang.org/x/mod v0.23.0 // indirect
 	golang.org/x/net v0.37.0 // indirect
-	golang.org/x/oauth2 v0.27.0 // indirect
+	golang.org/x/oauth2 v0.28.0 // indirect
 	golang.org/x/sync v0.12.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/term v0.30.0 // indirect
