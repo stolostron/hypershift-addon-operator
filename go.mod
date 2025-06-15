@@ -127,7 +127,7 @@ require (
 	github.com/prometheus/procfs v0.15.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
-	github.com/spf13/cast v1.7.0 // indirect
+	github.com/spf13/cast v1.9.2 // indirect
 	github.com/stoewer/go-strcase v1.3.0 // indirect
 	github.com/stolostron/cluster-lifecycle-api v0.0.0-20240130112703-747158a63f05 // indirect
 	github.com/vincent-petithory/dataurl v1.0.0 // indirect
