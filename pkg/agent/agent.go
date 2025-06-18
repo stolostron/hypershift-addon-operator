@@ -644,6 +644,12 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		if apierrors.IsNotFound(err) {
 			c.log.Info(fmt.Sprintf("remove hostedcluster(%s) secrets on hub, since hostedcluster is gone", req.NamespacedName))
 
+			hc.Name = req.Name // Since the HC is already deleted, set the HC name as the reconcile event name which is the deleted HC name
+			// Try to delete the managed cluster
+			if err := c.deleteManagedCluster(ctx, hc); err != nil {
+				c.log.Error(err, "failed to delete the managed cluster")
+			}
+
 			return ctrl.Result{}, deleteMirrorSecrets("")
 		}
 
