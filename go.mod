@@ -35,8 +35,8 @@ require (
 	k8s.io/component-base v0.32.2
 	k8s.io/utils v0.0.0-20241210054802-24370beab758
 	open-cluster-management.io/addon-framework v0.12.0
-	open-cluster-management.io/api v0.16.0
-	sigs.k8s.io/controller-runtime v0.19.6
+	open-cluster-management.io/api v1.0.0
+	sigs.k8s.io/controller-runtime v0.20.2
 )
 
 require (
@@ -89,7 +89,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
-	github.com/google/btree v1.1.2 // indirect
+	github.com/google/btree v1.1.3 // indirect
 	github.com/google/cel-go v0.22.0 // indirect
 	github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
@@ -179,7 +179,7 @@ require (
 	kubevirt.io/api v1.4.0 // indirect
 	kubevirt.io/containerized-data-importer-api v1.61.1 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
-	open-cluster-management.io/sdk-go v0.16.0 // indirect
+	open-cluster-management.io/sdk-go v1.0.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.0 // indirect
 	sigs.k8s.io/cluster-api v1.9.5 // indirect
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.7.1 // indirect
