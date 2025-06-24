@@ -136,6 +136,29 @@ Since the hosted control planes run on the managed OCP clusters' nodes, the numb
 
 ### Enable the addon by using clusteradm CLI
 
+Before enabling the hypershift-addon, configure the addon deployment to disable the hosted cluster discovery by setting spec.disableHCDiscovery to true in `hypershift-addon-deploy-config` addondeploymentconfig.
+
+```
+oc edit addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine
+```
+
+```yaml
+spec:
+  agentInstallNamespace: open-cluster-management-agent-addon
+  customizedVariables:
+  - name: hcMaxNumber
+    value: "80"
+  - name: hcThresholdNumber
+    value: "60"
+  - name: disableHCDiscovery
+    value: "true"
+  nodePlacement:
+    tolerations:
+    - effect: NoSchedule
+      key: node-role.kubernetes.io/infra
+      operator: ExistsAdd commentMore actions
+```
+
 [Install the clusteradmin CLI](https://open-cluster-management.io/getting-started/quick-start/#install-clusteradm-cli-tool) and run the following command to enable the `hypershift-addon` for `managed-ocp-cluster-1` managed cluster.
 
 ```
