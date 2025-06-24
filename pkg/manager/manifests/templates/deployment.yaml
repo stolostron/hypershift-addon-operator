@@ -94,9 +94,9 @@ spec:
         - name: DISABLE_HO_MANAGEMENT
           value: "{{ .disableHOManagement }}"
 {{- end }}
-{{- if eq .enableHCDiscovery "true" }}
-        - name: ENABLE_HC_DISCOVERY
-          value: "{{ .enableHCDiscovery }}"
+{{- if eq .disableHCDiscovery "true" }}
+        - name: DISABLE_HC_DISCOVERY
+          value: "{{ .disableHCDiscovery }}"
 {{- end }}
 {{- if ne .disableMetrics "true" }}
         ports:
