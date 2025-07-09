@@ -275,8 +275,8 @@ github.com/golang/protobuf v1.5.4/go.mod h1:lnTiLA8Wa4RWRcIUkrtSVa5nRhsEGBg48fD6
 github.com/golang/snappy v0.0.3/go.mod h1:/XxbfmMg8lxefKM7IXC3fBNl/7bRcc72aCRzEWrmP2Q=
 github.com/google/btree v0.0.0-20180813153112-4030bb1f1f0c/go.mod h1:lNA+9X1NB3Zf8V7Ke586lFgjr2dZNuvo3lPJSGZ5JPQ=
 github.com/google/btree v1.0.0/go.mod h1:lNA+9X1NB3Zf8V7Ke586lFgjr2dZNuvo3lPJSGZ5JPQ=
-github.com/google/btree v1.1.2 h1:xf4v41cLI2Z6FxbKm+8Bu+m8ifhj15JuZ9sa0jZCMUU=
-github.com/google/btree v1.1.2/go.mod h1:qOPhT0dTNdNzV6Z/lhRX0YXUafgPLFUh+gZMl761Gm4=
+github.com/google/btree v1.1.3 h1:CVpQJjYgC4VbzxeGVHfvZrv1ctoYCAI8vbl07Fcxlyg=
+github.com/google/btree v1.1.3/go.mod h1:qOPhT0dTNdNzV6Z/lhRX0YXUafgPLFUh+gZMl761Gm4=
 github.com/google/cel-go v0.22.0 h1:b3FJZxpiv1vTMo2/5RDUqAHPxkT8mmMfJIrq1llbf7g=
 github.com/google/cel-go v0.22.0/go.mod h1:BuznPXXfQDpXKWQ9sPW3TzlAJN5zzFe+i9tIs0yC4s8=
 github.com/google/gnostic-models v0.6.9-0.20230804172637-c7be7c783f49 h1:0VpGH+cDhbDtdcweoyCVsF3fhN8kejK6rFe/2FFX2nU=
@@ -518,8 +518,8 @@ github.com/stoewer/go-strcase v1.3.0 h1:g0eASXYtp+yvN9fK8sH94oCIk0fau9uV1/ZdJ0AV
 github.com/stoewer/go-strcase v1.3.0/go.mod h1:fAH5hQ5pehh+j3nZfvwdk2RgEgQjAoM8wodgtPmh1xo=
 github.com/stolostron/backplane-operator v0.0.0-20250227134641-0389b06daaff h1:MkevTA0DAJbqYyu1oE5mUFVHOdRAdhxmkvp00GEgfpA=
 github.com/stolostron/backplane-operator v0.0.0-20250227134641-0389b06daaff/go.mod h1:qbR6lDR0j0ZomoKNKgsMclZKmdyIDRBrQigqQcKcw0k=
-github.com/stolostron/cluster-lifecycle-api v0.0.0-20240813023109-42b5c115d0a3 h1:MwhPBArHWlTZ+BDUb+/dRyYgrcfw8dt+MeqjbAPF3XQ=
-github.com/stolostron/cluster-lifecycle-api v0.0.0-20240813023109-42b5c115d0a3/go.mod h1:Sflr4YW8MRsymgNLJDcOAv4oyfeiTRyEDR7PRBkg788=
+github.com/stolostron/cluster-lifecycle-api v0.0.0-20250625062343-7394aeb3186c h1:GPDDT9V2wFTXfEORRLJ6nvNn6N3MePvl/TAinoKXpaA=
+github.com/stolostron/cluster-lifecycle-api v0.0.0-20250625062343-7394aeb3186c/go.mod h1:NXH0aFk6x/LNFUtJ6AHAiwfGrEu4/mx9wsV3scfUSjs=
 github.com/stolostron/discovery v0.0.0-20240429203137-9ccf847f7f5d h1:X2QOJhpTUmrmoJ96woywWd9EAnwrz9Fa+E+KdDH3MtY=
 github.com/stolostron/discovery v0.0.0-20240429203137-9ccf847f7f5d/go.mod h1:R/M3kDp6bfcx6XiJpqNHrCbAqaXT54Habk+/DvxvfN4=
 github.com/stolostron/klusterlet-addon-controller v0.0.0-20250526040617-f0c4cfd51078 h1:zlfKNq4gM/4X8a0g6MegTQQdOIYd0qljevSMQXch5zg=
@@ -1133,8 +1133,8 @@ kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6
 kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90/go.mod h1:018lASpFYBsYN6XwmA2TIrPCx6e0gviTd/ZNtSitKgc=
 open-cluster-management.io/addon-framework v0.12.0 h1:5j7mpyk2ij0SLUZkwWk0KkNTWtsid2w7BIHmhm0Ecok=
 open-cluster-management.io/addon-framework v0.12.0/go.mod h1:eReMWXrEHqtilwz5wzEpUrWw9Vfz0HJCH9pi3gOTZns=
-open-cluster-management.io/api v0.16.0 h1:fToANqblBmWCn8f6JD4uRHFYJVVaN/usp9PeiRhex1s=
-open-cluster-management.io/api v0.16.0/go.mod h1:9erZEWEn4bEqh0nIX2wA7f/s3KCuFycQdBrPrRzi0QM=
+open-cluster-management.io/api v0.16.2-0.20250422072120-cadf714c3055 h1:D2vT3nnMS/To3ptz8LLg1zfJm/pL8XIaO1g7Qbyc/5o=
+open-cluster-management.io/api v0.16.2-0.20250422072120-cadf714c3055/go.mod h1:/OeqXycNBZQoe3WG6ghuWsMgsKGuMZrK8ZpsU6gWL0Y=
 open-cluster-management.io/sdk-go v0.16.0 h1:Ui1jerkeLaNaJPu47xjOJ3lh+rJQgeJHD25ViQMzAMs=
 open-cluster-management.io/sdk-go v0.16.0/go.mod h1:TyOjZC5YxyM5BRNgwTmLuTbHXX6xXqzYBXllrfoVp9w=
 rsc.io/binaryregexp v0.2.0/go.mod h1:qTv7/COck+e2FymRvadv62gMdZztPaShugOCi3I+8D8=
@@ -1154,8 +1154,8 @@ sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9 h1:hQO7Y5GP7FMnH6Aono9WVE90I3vR
 sigs.k8s.io/cluster-api-provider-kubevirt v0.1.9/go.mod h1:RlF7CASVT4vaBRLu45Y2dprAnEPoDGvMaImXz13Ntks=
 sigs.k8s.io/cluster-api-provider-openstack v0.12.1 h1:IK8GRmQKTwgft6PwaLC4r69O5hV7ykr4l7eJ8pQ3EIU=
 sigs.k8s.io/cluster-api-provider-openstack v0.12.1/go.mod h1:lm2AXy1bfJEVKU4RfxwPdJgPbJDNiUAfva+IIf8Gqzo=
-sigs.k8s.io/controller-runtime v0.19.6 h1:fuq53qTLQ7aJTA7aNsklNnu7eQtSFqJUomOyM+phPLk=
-sigs.k8s.io/controller-runtime v0.19.6/go.mod h1:iRmWllt8IlaLjvTTDLhRBXIEtkCK6hwVBJJsYS9Ajf4=
+sigs.k8s.io/controller-runtime v0.20.2 h1:/439OZVxoEc02psi1h4QO3bHzTgu49bb347Xp4gW1pc=
+sigs.k8s.io/controller-runtime v0.20.2/go.mod h1:xg2XB0K5ShQzAgsoujxuKN4LNXR2LfwwHsPj7Iaw+XY=
 sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6/go.mod h1:p4QtZmO4uMYipTQNzagwnNoseA6OxSUutVw05NhYDRs=
 sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8 h1:gBQPwqORJ8d8/YNZWEjoZs7npUVDpVXUUOFfW6CgAqE=
 sigs.k8s.io/json v0.0.0-20241014173422-cfa47c3a1cc8/go.mod h1:mdzfpAEoE6DHQEN0uh9ZbOCuHbLK5wOm7dK4ctXE9Tg=
