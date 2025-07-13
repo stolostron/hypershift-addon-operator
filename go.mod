@@ -185,7 +185,7 @@ require (
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.2.4 // indirect
 	sigs.k8s.io/cluster-api-provider-azure v1.11.5 // indirect
 	sigs.k8s.io/cluster-api-provider-ibmcloud v0.6.0 // indirect
-	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.8 // indirect
+	sigs.k8s.io/cluster-api-provider-kubevirt v0.1.10 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.1 // indirect
