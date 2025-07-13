@@ -10,7 +10,7 @@ require (
 	github.com/go-logr/zapr v1.2.3
 	github.com/onsi/ginkgo/v2 v2.1.6
 	github.com/onsi/gomega v1.20.1
-	github.com/openshift/api v0.0.0-20220831183848-09c070622e2c
+	github.com/openshift/api 674ad74beffc
 	github.com/openshift/hypershift v0.0.0-20221219194450-2831acf124ca
 	github.com/openshift/library-go v0.0.0-20220811164604-fef421ec24f4
 	github.com/operator-framework/api v0.10.7
