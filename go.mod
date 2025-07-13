@@ -12,7 +12,7 @@ require (
 	github.com/onsi/gomega v1.20.1
 	github.com/openshift/api v0.0.0-20220831183848-09c070622e2c
 	github.com/openshift/hypershift v0.0.0-20221219194450-2831acf124ca
-	github.com/openshift/library-go v0.0.0-20220811164604-fef421ec24f4
+	github.com/openshift/library-go 47604345e7ea
 	github.com/operator-framework/api v0.10.7
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.58.0
 	github.com/prometheus/client_golang v1.12.2
