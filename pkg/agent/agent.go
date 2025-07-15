@@ -513,6 +513,9 @@ func (c *agentController) generateExtManagedKubeconfigSecret(ctx context.Context
 		return fmt.Errorf("failed to find the klusterlet namespace: %s", klusterletNamespaceNsn.Name)
 	}
 
+	// It is trying to generate the external-managed-kubeconfig secret. Increment the total count here.
+	metrics.KubeconfigSecretCopyTotalCount.Inc()
+
 	if kubeconfigData == nil {
 		return fmt.Errorf("failed to get kubeconfig from secret: %s", secret.GetName())
 	}
