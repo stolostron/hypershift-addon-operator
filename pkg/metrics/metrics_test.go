@@ -30,6 +30,9 @@ func TestMetrics(t *testing.T) {
 	KubeconfigSecretCopyFailureCount.Inc()
 	assert.Equal(float64(1), testutil.ToFloat64(KubeconfigSecretCopyFailureCount))
 
+	KubeconfigSecretCopyTotalCount.Inc()
+	assert.Equal(float64(1), testutil.ToFloat64(KubeconfigSecretCopyTotalCount))
+
 	HubResourceSyncFailureCount.WithLabelValues("secret").Inc()
 	assert.Equal(float64(1), testutil.ToFloat64(HubResourceSyncFailureCount.WithLabelValues("secret")))
 
