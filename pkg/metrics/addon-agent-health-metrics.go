@@ -50,9 +50,14 @@ var PlacementClusterClaimsFailureCount = prometheus.NewCounterVec(
 	[]string{"cluster_claim_name"},
 )
 
+var KubeconfigSecretCopyTotalCount = prometheus.NewCounter(prometheus.CounterOpts{
+	Name: "mce_hs_addon_kubeconfig_secret_copy_total_count",
+	Help: "Hypershift addon agent external-managed-kubeconfig total create counter",
+})
+
 var KubeconfigSecretCopyFailureCount = prometheus.NewCounter(prometheus.CounterOpts{
 	Name: "mce_hs_addon_kubeconfig_secret_copy_failure_count",
-	Help: "Hypershift addon agent placement cluster claims update failure counter",
+	Help: "Hypershift addon agent external-managed-kubeconfig create failure counter",
 })
 
 var HubResourceSyncFailureCount = prometheus.NewCounterVec(
@@ -74,6 +79,7 @@ func init() {
 		InstallationFailningGaugeBool,
 		PlacementScoreFailureCount,
 		PlacementClusterClaimsFailureCount,
+		KubeconfigSecretCopyTotalCount,
 		KubeconfigSecretCopyFailureCount,
 		HubResourceSyncFailureCount)
 }
