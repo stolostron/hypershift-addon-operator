@@ -1211,7 +1211,7 @@ func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
 func hostedClusterEventFilters() predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			return false
+			return true
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			newHc, newOK := e.ObjectNew.(*hyperv1beta1.HostedCluster)
