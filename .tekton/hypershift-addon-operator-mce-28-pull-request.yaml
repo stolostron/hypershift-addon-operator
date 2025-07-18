@@ -484,7 +484,8 @@ spec:
       optional: true
     - name: netrc
       optional: true
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-hypershift-addon-operator-mce-28
   workspaces:
   - name: git-auth
     secret:
