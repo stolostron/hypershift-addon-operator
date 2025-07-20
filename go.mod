@@ -2,7 +2,7 @@ module github.com/stolostron/hypershift-addon-operator
 
 go 1.23.0
 
-toolchain go1.23.7
+toolchain go1.24.5
 
 require (
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
