@@ -24,7 +24,7 @@ require (
 	github.com/spf13/pflag v1.0.6
 	github.com/stolostron/backplane-operator v0.0.0-20250227134641-0389b06daaff
 	github.com/stolostron/discovery v0.0.0-20240429203137-9ccf847f7f5d
-	github.com/stolostron/klusterlet-addon-controller v0.0.0-20250526040617-f0c4cfd51078
+	github.com/stolostron/klusterlet-addon-controller v0.0.0-20250704035438-d6ec963ecadf
 	github.com/stretchr/testify v1.10.0
 	go.uber.org/zap v1.27.0
 	go.withmatt.com/size v0.0.0-20221118222007-0d9da7819356
