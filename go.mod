@@ -17,7 +17,7 @@ require (
 	github.com/openshift/library-go v0.0.0-20250203131244-80620876b7c2
 	github.com/operator-framework/api v0.23.0
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.76.0
-	github.com/prometheus/client_golang v1.20.5
+	github.com/prometheus/client_golang v1.22.0
 	github.com/prometheus/common v0.63.0
 	github.com/rung/go-safecast v1.0.1
 	github.com/spf13/cobra v1.8.1
@@ -197,5 +197,5 @@ require (
 // Copied from hypershift
 replace (
 	cloud.google.com/go/compute => cloud.google.com/go v0.93.3
-	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.18.0
+	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.22.0
 )
