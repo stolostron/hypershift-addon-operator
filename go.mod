@@ -117,7 +117,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/openshift/client-go v0.0.0-20250330132942-bc2e3c2af6e1 // indirect
-	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250324094320-633957e81ebd // indirect
+	github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250714171209-4d337b1d11d9 // indirect
 	github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pkg/errors v0.9.1 // indirect
