@@ -9,8 +9,8 @@ require (
 	github.com/go-logr/logr v1.4.2
 	github.com/go-logr/zapr v1.3.0
 	github.com/hashicorp/go-version v1.7.0
-	github.com/onsi/ginkgo/v2 v2.22.2
-	github.com/onsi/gomega v1.36.2
+	github.com/onsi/ginkgo/v2 v2.23.3
+	github.com/onsi/gomega v1.37.0
 	github.com/openshift/api v0.0.0-20250327202946-4521905c611e
 	github.com/openshift/hypershift v0.1.56
 	github.com/openshift/hypershift/api v0.0.0-20250402075621-3283bb995a26
