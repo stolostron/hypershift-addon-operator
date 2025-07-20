@@ -22,7 +22,7 @@ require (
 	github.com/rung/go-safecast v1.0.1
 	github.com/spf13/cobra v1.8.1
 	github.com/spf13/pflag v1.0.6
-	github.com/stolostron/backplane-operator v0.0.0-20250227134641-0389b06daaff
+	github.com/stolostron/backplane-operator v0.0.0-20250714145712-d21cb3136493
 	github.com/stolostron/discovery v0.0.0-20240429203137-9ccf847f7f5d
 	github.com/stolostron/klusterlet-addon-controller v0.0.0-20250526040617-f0c4cfd51078
 	github.com/stretchr/testify v1.10.0
@@ -47,7 +47,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.10.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5 v5.7.0 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.3.2 // indirect
-	github.com/BurntSushi/toml v1.4.0 // indirect
+	github.com/BurntSushi/toml v1.5.0 // indirect
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/Masterminds/sprig/v3 v3.3.0 // indirect
