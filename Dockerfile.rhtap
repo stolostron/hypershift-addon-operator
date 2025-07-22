@@ -4,8 +4,17 @@ WORKDIR /go/src/github.com/stolostron/hypershift-addon-operator
 COPY . .
 ENV GO_PACKAGE github.com/stolostron/hypershift-addon-operator
 
-# Build
-RUN make build --warn-undefined-variables
+# Copy the Go Modules manifests
+COPY go.mod go.mod
+COPY go.sum go.sum
+
+# Copy the sources
+COPY ./ ./
+
+# Cache the go build into the the Go’s compiler cache folder so we take benefits of compiler caching across docker build calls
+RUN --mount=type=cache,target=/root/.cache/go-build \
+    --mount=type=cache,target=/go/pkg/mod \
+    go build -mod=readonly -o bin/hypershift-addon cmd/main.go
 
 # Use distroless as minimal base image to package the manager binary
 # Refer to https://github.com/GoogleContainerTools/distroless for more details
@@ -13,3 +22,12 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 # Add the binaries
 COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift-addon .
+
+LABEL com.redhat.component="multicluster-engine-hypershift-addon-operator-container" \
+      name="multicluster-engine/hypershift-addon-operator" \
+      version="2.7" \
+      summary="multicluster-engine-hypershift-addon-operator" \
+      io.openshift.tags="data,images" \
+      io.k8s.display-name="multicluster-engine-hypershift-addon-operator" \
+      io.k8s.description="MultiCluster Engine hypershift addon operator" \
+      description="multicluster-engine-hypershift-addon-operator"
