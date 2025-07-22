@@ -344,9 +344,9 @@ spec:
         - "false"
     - name: sast-snyk-check
       params:
-      - name: IMAGE_URL
+      - name: image-url
         value: $(tasks.build-container.results.IMAGE_URL)
-      - name: IMAGE_DIGEST
+      - name: image-digest
         value: $(tasks.build-container.results.IMAGE_DIGEST)
       runAfter:
       - clone-repository
