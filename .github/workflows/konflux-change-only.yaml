@@ -38,7 +38,7 @@ jobs:
           echo "ONLY_TEKTON_CHANGES=$ONLY_TEKTON_CHANGES" >> "$GITHUB_OUTPUT"
 
       - name: Report status based on changes
-        if: ${{ always() }} # Always run this step to set a status
+        if: ${{ always() }}
         uses: guibranco/github-status-action-v2@main # Or use a specific tag like v2
         with:
           # --- FIX HERE: Rename github_token to authToken ---
