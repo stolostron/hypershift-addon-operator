@@ -35,7 +35,7 @@ jobs:
 
       - name: Report status based on changes
         if: ${{ always() }} # Always run this step to set a status
-        uses: Sibz/github-status-action@v1.2.0 # Use a stable version for setting status
+        uses: guibranco/github-status-action-v2@main # Use a stable version for setting status
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           state: ${{ steps.tekton-only-check.outputs.ONLY_TEKTON_CHANGES == 'true' && 'success' || 'failure' }}
