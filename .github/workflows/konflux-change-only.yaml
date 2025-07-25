@@ -8,6 +8,10 @@ on:
 jobs:
   check_tekton_files:
     runs-on: ubuntu-latest
+    permissions: # Add this block
+      statuses: write # Grant write permission for statuses
+      pull-requests: write # Often needed for PR-related actions, though 'statuses' is key here
+      contents: read # Read access is usually default, but good to be explicit
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
