@@ -35,9 +35,11 @@ jobs:
 
       - name: Report status based on changes
         if: ${{ always() }} # Always run this step to set a status
-        uses: guibranco/github-status-action-v2@main # Use a stable version for setting status
+        uses: guibranco/github-status-action-v2@main # Or use a specific tag like v2
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          # --- FIX HERE: Rename github_token to authToken ---
+          authToken: ${{ secrets.GITHUB_TOKEN }}
           state: ${{ steps.tekton-only-check.outputs.ONLY_TEKTON_CHANGES == 'true' && 'success' || 'failure' }}
           description: 'Only .tekton/ files changed (if green)'
           context: 'tekton-only-changes' # This is the name of the status check in GitHub
+          sha: ${{ github.event.pull_request.head.sha }} # Important for PRs
