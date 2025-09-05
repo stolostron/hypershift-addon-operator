@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mce-discovery-controller
+  namespace: multicluster-engine
+  labels:
+    app: mce-discovery-controller
+    app.kubernetes.io/name: mce-discovery-controller
+    app.kubernetes.io/component: controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mce-discovery-controller
+  template:
+    metadata:
+      labels:
+        app: mce-discovery-controller
+    spec:
+      serviceAccountName: mce-discovery-controller
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: controller
+        image: quay.io/stolostron/hypershift-addon-operator:latest
+        imagePullPolicy: IfNotPresent
+        args:
+        - --config=/etc/controller/config.yaml
+        - --metrics-bind-address=:8080
+        - --health-probe-bind-address=:8081
+        - --leader-elect
+        env:
+        - name: ADDON_NAMESPACE
+          value: "open-cluster-management-agent-addon-discovery"
+        - name: ACM_NAMESPACE
+          value: "multicluster-engine"
+        - name: POLICY_NAMESPACE
+          value: "open-cluster-management-global-set"
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          privileged: false
+          readOnlyRootFilesystem: true
+        ports:
+        - name: metrics
+          containerPort: 8080
+          protocol: TCP
+        - name: health
+          containerPort: 8081
+          protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: health
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 10m
+            memory: 64Mi
+        volumeMounts:
+        - name: config
+          mountPath: /etc/controller
+          readOnly: true
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: config
+        configMap:
+          name: mce-discovery-controller-config
+      - name: tmp
+        emptyDir: {}
+      terminationGracePeriodSeconds: 10

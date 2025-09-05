@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/component-base/version"
 	"k8s.io/utils/clock"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	consolev1 "github.com/openshift/api/console/v1"
@@ -131,10 +132,33 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 			os.Exit(1)
 		}
 
-		err = mgr.Start(ctx)
-		if err != nil {
-			log.Error(err, "failed to start addon framework manager")
-			os.Exit(1)
+		// Start the addon framework manager in a goroutine
+		go func() {
+			err := mgr.Start(ctx)
+			if err != nil {
+				log.Error(err, "failed to start addon framework manager")
+				os.Exit(1)
+			}
+		}()
+
+		// Start ACM hub setup controller if enabled
+		if IsACMHubSetupEnabled() {
+			if err := startACMHubSetupController(ctx, controllerContext.KubeConfig, log); err != nil {
+				log.Error(err, "failed to start ACM hub setup controller")
+				// Don't exit, as this is optional functionality
+			}
+		} else {
+			log.Info("ACM hub setup controller disabled")
+		}
+
+		// Start MCE discovery controller if enabled
+		if IsMCEDiscoveryEnabled() {
+			if err := startMCEDiscoveryController(ctx, controllerContext.KubeConfig, log); err != nil {
+				log.Error(err, "failed to start MCE discovery controller")
+				// Don't exit, as this is optional functionality
+			}
+		} else {
+			log.Info("MCE discovery controller disabled")
 		}
 
 		err = EnableHypershiftCLIDownload(hubClient, log)
@@ -323,4 +347,66 @@ func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 	}
 
 	return addonfactory.StructToValues(manifestConfig), nil
+}
+
+// startMCEDiscoveryController starts the MCE discovery controller
+func startMCEDiscoveryController(ctx context.Context, kubeConfig *rest.Config, log logr.Logger) error {
+	log.Info("Starting MCE discovery controller")
+
+	// Create controller-runtime manager
+	mgr, err := ctrl.NewManager(kubeConfig, ctrl.Options{
+		Scheme:           genericScheme,
+		LeaderElection:   true,
+		LeaderElectionID: "mce-discovery-controller-leader",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create controller manager: %w", err)
+	}
+
+	// Create and setup the MCE discovery controller
+	mceController := NewMCEDiscoveryController(mgr.GetClient(), mgr.GetScheme(), log)
+	if err := mceController.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup MCE discovery controller: %w", err)
+	}
+
+	// Start the manager in a goroutine
+	go func() {
+		log.Info("Starting MCE discovery controller manager")
+		if err := mgr.Start(ctx); err != nil {
+			log.Error(err, "MCE discovery controller manager stopped with error")
+		}
+	}()
+
+	return nil
+}
+
+// startACMHubSetupController starts the ACM hub setup controller
+func startACMHubSetupController(ctx context.Context, kubeConfig *rest.Config, log logr.Logger) error {
+	log.Info("Starting ACM hub setup controller")
+
+	// Create controller-runtime manager for ACM hub setup
+	mgr, err := ctrl.NewManager(kubeConfig, ctrl.Options{
+		Scheme:           genericScheme,
+		LeaderElection:   true,
+		LeaderElectionID: "acm-hub-setup-controller-leader",
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create ACM hub setup controller manager: %w", err)
+	}
+
+	// Create and setup the ACM hub setup controller
+	acmController := NewACMHubSetupController(mgr.GetClient(), mgr.GetScheme(), log)
+	if err := acmController.SetupWithManager(mgr); err != nil {
+		return fmt.Errorf("failed to setup ACM hub setup controller: %w", err)
+	}
+
+	// Start the manager in a goroutine
+	go func() {
+		log.Info("Starting ACM hub setup controller manager")
+		if err := mgr.Start(ctx); err != nil {
+			log.Error(err, "ACM hub setup controller manager stopped with error")
+		}
+	}()
+
+	return nil
 }

@@ -1,0 +1,62 @@
+# Example configuration for MCE cluster discovery automation
+# This file demonstrates how to configure multiple MCE clusters for automated discovery
+
+clusters:
+  # MCE cluster with kubeconfig authentication
+  - name: mce-production-east
+    apiUrl: https://api.mce-prod-east.example.com:6443
+    kubeconfig: /path/to/mce-prod-east-kubeconfig
+    description: "Production MCE cluster in us-east-1"
+    
+  # MCE cluster with service account token
+  - name: mce-production-west
+    apiUrl: https://api.mce-prod-west.example.com:6443
+    token: eyJhbGciOiJSUzI1NiIsImtpZCI6IjBEUzFqVGNHVGNHVGNHVGNHVGNH...
+    description: "Production MCE cluster in us-west-2"
+    
+  # MCE cluster with auto-import secret file
+  - name: mce-staging
+    apiUrl: https://api.mce-staging.example.com:6443
+    autoImportSecret: /path/to/mce-staging-secret.yaml
+    description: "Staging MCE cluster"
+    
+  # MCE cluster with manual authentication (secret created separately)
+  - name: mce-development
+    apiUrl: https://api.mce-dev.example.com:6443
+    description: "Development MCE cluster - manual auth"
+
+settings:
+  # Global configuration settings
+  acmNamespace: multicluster-engine
+  addonInstallNamespace: open-cluster-management-agent-addon-discovery
+  policyNamespace: open-cluster-management-global-set
+  
+  # Filter configuration for auto-import
+  # Only clusters with names containing this string will be auto-imported
+  # Leave empty to import all discovered clusters
+  filterConfig: "prod-"
+  
+  # Timeout settings
+  clusterImportTimeout: 600  # seconds
+  addonEnableTimeout: 600    # seconds
+  
+  # Backup and disaster recovery
+  enableBackupLabels: true
+  
+  # Advanced settings
+  hypershiftAddonConfig:
+    disableMetrics: true
+    disableHOManagement: true
+    hcMaxNumber: "80"
+    hcThresholdNumber: "60"
+
+# Optional: Custom labels to apply to imported MCE clusters
+customLabels:
+  environment: production
+  team: platform
+  backup-policy: daily
+
+# Optional: Custom annotations
+customAnnotations:
+  contact: platform-team@example.com
+  documentation: https://wiki.example.com/mce-clusters
