@@ -1,0 +1,106 @@
+# ACM Hub Setup Undo Trigger ConfigMap
+# Update the existing setup ConfigMap to trigger undo of ACM hub configuration
+
+# Method 1: Update existing ConfigMap to trigger undo
+# kubectl patch configmap acm-hub-setup-trigger -n multicluster-engine \
+#   --type=merge -p='{"data":{"undo-requested":"true","undo-reason":"Cleanup before reconfiguration"}}'
+
+---
+# Method 2: Replace ConfigMap with undo request
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acm-hub-setup-trigger
+  namespace: multicluster-engine
+  labels:
+    app: hypershift-addon-operator
+    component: acm-hub-setup
+data:
+  # Original setup fields (keep for history)
+  setup-requested: "true"
+  setup-status: "completed"
+  
+  # Undo trigger
+  undo-requested: "true"
+  undo-reason: "Cleanup ACM hub configuration"
+  undo-requested-by: "platform-admin"
+  undo-requested-at: "2024-01-15T15:30:00Z"
+
+---
+# Example: ConfigMap after undo completion
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acm-hub-undo-completed-example
+  namespace: multicluster-engine
+  labels:
+    app: hypershift-addon-operator
+    component: acm-hub-setup
+data:
+  # Original setup fields
+  setup-requested: "true"
+  setup-status: "undo-completed"  # Status updated to reflect undo completion
+  
+  # Undo request fields
+  undo-requested: "true"
+  undo-reason: "Cleanup ACM hub configuration"
+  undo-requested-by: "platform-admin"
+  undo-requested-at: "2024-01-15T15:30:00Z"
+  
+  # Status fields populated by controller
+  setup-timestamp: "2024-01-15T15:32:15Z"
+  setup-message: "Undo completed successfully"
+  
+  # Detailed undo results in JSON format
+  setup-results: |
+    {
+      "overallStatus": "undo-completed",
+      "startTime": "2024-01-15T15:30:45Z",
+      "endTime": "2024-01-15T15:32:15Z",
+      "duration": "1m30s",
+      "summary": "ACM hub undo completed successfully",
+      "results": [
+        {
+          "component": "remove-backup-labels",
+          "status": "completed",
+          "message": "Successfully configured remove-backup-labels",
+          "timestamp": "2024-01-15T15:30:50Z"
+        },
+        {
+          "component": "restore-hypershift-addon-config",
+          "status": "completed",
+          "message": "Successfully configured restore-hypershift-addon-config",
+          "timestamp": "2024-01-15T15:31:05Z"
+        },
+        {
+          "component": "restore-cluster-management-addon-work-manager",
+          "status": "completed",
+          "message": "Successfully configured restore-cluster-management-addon-work-manager",
+          "timestamp": "2024-01-15T15:31:25Z"
+        },
+        {
+          "component": "restore-cluster-management-addon-managed-serviceaccount",
+          "status": "completed",
+          "message": "Successfully configured restore-cluster-management-addon-managed-serviceaccount",
+          "timestamp": "2024-01-15T15:31:45Z"
+        },
+        {
+          "component": "restore-cluster-management-addon-cluster-proxy",
+          "status": "completed",
+          "message": "Successfully configured restore-cluster-management-addon-cluster-proxy",
+          "timestamp": "2024-01-15T15:32:00Z"
+        },
+        {
+          "component": "delete-addon-deployment-config",
+          "status": "completed",
+          "message": "Successfully configured delete-addon-deployment-config",
+          "timestamp": "2024-01-15T15:32:10Z"
+        },
+        {
+          "component": "delete-klusterlet-config",
+          "status": "completed",
+          "message": "Successfully configured delete-klusterlet-config",
+          "timestamp": "2024-01-15T15:32:15Z"
+        }
+      ]
+    }

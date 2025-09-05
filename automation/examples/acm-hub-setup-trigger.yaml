@@ -1,0 +1,101 @@
+# ACM Hub Setup Trigger ConfigMap
+# Create this ConfigMap to trigger automated ACM hub configuration
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acm-hub-setup-trigger
+  namespace: multicluster-engine
+  labels:
+    app: hypershift-addon-operator
+    component: acm-hub-setup
+data:
+  # Set to "true" to trigger the setup process
+  setup-requested: "true"
+  
+  # Optional: Custom configuration for the setup
+  addon-namespace: "open-cluster-management-agent-addon-discovery"
+  backup-enabled: "true"
+  
+  # Optional: Description of why setup is being triggered
+  setup-reason: "Initial ACM hub configuration for MCE discovery"
+  requested-by: "platform-admin"
+
+---
+# Example: ConfigMap after setup completion
+# This shows what the ConfigMap looks like after the controller processes it
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: acm-hub-setup-trigger-completed-example
+  namespace: multicluster-engine
+  labels:
+    app: hypershift-addon-operator
+    component: acm-hub-setup
+data:
+  # Original request
+  setup-requested: "true"
+  addon-namespace: "open-cluster-management-agent-addon-discovery"
+  backup-enabled: "true"
+  setup-reason: "Initial ACM hub configuration for MCE discovery"
+  requested-by: "platform-admin"
+  
+  # Status fields populated by controller
+  setup-status: "completed"
+  setup-timestamp: "2024-01-15T10:30:45Z"
+  setup-message: "Setup completed successfully"
+  
+  # Detailed results in JSON format
+  setup-results: |
+    {
+      "overallStatus": "completed",
+      "startTime": "2024-01-15T10:30:15Z",
+      "endTime": "2024-01-15T10:30:45Z",
+      "duration": "30s",
+      "summary": "ACM hub setup completed successfully",
+      "results": [
+        {
+          "component": "addon-deployment-config",
+          "status": "completed",
+          "message": "Successfully configured addon-deployment-config",
+          "timestamp": "2024-01-15T10:30:18Z"
+        },
+        {
+          "component": "cluster-management-addon-work-manager",
+          "status": "completed", 
+          "message": "Successfully configured cluster-management-addon-work-manager",
+          "timestamp": "2024-01-15T10:30:22Z"
+        },
+        {
+          "component": "cluster-management-addon-managed-serviceaccount",
+          "status": "completed",
+          "message": "Successfully configured cluster-management-addon-managed-serviceaccount", 
+          "timestamp": "2024-01-15T10:30:25Z"
+        },
+        {
+          "component": "cluster-management-addon-cluster-proxy",
+          "status": "completed",
+          "message": "Successfully configured cluster-management-addon-cluster-proxy",
+          "timestamp": "2024-01-15T10:30:28Z"
+        },
+        {
+          "component": "klusterlet-config",
+          "status": "completed",
+          "message": "Successfully configured klusterlet-config",
+          "timestamp": "2024-01-15T10:30:32Z"
+        },
+        {
+          "component": "hypershift-addon-config",
+          "status": "completed",
+          "message": "Successfully configured hypershift-addon-config",
+          "timestamp": "2024-01-15T10:30:38Z"
+        },
+        {
+          "component": "backup-labels",
+          "status": "completed",
+          "message": "Successfully configured backup-labels",
+          "timestamp": "2024-01-15T10:30:42Z"
+        }
+      ]
+    }
