@@ -320,6 +320,8 @@ oc patch addondeploymentconfig hypershift-addon-deploy-config \
   -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value":"true"},{"name":"disableHOManagement","value":"true"},{"name":"discoveryPrefix","value":"custom-prefix"}]}}'
 ```
 
+**Important**: Using an empty string as the custom prefix is not recommended as it can cause klusterlet naming collisions within the MCE cluster. If you need to remove the discovery prefix entirely, ensure all hosted clusters are first detached from their respective MCE clusters.   
+
 ## Step 5: Automate Hosted Cluster Import
 
 ### Understanding DiscoveredCluster Resources
