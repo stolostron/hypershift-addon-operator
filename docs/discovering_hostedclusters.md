@@ -604,4 +604,51 @@ oc get policy -n open-cluster-management-global-set
 3. **Monitor Resource Usage**: Track resource consumption on both ACM hub and MCE clusters
 4. **Document Naming Conventions**: Maintain clear naming standards for discovered clusters
 
+## Automation Scripts
+
+To simplify the setup and management of this MCE-ACM integration, comprehensive automation scripts are available in the [`scripts/`](../scripts/) directory. These scripts automate all the manual steps described in this guide.
+
+### Quick Start with Automation
+
+For a complete automated setup, use the main orchestration script:
+
+```bash
+# Interactive setup (recommended for first-time users)
+./scripts/setup-mce-acm-integration.sh
+
+# Non-interactive setup for CI/CD pipelines
+./scripts/setup-mce-acm-integration.sh \
+  --non-interactive \
+  --mce-clusters "mce-cluster-1,mce-cluster-2" \
+  --discovery-prefix "prod-" \
+  --autoimport-filter "prod-"
+```
+
+### Available Scripts
+
+| Script | Purpose | Manual Steps Automated |
+|--------|---------|------------------------|
+| `setup-mce-acm-integration.sh` | Complete end-to-end setup | All steps 1-6 |
+| `setup-acm-hub.sh` | Prepare ACM Hub | Step 1 |
+| `import-mce-cluster.sh` | Import MCE clusters | Step 2 |
+| `enable-hypershift-addon.sh` | Enable HyperShift addon | Step 3 |
+| `setup-autoimport-policy.sh` | Configure auto-import | Step 5 |
+| `verify-mce-integration.sh` | Verify integration | Troubleshooting |
+| `backup-mce-resources.sh` | Backup for disaster recovery | Backup & Recovery |
+
+### Benefits of Using Automation Scripts
+
+- **Reduced Setup Time**: Complete setup in minutes instead of hours
+- **Error Prevention**: Built-in validation and error handling
+- **Consistency**: Standardized configuration across environments
+- **Reproducibility**: Identical setup across development, staging, and production
+- **Documentation**: Self-documenting with help text and examples
+- **Recovery**: Automated backup and restore capabilities
+
+### Documentation
+
+For detailed usage instructions, configuration options, and troubleshooting guidance, see the [Scripts README](../scripts/README.md).
+
+---
+
 This integration provides a powerful foundation for managing large-scale hosted cluster deployments while maintaining the flexibility and capabilities of both ACM and MCE platforms.
