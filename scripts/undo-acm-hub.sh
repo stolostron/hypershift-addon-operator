@@ -98,32 +98,6 @@ check_prerequisites() {
     log_success "Prerequisites check passed"
 }
 
-# Check for imported MCE clusters
-check_imported_clusters() {
-    log_info "Checking for imported MCE clusters..."
-    
-    local mce_clusters
-    mce_clusters=$(oc get managedcluster --no-headers | grep -v local-cluster | awk '{print $1}' | tr '\n' ' ')
-    
-    if [ -n "$mce_clusters" ]; then
-        log_warning "Found imported MCE clusters: $mce_clusters"
-        
-        if [ "$FORCE_MODE" = false ]; then
-            log_error "Cannot proceed with ACM Hub cleanup while MCE clusters are still imported"
-            log_error "Please remove MCE clusters first using:"
-            for cluster in $mce_clusters; do
-                echo "  ./undo-import-mce-cluster.sh $cluster"
-            done
-            log_error "Or use --force to ignore this check"
-            exit 1
-        else
-            log_warning "Force mode enabled - proceeding despite imported clusters"
-        fi
-    else
-        log_success "No imported MCE clusters found"
-    fi
-}
-
 # Reset ClusterManagementAddOn resources
 reset_cluster_management_addons() {
     log_info "Resetting ClusterManagementAddOn resources..."
@@ -329,7 +303,6 @@ main() {
     fi
     
     check_prerequisites
-    check_imported_clusters
     
     echo ""
     log_warning "This will reset your ACM Hub to default configuration"
