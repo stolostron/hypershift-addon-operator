@@ -162,27 +162,22 @@ Verifies all aspects of the MCE-ACM integration setup.
 - Network connectivity
 
 #### `backup-mce-resources.sh`
-**Backup Critical Resources**
+**Label Resources for ACM Backup**
 
-Labels and backs up critical resources for disaster recovery.
+Labels critical resources for inclusion in ACM's backup system.
 
 ```bash
-# Create backup with default location
+# Label resources for ACM backup system
 ./backup-mce-resources.sh
 
-# Custom backup directory
-./backup-mce-resources.sh --backup-dir /path/to/backup
-
-# Preview without creating backup
+# Preview without labeling
 ./backup-mce-resources.sh --dry-run
 ```
 
-**Backup Contents:**
-- Configuration resources (AddOnDeploymentConfig, KlusterletConfig)
-- Addon resources (ClusterManagementAddOn)
-- Policy resources (Policy, Placement, PlacementBinding)
-- Managed cluster configurations
-- Restore script and manifest
+**What it does:**
+- Labels resources with `cluster.open-cluster-management.io/backup=true`
+- Integrates with ACM's native backup system
+- Provides restoration guidance via console output
 
 ### 🗑️ Cleanup and Undo Scripts
 
@@ -203,11 +198,12 @@ Removes the entire MCE-ACM integration by undoing all setup steps in reverse ord
 ```
 
 **Features:**
-- Removes all imported MCE clusters from ACM
-- Disables HyperShift addons from all clusters
+- Removes specified MCE clusters from ACM (requires explicit cluster names)
+- Disables HyperShift addons from specified clusters
 - Resets ACM Hub configuration to defaults
 - Removes auto-import policies (if present)
 - Comprehensive verification of cleanup
+- Safe operation - only affects explicitly named clusters
 
 #### Individual Undo Scripts
 
@@ -500,15 +496,17 @@ oc get deployment -n open-cluster-management-agent-addon-discovery
 
 ### Disaster Recovery
 
-If you need to restore your MCE-ACM integration:
+For disaster recovery preparation and restoration:
 
 ```bash
-# Create backup (should be done regularly)
+# Label resources for ACM backup system (should be done regularly)
 ./scripts/backup-mce-resources.sh
 
-# To restore (after ACM hub recovery)
-cd <backup-directory>
-./restore.sh
+# To restore after disaster, use the setup scripts:
+./scripts/setup-acm-hub.sh
+./scripts/import-mce-cluster.sh <cluster-name> <kubeconfig-file>
+./scripts/enable-hypershift-addon.sh <cluster-names>
+./scripts/setup-autoimport-policy.sh
 ```
 
 ### Update Configuration
@@ -534,25 +532,27 @@ oc patch policy policy-mce-hcp-autoimport \
 
 ### Cleanup
 
-To remove the integration:
+To remove the integration safely:
 
 ```bash
-# Remove auto-import policy
+# Complete cleanup (recommended)
+./scripts/cleanup-mce-acm-integration.sh --mce-clusters <cluster-names>
+
+# Individual component cleanup
+./scripts/undo-hypershift-addon.sh <cluster-names>
+./scripts/undo-import-mce-cluster.sh <cluster-name>
+./scripts/undo-acm-hub.sh
+
+# Manual cleanup (not recommended)
 oc delete policy policy-mce-hcp-autoimport -n open-cluster-management-global-set
-oc delete placement policy-mce-hcp-autoimport-placement -n open-cluster-management-global-set
-oc delete placementbinding policy-mce-hcp-autoimport-placement-binding -n open-cluster-management-global-set
-
-# Disable HyperShift addon
 clusteradm addon disable --names hypershift-addon --clusters <cluster-names>
-
-# Detach MCE clusters
 oc delete managedcluster <mce-cluster-names>
 ```
 
 ## Best Practices
 
 1. **Test in Development**: Always test scripts in a development environment first
-2. **Regular Backups**: Run backup script regularly or integrate into CI/CD
+2. **Regular Resource Labeling**: Run backup script regularly to ensure resources are labeled for ACM backup
 3. **Monitor Resources**: Use verification script to monitor system health
 4. **Gradual Rollout**: Import and configure one MCE cluster before scaling
 5. **Documentation**: Keep track of your specific configuration choices
@@ -580,6 +580,7 @@ For issues with these automation scripts:
 ## Script Dependencies
 
 ```
+Setup Scripts:
 setup-mce-acm-integration.sh (main orchestration)
 ├── setup-acm-hub.sh
 ├── import-mce-cluster.sh
@@ -587,6 +588,12 @@ setup-mce-acm-integration.sh (main orchestration)
 ├── setup-autoimport-policy.sh
 ├── verify-mce-integration.sh
 └── backup-mce-resources.sh
+
+Cleanup Scripts:
+cleanup-mce-acm-integration.sh (main cleanup)
+├── undo-hypershift-addon.sh
+├── undo-import-mce-cluster.sh
+└── undo-acm-hub.sh
 ```
 
-All scripts are designed to be run independently or as part of the main orchestration script.
+All scripts are designed to be run independently or as part of the main orchestration/cleanup scripts.
