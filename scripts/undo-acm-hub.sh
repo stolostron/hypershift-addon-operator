@@ -3,6 +3,7 @@
 # Script: undo-acm-hub.sh
 # Description: Undo ACM Hub MCE integration setup (Undo step 1)
 # Author: Generated automation script
+# Version: 2.0 - Updated to handle Application Manager addon
 # Usage: ./undo-acm-hub.sh [--force]
 
 set -euo pipefail
@@ -43,7 +44,7 @@ usage() {
     echo ""
     echo "This script will:"
     echo "  1. Check for imported MCE clusters (warns if found)"
-    echo "  2. Reset ClusterManagementAddOn resources to defaults"
+    echo "  2. Reset ClusterManagementAddOn resources to defaults (work-manager, managed-serviceaccount, cluster-proxy, application-manager)"
     echo "  3. Remove custom AddOnDeploymentConfig resources"
     echo "  4. Remove custom KlusterletConfig"
     echo "  5. Clean up addon deployment namespace if empty"
@@ -102,7 +103,7 @@ check_prerequisites() {
 reset_cluster_management_addons() {
     log_info "Resetting ClusterManagementAddOn resources..."
     
-    local addons=("work-manager" "managed-serviceaccount" "cluster-proxy")
+    local addons=("work-manager" "managed-serviceaccount" "cluster-proxy" "application-manager")
     
     for addon in "${addons[@]}"; do
         if oc get clustermanagementaddon "$addon" &> /dev/null; then
@@ -249,7 +250,7 @@ verify_cleanup() {
     fi
     
     # Check if ClusterManagementAddOns are reset
-    local addons=("work-manager" "managed-serviceaccount" "cluster-proxy")
+    local addons=("work-manager" "managed-serviceaccount" "cluster-proxy" "application-manager")
     for addon in "${addons[@]}"; do
         if oc get clustermanagementaddon "$addon" &> /dev/null; then
             local has_configs

@@ -10,14 +10,53 @@ When you have MCE clusters hosting multiple hosted clusters, you can import thes
 
 ### Supported Topology
 
-The recommended topology consists of:
+The recommended topology for hosted control planes consists of three main architectural components:
 
-- **ACM Hub Cluster**: Central management plane
-- **MCE Hosting Clusters**: One or more managed clusters running MCE (ACM installation on these clusters is not supported)
+### ACM Hub Cluster
+The **ACM Hub Cluster** serves as the central management plane and provides:
+
+- **Comprehensive Management Capabilities**:
+  - Application lifecycle management
+  - Security policy enforcement and compliance
+  - High-level monitoring and observability
+  - Centralized governance across all managed clusters
+
+- **Hosted Cluster Discovery and Management**:
+  - Automatically discovers hosted clusters from MCE hosting clusters
+  - Creates `DiscoveredCluster` CRs when hosted cluster API server become available
+  - Enables auto-import of discovered hosted clusters as managed clusters
+  - Provides centralized visibility and policy enforcement across all hosted clusters
+
+- **Disaster Recovery Coordination**:
+  - Orchestrates backup and restore operations
+  - Manages OADP resources in the `open-cluster-management-backup` namespace
+  - Coordinates hosted cluster recovery processes
+
+### MCE Hosting Clusters
+**MCE Hosting Clusters** are one or more managed clusters that:
+
+- **Run MultiCluster Engine (MCE)** infrastructure components
+- **Host multiple hosted control planes** for workload clusters
+- **Integrate with ACM** while maintaining operational independence
+
+**Key Characteristics**:
+- **Restriction**: ACM installation on MCE clusters is not supported
+- **Management**: Imported into the ACM hub as managed clusters
+- **Enhanced Capabilities**: Provide additional operators including:
+  - Hive operator for cluster provisioning
+  - BareMetal infrastructure operators
+  - HyperShift operator for hosted control planes
+
+### Hosted Clusters
+
+**Hosted Clusters** are the actual workload clusters whose control planes run on MCE hosting clusters:
+
+- **Control Plane Location**: Hosted control planes run as pods on MCE cluster nodes
+- **Worker Nodes**: Can be located external to the MCE hosting cluster
+- **Separate Disaster Recovery**: Have their own backup and restore processes independent of ACM
 
 ![Architecture Diagram](./images/discovery1.png)
 
-In this setup, managed clusters are MCE-enabled clusters that provide additional operators like Hive and BareMetal infrastructure operators, extending your management capabilities beyond vanilla OpenShift Container Platform.
 
 ### Scaling Considerations
 
@@ -153,6 +192,32 @@ spec:
 EOF
 ```
 
+#### Application Manager Addon
+
+```yaml
+cat <<EOF | oc apply -f -
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: ClusterManagementAddOn
+metadata:
+  name: application-manager
+spec:
+  addOnMeta:
+    displayName: application-manager
+  installStrategy:
+    placements:
+    - name: global
+      namespace: open-cluster-management-global-set
+      rolloutStrategy:
+        type: All
+      configs:
+      - group: addon.open-cluster-management.io
+        name: addon-ns-config
+        namespace: multicluster-engine
+        resource: addondeploymentconfigs
+    type: Placements
+EOF 
+```
+
 ### Create Klusterlet Configuration
 
 Create a `KlusterletConfig` to ensure ACM's klusterlet installs in a separate namespace from MCE's local-cluster klusterlet:
@@ -181,13 +246,16 @@ oc get deployment -n open-cluster-management-agent-addon-discovery
 
 Expected output:
 ```
-NAME                                 READY   UP-TO-DATE   AVAILABLE   AGE
-cluster-proxy-proxy-agent            1/1     1            1           24h
-klusterlet-addon-workmgr             1/1     1            1           24h
-managed-serviceaccount-addon-agent   1/1     1            1           24h
+ NAME                                                  READY   STATUS    RESTARTS   AGE
+application-manager-6b7f74b8f7-7sd25                  1/1     Running   0          5d18h
+cluster-proxy-proxy-agent-7985ddfdb6-kng5p            3/3     Running   0          5d18h
+klusterlet-addon-workmgr-55fd575b4b-rs5vz             1/1     Running   0          5d18h
+managed-serviceaccount-addon-agent-54bd989b94-g6gz9   1/1     Running   0          5d18h
 ```
 
 ## Step 2: Import MCE Clusters into ACM
+
+Before you import an MCE cluster into ACM, make sure the MCE cluster is not managed by any other ACM. For example, if you provisioned the MCE cluster from ACM, the MCE cluster is automatically imported into and managed by the ACM hub cluster. You must detach this MCE cluster before moving on.
 
 ### Create ManagedCluster Resource
 
@@ -211,6 +279,33 @@ EOF
 ```
 
 **Important**: The annotation `agent.open-cluster-management.io/klusterlet-config: mce-import-klusterlet-config` ensures the klusterlet installs in the correct namespace.
+
+### Enable ACM Addons (Optional)
+
+**⚠️ Important**: Only enable additional ACM addons if required for your specific use case. The basic integration works with just the core addons configured above.
+
+Create a `KlusterletAddonConfig` resource for each MCE cluster to enable additional ACM addons:
+
+```yaml
+cat <<EOF | oc apply -f -
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: mce-a  # Replace with your MCE cluster name
+  namespace: mce-a  # Replace with your MCE cluster name
+spec:
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+EOF
+```
+
+**Note**: Replace `mce-a` with the actual name of your MCE cluster. This should match the name used in the `ManagedCluster` resource above.
 
 ### Complete Auto-Import Process
 
@@ -520,43 +615,63 @@ oc annotate discoveredcluster <cluster-name> \
   discovery.open-cluster-management.io/previously-auto-imported-
 ```
 
-## Backup and Disaster Recovery
+## Disaster Recovery Scope and Limitations
 
-### Required Backup Labels
+### What is Covered by ACM Disaster Recovery
 
-For disaster recovery scenarios, label critical resources for backup:
+ACM disaster recovery **only recovers the management capability** of MCE hosting clusters and their hosted clusters. This includes:
 
-```bash
-# Configuration resources
-oc label addondeploymentconfig addon-ns-config \
-  -n multicluster-engine \
-  cluster.open-cluster-management.io/backup=true
+- **Discovery and Import Configuration**: Auto-discovery policies and `DiscoveredCluster` resources
+- **Management Resources**: Policies, applications, and governance configurations applied to hosted clusters
+- **Backup Labels**: Resources marked with `cluster.open-cluster-management.io/backup` labels
+- **Addon Configurations**: HyperShift addon settings and deployment configurations
 
-oc label addondeploymentconfig hypershift-addon-deploy-config \
-  -n multicluster-engine \
-  cluster.open-cluster-management.io/backup=true
+### What is NOT Covered
 
-# Addon resources
-oc label clustermanagementaddon work-manager \
-  cluster.open-cluster-management.io/backup=true
+The following are **outside the scope** of ACM disaster recovery:
 
-oc label clustermanagementaddon cluster-proxy \
-  cluster.open-cluster-management.io/backup=true
+- **MCE Hosting Clusters**: Physical infrastructure and cluster lifecycle
+- **Hosted Clusters**: The actual hosted control planes and their workloads
+- **Hosted Cluster Data**: Applications, persistent volumes, and user data within hosted clusters
 
-oc label clustermanagementaddon managed-serviceaccount \
-  cluster.open-cluster-management.io/backup=true
+Follow the [OpenShift Hosted Control Plane Disaster Recovery documentation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/hosted_control_planes/high-availability-for-hosted-control-planes#hcp-disaster-recovery-oadp) for hosted cluster backup and restore procedures
 
-# Klusterlet configuration
-oc label klusterletconfig mce-import-klusterlet-config \
-  cluster.open-cluster-management.io/backup=true
-```
+### Backup Strategy for Hosted Environments
 
-### Recovery Process
+For complete disaster recovery in hosted cluster environments, implement a **multi-layered backup strategy**:
 
-During ACM hub restoration:
-1. Restore all labeled configuration resources
-2. MCE clusters and hosted clusters will automatically reconnect
-3. Hosted cluster discovery will resume automatically
+#### 1. ACM Hub Backup
+- **Purpose**: Restore management capabilities and discovery configurations
+- **Scope**: ACM resources, policies, applications, and addon configurations
+- **Implementation**: Use ACM's cluster-backup-operator
+
+#### 2. Hosted Cluster Backup
+- **Purpose**: Backup hosted control planes and workloads
+- **Scope**: Hosted cluster etcd, persistent volumes, and application data
+- **Implementation**: Follow [OpenShift Hosted Control Plane Disaster Recovery documentation](https://docs.redhat.com/en/documentation/openshift_container_platform/4.19/html/hosted_control_planes/high-availability-for-hosted-control-planes#hcp-disaster-recovery-oadp)
+
+#### 3. MCE Hosting Cluster Backup
+- **Purpose**: Backup the infrastructure hosting the control planes
+- **Scope**: MCE cluster resources and configurations
+- **Implementation**: Standard OpenShift backup procedures
+
+## Recovery Process
+
+### Step 1: Restore ACM Hub
+1. Deploy new ACM hub with same configuration as original
+2. Enable backup component and configure OADP
+3. Restore ACM backup using the cluster-backup-operator
+4. Verify discovery and auto-import policies are restored
+
+### Step 2: Reconnect MCE Hosting Clusters
+1. MCE hosting clusters will automatically reconnect to restored ACM hub
+2. HyperShift addon will resume discovery operations
+3. Previously discovered hosted clusters will be rediscovered
+
+### Step 3: Hosted Cluster Recovery
+Hosted clusters require separate recovery using their own backup procedures. The ACM hub will automatically rediscover them once their APIs become available.
+
+For comprehensive guidance, refer to the [ACM backup and restore documentation](https://docs.redhat.com/en/documentation/red_hat_advanced_cluster_management_for_kubernetes/2.14/html/business_continuity/business-cont-overview).
 
 ## Known Limitations
 
@@ -607,51 +722,6 @@ oc get policy -n open-cluster-management-global-set
 2. **Implement Gradual Rollout**: Import and configure one MCE cluster before scaling to multiple
 3. **Monitor Resource Usage**: Track resource consumption on both ACM hub and MCE clusters
 4. **Document Naming Conventions**: Maintain clear naming standards for discovered clusters
-
-## Automation Scripts
-
-To simplify the setup and management of this MCE-ACM integration, comprehensive automation scripts are available in the [`scripts/`](../scripts/) directory. These scripts automate all the manual steps described in this guide.
-
-### Quick Start with Automation
-
-For a complete automated setup, use the main orchestration script:
-
-```bash
-# Interactive setup (recommended for first-time users)
-./scripts/setup-mce-acm-integration.sh
-
-# Non-interactive setup for CI/CD pipelines
-./scripts/setup-mce-acm-integration.sh \
-  --non-interactive \
-  --mce-clusters "mce-cluster-1,mce-cluster-2" \
-  --discovery-prefix "prod-" \
-  --autoimport-filter "prod-"
-```
-
-### Available Scripts
-
-| Script | Purpose | Manual Steps Automated |
-|--------|---------|------------------------|
-| `setup-mce-acm-integration.sh` | Complete end-to-end setup | All steps 1-6 |
-| `setup-acm-hub.sh` | Prepare ACM Hub | Step 1 |
-| `import-mce-cluster.sh` | Import MCE clusters | Step 2 |
-| `enable-hypershift-addon.sh` | Enable HyperShift addon | Step 3 |
-| `setup-autoimport-policy.sh` | Configure auto-import | Step 5 |
-| `verify-mce-integration.sh` | Verify integration | Troubleshooting |
-| `backup-mce-resources.sh` | Backup for disaster recovery | Backup & Recovery |
-
-### Benefits of Using Automation Scripts
-
-- **Reduced Setup Time**: Complete setup in minutes instead of hours
-- **Error Prevention**: Built-in validation and error handling
-- **Consistency**: Standardized configuration across environments
-- **Reproducibility**: Identical setup across development, staging, and production
-- **Documentation**: Self-documenting with help text and examples
-- **Recovery**: Automated backup and restore capabilities
-
-### Documentation
-
-For detailed usage instructions, configuration options, and troubleshooting guidance, see the [Scripts README](../scripts/README.md).
 
 ---
 

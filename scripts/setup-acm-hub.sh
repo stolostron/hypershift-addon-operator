@@ -3,6 +3,7 @@
 # Script: setup-acm-hub.sh
 # Description: Prepare ACM Hub for MCE Integration (Step 1 from discovering_hostedclusters.md)
 # Author: Generated automation script
+# Version: 2.0 - Updated to include Application Manager addon
 # Usage: ./setup-acm-hub.sh
 
 set -euo pipefail
@@ -209,6 +210,30 @@ spec:
     type: Placements
 EOF
     
+    # Application Manager Addon
+    log_info "Updating application-manager addon..."
+    cat <<EOF | oc apply -f -
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: ClusterManagementAddOn
+metadata:
+  name: application-manager
+spec:
+  addOnMeta:
+    displayName: application-manager
+  installStrategy:
+    placements:
+    - name: global
+      namespace: open-cluster-management-global-set
+      rolloutStrategy:
+        type: All
+      configs:
+      - group: addon.open-cluster-management.io
+        name: addon-ns-config
+        namespace: multicluster-engine
+        resource: addondeploymentconfigs
+    type: Placements
+EOF
+    
     log_success "ClusterManagementAddOn resources updated successfully"
 }
 
@@ -250,7 +275,7 @@ verify_configuration() {
         oc get deployment -n open-cluster-management-agent-addon-discovery
         
         # Check if expected deployments are ready
-        expected_deployments=("cluster-proxy-proxy-agent" "klusterlet-addon-workmgr" "managed-serviceaccount-addon-agent")
+        expected_deployments=("cluster-proxy-proxy-agent" "klusterlet-addon-workmgr" "managed-serviceaccount-addon-agent" "application-manager")
         for deployment in "${expected_deployments[@]}"; do
             if oc get deployment "$deployment" -n open-cluster-management-agent-addon-discovery &> /dev/null; then
                 ready=$(oc get deployment "$deployment" -n open-cluster-management-agent-addon-discovery -o jsonpath='{.status.readyReplicas}')
@@ -273,6 +298,11 @@ verify_configuration() {
 # Main execution
 main() {
     log_info "Starting ACM Hub setup for MCE integration..."
+    log_info "This script will configure:"
+    log_info "  • AddOnDeploymentConfig for custom namespace"
+    log_info "  • ClusterManagementAddOn resources (work-manager, managed-serviceaccount, cluster-proxy, application-manager)"
+    log_info "  • KlusterletConfig for MCE cluster imports"
+    echo ""
     
     check_prerequisites
     verify_addon_state
