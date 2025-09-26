@@ -2,7 +2,13 @@
 
 There are three parts in the HyperShift managed cluster addon. 
 
-![hypershift addon diagram](./troubleshooting_diagram.jpg)
+## Architecture Overview
+
+For a detailed visual representation of the HyperShift addon architecture:
+
+- **[Interactive Mermaid Diagrams](./architecture_diagram.md)** - Modern diagrams with troubleshooting flow
+- **[ASCII Architecture Diagram](./architecture_ascii.md)** - Text-based diagram for all environments
+- **[Original Diagram](./troubleshooting_diagram.jpg)** - Legacy image diagram
 
 ### 1. HyperShift addon manager
 
