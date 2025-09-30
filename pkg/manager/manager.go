@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/component-base/version"
 	"k8s.io/utils/clock"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	consolev1 "github.com/openshift/api/console/v1"
@@ -62,6 +63,8 @@ func init() {
 	utilruntime.Must(monitoringv1.AddToScheme(genericScheme))
 	utilruntime.Must(rhobsmonitoring.AddToScheme(genericScheme))
 	utilruntime.Must(mcev1.AddToScheme(genericScheme))
+	utilruntime.Must(addonapiv1alpha1.AddToScheme(genericScheme))
+	utilruntime.Must(clusterv1.AddToScheme(genericScheme))
 }
 
 const (
@@ -131,11 +134,54 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 			os.Exit(1)
 		}
 
-		err = mgr.Start(ctx)
+		// Start the addon framework manager in a goroutine
+		go func() {
+			if err := mgr.Start(ctx); err != nil {
+				log.Error(err, "failed to start addon framework manager")
+				os.Exit(1)
+			}
+		}()
+
+		// Create a separate controller-runtime manager for custom controllers
+		// Use the same scheme that has all the types registered
+		customMgr, err := ctrl.NewManager(controllerContext.KubeConfig, ctrl.Options{
+			Scheme:           genericScheme,
+			LeaderElection:   false, // Disable leader election for custom manager
+			LeaderElectionID: "custom-controller-leader-election",
+		})
 		if err != nil {
-			log.Error(err, "failed to start addon framework manager")
-			os.Exit(1)
+			log.Error(err, "failed to create custom controller manager")
+			return err
 		}
+
+		// Verify the scheme has the required types
+		gvk := addonapiv1alpha1.SchemeGroupVersion.WithKind("ManagedClusterAddOn")
+		if !genericScheme.Recognizes(gvk) {
+			log.Error(fmt.Errorf("scheme does not recognize ManagedClusterAddOn"), "scheme verification failed")
+			return fmt.Errorf("scheme does not recognize ManagedClusterAddOn")
+		}
+		log.Info("Scheme verification successful", "gvk", gvk)
+
+		// Add the discovery config controller to the custom manager
+		discoveryConfigController := &DiscoveryConfigController{
+			Client:            hubClient,
+			Log:               log.WithName("discovery-config-controller"),
+			Scheme:            genericScheme,
+			OperatorNamespace: controllerContext.OperatorNamespace,
+		}
+
+		if err = discoveryConfigController.SetupWithManager(customMgr); err != nil {
+			log.Error(err, "failed to setup discovery config controller")
+			return err
+		}
+
+		// Start the custom controller manager in a goroutine
+		go func() {
+			log.Info("starting custom controller manager")
+			if err := customMgr.Start(ctx); err != nil {
+				log.Error(err, "failed to start custom controller manager")
+			}
+		}()
 
 		err = EnableHypershiftCLIDownload(hubClient, log)
 		if err != nil {

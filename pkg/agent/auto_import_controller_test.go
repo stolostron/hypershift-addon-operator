@@ -12,6 +12,7 @@ import (
 	routev1 "github.com/openshift/api/route/v1"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	agent "github.com/stolostron/klusterlet-addon-controller/pkg/apis"
 	agentv1 "github.com/stolostron/klusterlet-addon-controller/pkg/apis/agent/v1"
 	"github.com/stretchr/testify/assert"
@@ -379,6 +380,7 @@ func initClient() client.Client {
 	clusterv1alpha1.AddToScheme(scheme)
 	clusterv1.AddToScheme(scheme)
 	operatorapiv1.AddToScheme(scheme)
+	operatorsv1alpha1.AddToScheme(scheme)
 	addonv1alpha1.AddToScheme(scheme)
 	routev1.AddToScheme(scheme)
 

@@ -151,6 +151,10 @@ spec:
         - name: DISCOVERY_PREFIX
           value: "{{ .discoveryPrefix }}"
 {{- end }}
+{{- if eq .configureMceImport "true" }}
+        - name: CONFIGURE_MCE_IMPORT
+          value: "{{ .configureMceImport }}"
+{{- end }}
 {{- if ne .disableMetrics "true" }}
         ports:
         - name: metrics
