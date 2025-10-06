@@ -43,6 +43,7 @@ import (
 
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
+	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	prometheusapi "github.com/prometheus/client_golang/api"
 	prometheusv1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	safecast "github.com/rung/go-safecast"
@@ -71,6 +72,7 @@ func init() {
 	utilruntime.Must(clusterv1.AddToScheme(scheme))
 	utilruntime.Must(operatorapiv1.AddToScheme(scheme))
 	utilruntime.Must(operatorv1.AddToScheme(scheme))
+	utilruntime.Must(operatorsv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(agent.AddToScheme(scheme))
 	utilruntime.Must(routev1.AddToScheme(scheme))
 	utilruntime.Must(corev1.AddToScheme(scheme))
@@ -260,6 +262,12 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	if err = aCtrl.SetupWithManager(mgr); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to create agent controller: %s, err: %w", util.AddonControllerName, err)
+	}
+
+	// Check if CONFIGURE_MCE_IMPORT is set to true and create AddOnDeploymentConfig if needed
+	if err := aCtrl.createMCEImportConfig(ctx); err != nil {
+		log.Error(err, "failed to create MCE import configuration")
+		// This is not critical for agent startup, so we don't fail the startup
 	}
 
 	addonStatusController := &AddonStatusController{
@@ -853,6 +861,168 @@ func isVersionHistoryStateFound(history []configv1.UpdateHistory, state configv1
 		}
 	}
 	return false
+}
+
+// createMCEImportConfig creates the AddOnDeploymentConfig for MCE import configuration
+// if the CONFIGURE_MCE_IMPORT environment variable is set to true and ACM is not installed
+func (c *agentController) createMCEImportConfig(ctx context.Context) error {
+	configureMCEImport := strings.EqualFold(os.Getenv("CONFIGURE_MCE_IMPORT"), "true")
+	if !configureMCEImport {
+		c.log.Info("CONFIGURE_MCE_IMPORT is not set to true, skipping MCE import configuration")
+		return nil
+	}
+
+	// Check if ACM is installed - skip if it is, as discovery config controller will handle it
+	acmInstalled, err := c.isACMInstalled(ctx)
+	if err != nil {
+		c.log.Error(err, "failed to check ACM installation status")
+		return fmt.Errorf("failed to check ACM installation status: %w", err)
+	}
+
+	if acmInstalled {
+		c.log.Info("ACM is installed, skipping MCE import configuration (will be handled by discovery config controller)")
+		return nil
+	}
+
+	c.log.Info("CONFIGURE_MCE_IMPORT is set to true and ACM is not installed, creating AddOnDeploymentConfig for MCE import")
+
+	addonConfig := &addonv1alpha1.AddOnDeploymentConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "disable-sync-labels-to-clusterclaims",
+			Namespace: "multicluster-engine",
+		},
+		Spec: addonv1alpha1.AddOnDeploymentConfigSpec{
+			CustomizedVariables: []addonv1alpha1.CustomizedVariable{
+				{
+					Name:  "enableSyncLabelsToClusterClaims",
+					Value: "false",
+				},
+			},
+		},
+	}
+
+	// Use CreateOrUpdate to handle both creation and updates
+	_, err = controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, addonConfig, func() error {
+		// Ensure the spec is always set correctly
+		addonConfig.Spec.CustomizedVariables = []addonv1alpha1.CustomizedVariable{
+			{
+				Name:  "enableSyncLabelsToClusterClaims",
+				Value: "false",
+			},
+		}
+		return nil
+	})
+
+	if err != nil {
+		c.log.Error(err, "failed to create or update AddOnDeploymentConfig for MCE import")
+		return fmt.Errorf("failed to create or update AddOnDeploymentConfig for MCE import: %w", err)
+	}
+
+	c.log.Info("successfully created or updated AddOnDeploymentConfig for MCE import",
+		"name", addonConfig.Name, "namespace", addonConfig.Namespace)
+
+	// Update work-manager ClusterManagementAddOn to reference the disable-sync-labels-to-clusterclaims config
+	err = c.updateWorkManagerClusterManagementAddOn(ctx)
+	if err != nil {
+		c.log.Error(err, "failed to update work-manager ClusterManagementAddOn")
+		return fmt.Errorf("failed to update work-manager ClusterManagementAddOn: %w", err)
+	}
+
+	return nil
+}
+
+// updateWorkManagerClusterManagementAddOn updates the work-manager ClusterManagementAddOn to reference disable-sync-labels-to-clusterclaims config
+func (c *agentController) updateWorkManagerClusterManagementAddOn(ctx context.Context) error {
+	addonName := "work-manager"
+
+	// Get the ClusterManagementAddOn
+	addon := &addonv1alpha1.ClusterManagementAddOn{}
+	err := c.spokeUncachedClient.Get(ctx, client.ObjectKey{Name: addonName}, addon)
+	if err != nil {
+		if apierrors.IsNotFound(err) {
+			c.log.Info("ClusterManagementAddOn not found, skipping update", "addon", addonName)
+			return nil
+		}
+		return err
+	}
+
+	// Check if the config is already present
+	configExists := false
+	for _, placement := range addon.Spec.InstallStrategy.Placements {
+		if placement.PlacementRef.Name == "global" && placement.PlacementRef.Namespace == "open-cluster-management-global-set" {
+			for _, config := range placement.Configs {
+				if config.ConfigGroupResource.Group == "addon.open-cluster-management.io" &&
+					config.ConfigGroupResource.Resource == "addondeploymentconfigs" &&
+					config.ConfigReferent.Name == "disable-sync-labels-to-clusterclaims" &&
+					config.ConfigReferent.Namespace == "multicluster-engine" {
+					configExists = true
+					break
+				}
+			}
+			break
+		}
+	}
+
+	if configExists {
+		c.log.V(1).Info("ClusterManagementAddOn already has disable-sync-labels-to-clusterclaims config reference", "addon", addonName)
+		return nil
+	}
+
+	// Add the config reference to the global placement
+	for i, placement := range addon.Spec.InstallStrategy.Placements {
+		if placement.PlacementRef.Name == "global" && placement.PlacementRef.Namespace == "open-cluster-management-global-set" {
+			newConfig := addonv1alpha1.AddOnConfig{
+				ConfigGroupResource: addonv1alpha1.ConfigGroupResource{
+					Group:    "addon.open-cluster-management.io",
+					Resource: "addondeploymentconfigs",
+				},
+				ConfigReferent: addonv1alpha1.ConfigReferent{
+					Name:      "disable-sync-labels-to-clusterclaims",
+					Namespace: "multicluster-engine",
+				},
+			}
+			addon.Spec.InstallStrategy.Placements[i].Configs = append(
+				addon.Spec.InstallStrategy.Placements[i].Configs,
+				newConfig,
+			)
+			break
+		}
+	}
+
+	c.log.Info("Updating ClusterManagementAddOn to reference disable-sync-labels-to-clusterclaims config", "addon", addonName)
+	return c.spokeUncachedClient.Update(ctx, addon)
+}
+
+// isACMInstalled checks if ACM is installed by looking for advanced-cluster-management CSV
+func (c *agentController) isACMInstalled(ctx context.Context) (bool, error) {
+	// Check for ACM ClusterServiceVersion directly (avoid namespace permission issues)
+	csvList := &operatorsv1alpha1.ClusterServiceVersionList{}
+	err := c.spokeUncachedClient.List(ctx, csvList)
+	if err != nil {
+		// If CSV CRD doesn't exist (non-OpenShift cluster), assume ACM is installed
+		// since the hypershift addon is running, which implies cluster management is present
+		errMsg := err.Error()
+		if apierrors.IsNotFound(err) ||
+			strings.Contains(errMsg, "no matches for kind") ||
+			strings.Contains(errMsg, "no kind is registered for the type") ||
+			strings.Contains(errMsg, "ClusterServiceVersionList") {
+			c.log.V(1).Info("ClusterServiceVersion CRD not found (likely non-OpenShift cluster), assuming ACM is installed")
+			return true, nil
+		}
+		c.log.Error(err, "Failed to list ClusterServiceVersions")
+		return false, err
+	}
+
+	// Look for advanced-cluster-management CSV
+	for _, csv := range csvList.Items {
+		if strings.HasPrefix(csv.Name, "advanced-cluster-management") {
+			c.log.V(1).Info("Found ACM installation", "csv", csv.Name, "namespace", csv.Namespace)
+			return true, nil
+		}
+	}
+
+	c.log.V(1).Info("ACM ClusterServiceVersion not found")
+	return false, nil
 }
 
 func (c *agentController) SetHCPSizingBaseline(ctx context.Context) {

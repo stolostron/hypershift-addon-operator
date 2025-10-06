@@ -2,6 +2,20 @@
 
 This guide explains how to integrate MultiCluster Engine (MCE) hosting clusters with Red Hat Advanced Cluster Management (ACM) to automatically discover and manage hosted clusters at scale.
 
+## Quick Start
+
+For experienced users who want to get started immediately:
+
+1. **Configure ACM Hub**: Update HyperShift addon deployment config with `configureMceImport: "true"`
+2. **Import MCE Clusters**: Create `ManagedCluster` resources with proper annotations
+3. **Enable HyperShift Addon**: Run `clusteradm addon enable --names hypershift-addon --clusters <MCE_CLUSTERS>`
+4. **Configure Auto-Import**: Apply the auto-import policy to automatically discover hosted clusters
+5. **Verify**: Check that hosted clusters appear as `DiscoveredCluster` resources and get imported as managed clusters
+
+**Estimated Time**: 60-90 minutes for complete setup
+
+For detailed step-by-step instructions, continue reading below.
+
 ## Overview
 
 When you have MCE clusters hosting multiple hosted clusters, you can import these MCE clusters into an ACM hub to leverage ACM's comprehensive management capabilities, including application management and security policies. This integration enables automatic discovery and import of hosted clusters as managed clusters.
@@ -23,7 +37,7 @@ The **ACM Hub Cluster** serves as the central management plane and provides:
 
 - **Hosted Cluster Discovery and Management**:
   - Automatically discovers hosted clusters from MCE hosting clusters
-  - Creates `DiscoveredCluster` CRs when hosted cluster API server become available
+  - Creates `DiscoveredCluster` CRs when hosted cluster API servers become available
   - Enables auto-import of discovered hosted clusters as managed clusters
   - Provides centralized visibility and policy enforcement across all hosted clusters
 
@@ -68,173 +82,70 @@ The **ACM Hub Cluster** serves as the central management plane and provides:
 
 Before beginning the integration process, ensure you have:
 
+### Software Requirements
+
+- **Red Hat Advanced Cluster Management (ACM)**: Version 2.15 or later
+- **MultiCluster Engine (MCE)**: Version 2.10 or later
+- **HyperShift**: Compatible version installed on MCE clusters
+
+### Access and Tools
+
 - Access to both ACM hub and MCE clusters with cluster-admin privileges
-- `oc` CLI tool installed and configured
-- `clusteradm` CLI tool installed
+- `oc` CLI tool installed and configured (version 4.14+)
+- `clusteradm` CLI tool installed (latest version recommended)
 - Network connectivity between ACM hub and MCE clusters
 
 ## Step 1: Prepare ACM Hub for MCE Integration
 
-### Configure Addon Deployment Namespace
+### Configure ACM to import MCE clusters
 
 MCE clusters have a self-managed cluster called `local-cluster` with default addons enabled. To avoid conflicts, ACM addons must be installed in a separate namespace.
 
-First, verify the current addon state on your MCE cluster:
+In the ACM hub cluster, update the HyperShift addon deployment configuration to configure ACM addons so that they get installed in `open-cluster-management-agent-addon-discovery` namespace. 
 
 ```bash
-oc get managedclusteraddon -n local-cluster
+oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=merge -p '{"spec":{"customizedVariables":[{"name":"configureMceImport","value":"true"}]}}'
 ```
 
-Expected output:
-```
-NAME                     AVAILABLE   DEGRADED   PROGRESSING
-cluster-proxy            True                   False
-hypershift-addon         True        False      False
-managed-serviceaccount   True                   False
-work-manager             True                   False
-```
+#### Understanding configureMceImport
 
-### Create Addon Deployment Configuration
+The `configureMceImport` variable controls how ACM addons are deployed when importing MCE clusters:
 
-On the ACM hub cluster, create an `AddOnDeploymentConfig` to specify an alternative installation namespace:
+- **`configureMceImport: "true"`** (Required for MCE integration):
+  - ACM addons install in the `open-cluster-management-agent-addon-discovery` namespace
+  - Prevents conflicts with MCE's self-managed `local-cluster` addons
+  - Enables proper isolation between ACM management and MCE operations
 
-```yaml
-cat <<EOF | oc apply -f -
-apiVersion: addon.open-cluster-management.io/v1alpha1
-kind: AddOnDeploymentConfig
-metadata:
-  name: addon-ns-config
-  namespace: multicluster-engine
-spec:
-  agentInstallNamespace: open-cluster-management-agent-addon-discovery
-EOF
-```
+- **`configureMceImport: "false"` or unset** (Default behavior):
+  - ACM addons install in the standard `open-cluster-management-agent-addon` namespace
+  - Suitable for regular managed clusters that are not MCE hosting clusters
+  - Will cause conflicts if used with MCE clusters due to namespace collisions
 
-### Update ClusterManagementAddOn Resources
+#### ⚠️ Changing configureMceImport from true to false
 
-Update each addon to reference the new deployment configuration:
+If you need to change `configureMceImport` from `true` to `false` (e.g., converting an MCE cluster to a regular managed cluster), follow this checklist:
 
-#### Work Manager Addon
+**Pre-Change Steps:**
+- [ ] Detach all discovered hosted clusters from ACM management
+- [ ] Disable HyperShift addon for the target cluster: `clusteradm addon disable --names hypershift-addon --clusters <cluster-name>`
 
-```yaml
-cat <<EOF | oc apply -f -
-apiVersion: addon.open-cluster-management.io/v1alpha1
-kind: ClusterManagementAddOn
-metadata:
-  name: work-manager
-spec:
-  addOnMeta:
-    displayName: work-manager
-  installStrategy:
-    placements:
-    - name: global
-      namespace: open-cluster-management-global-set
-      rolloutStrategy:
-        type: All
-      configs:
-      - group: addon.open-cluster-management.io
-        name: addon-ns-config
-        namespace: multicluster-engine
-        resource: addondeploymentconfigs
-    type: Placements
-EOF
-```
+**Configuration Change:**
+- [ ] Update the configuration: `oc patch addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine --type=merge -p '{"spec":{"customizedVariables":[{"name":"configureMceImport","value":"false"}]}}'`
+- [ ] Wait for the configuration to propagate (5-10 minutes)
 
-#### Managed Service Account Addon
+**Post-Change Steps:**
+- [ ] Clean up resources in `open-cluster-management-agent-addon-discovery` namespace on the target cluster
+- [ ] Verify addons are now installing in `open-cluster-management-agent-addon` namespace
+- [ ] Re-enable required addons for regular managed cluster operation
+- [ ] Test cluster management functionality through ACM console
 
-```yaml
-cat <<EOF | oc apply -f -
-apiVersion: addon.open-cluster-management.io/v1alpha1
-kind: ClusterManagementAddOn
-metadata:
-  name: managed-serviceaccount
-spec:
-  addOnMeta:
-    displayName: managed-serviceaccount
-  installStrategy:
-    placements:
-    - name: global
-      namespace: open-cluster-management-global-set
-      rolloutStrategy:
-        type: All
-      configs:
-      - group: addon.open-cluster-management.io
-        name: addon-ns-config
-        namespace: multicluster-engine
-        resource: addondeploymentconfigs
-    type: Placements
-EOF
-```
+**Verification:**
+- [ ] Confirm no resource conflicts in addon namespaces
+- [ ] Verify cluster appears healthy in ACM console
+- [ ] Test policy and application deployment to the cluster
+- [ ] Ensure no error messages in klusterlet logs
 
-#### Cluster Proxy Addon
-
-```yaml
-cat <<EOF | oc apply -f -
-apiVersion: addon.open-cluster-management.io/v1alpha1
-kind: ClusterManagementAddOn
-metadata:
-  name: cluster-proxy
-spec:
-  addOnMeta:
-    displayName: cluster-proxy
-  installStrategy:
-    placements:
-    - name: global
-      namespace: open-cluster-management-global-set
-      rolloutStrategy:
-        type: All
-      configs:
-      - group: addon.open-cluster-management.io
-        name: addon-ns-config
-        namespace: multicluster-engine
-        resource: addondeploymentconfigs
-    type: Placements
-EOF
-```
-
-#### Application Manager Addon
-
-```yaml
-cat <<EOF | oc apply -f -
-apiVersion: addon.open-cluster-management.io/v1alpha1
-kind: ClusterManagementAddOn
-metadata:
-  name: application-manager
-spec:
-  addOnMeta:
-    displayName: application-manager
-  installStrategy:
-    placements:
-    - name: global
-      namespace: open-cluster-management-global-set
-      rolloutStrategy:
-        type: All
-      configs:
-      - group: addon.open-cluster-management.io
-        name: addon-ns-config
-        namespace: multicluster-engine
-        resource: addondeploymentconfigs
-    type: Placements
-EOF 
-```
-
-### Create Klusterlet Configuration
-
-Create a `KlusterletConfig` to ensure ACM's klusterlet installs in a separate namespace from MCE's local-cluster klusterlet:
-
-```yaml
-cat <<EOF | oc apply -f -
-apiVersion: config.open-cluster-management.io/v1alpha1
-kind: KlusterletConfig
-metadata:
-  name: mce-import-klusterlet-config
-spec:
-  installMode:
-    type: noOperator
-    noOperator:
-      postfix: mce-import
-EOF
-```
+**⚠️ Warning:** This change is disruptive and should only be performed during maintenance windows. The cluster will temporarily lose ACM management capabilities during the transition.
 
 ### Verify Configuration
 
@@ -253,13 +164,29 @@ klusterlet-addon-workmgr-55fd575b4b-rs5vz             1/1     Running   0       
 managed-serviceaccount-addon-agent-54bd989b94-g6gz9   1/1     Running   0          5d18h
 ```
 
+Check the status of the configuration:
+
+```bash
+oc get configmap hypershift-addon-deploy-config-info -n multicluster-engine -o yaml
+```
+
+### ✅ Step 1 Verification Checklist
+
+Before proceeding to Step 2, verify:
+
+- [ ] HyperShift addon deployment configuration is updated with `configureMceImport: "true"`
+- [ ] Addons are deployed in `open-cluster-management-agent-addon-discovery` namespace
+- [ ] Configuration status shows the updated settings in the configmap
+
 ## Step 2: Import MCE Clusters into ACM
 
 Before you import an MCE cluster into ACM, make sure the MCE cluster is not managed by any other ACM. For example, if you provisioned the MCE cluster from ACM, the MCE cluster is automatically imported into and managed by the ACM hub cluster. You must detach this MCE cluster before moving on.
 
 ### Create ManagedCluster Resource
 
-Create a `ManagedCluster` resource for each MCE cluster you want to import:
+Create a `ManagedCluster` resource for each MCE cluster you want to import.
+
+**Example**: For an MCE cluster named `mce-hosting-east`:
 
 ```yaml
 cat <<EOF | oc apply -f -
@@ -271,14 +198,17 @@ metadata:
   labels:
     cloud: auto-detect
     vendor: auto-detect
-  name: mce-a  # Replace with your MCE cluster name
+  name: mce-hosting-east  # Replace with your actual MCE cluster name
 spec:
   hubAcceptsClient: true
   leaseDurationSeconds: 60
 EOF
 ```
 
-**Important**: The annotation `agent.open-cluster-management.io/klusterlet-config: mce-import-klusterlet-config` ensures the klusterlet installs in the correct namespace.
+**Important Notes**:
+- Replace `mce-hosting-east` with your actual MCE cluster name
+- The annotation `agent.open-cluster-management.io/klusterlet-config: mce-import-klusterlet-config` ensures the klusterlet installs in the correct namespace
+- Use descriptive names that indicate the cluster's purpose (e.g., `mce-hosting-west`, `mce-prod-1`)
 
 ### Enable ACM Addons (Optional)
 
@@ -291,8 +221,8 @@ cat <<EOF | oc apply -f -
 apiVersion: agent.open-cluster-management.io/v1
 kind: KlusterletAddonConfig
 metadata:
-  name: mce-a  # Replace with your MCE cluster name
-  namespace: mce-a  # Replace with your MCE cluster name
+  name: mce-hosting-east  # Must match your ManagedCluster name
+  namespace: mce-hosting-east  # Must match your ManagedCluster name
 spec:
   applicationManager:
     enabled: true
@@ -305,11 +235,31 @@ spec:
 EOF
 ```
 
-**Note**: Replace `mce-a` with the actual name of your MCE cluster. This should match the name used in the `ManagedCluster` resource above.
+**Note**: Replace `mce-hosting-east` with the actual name of your MCE cluster. This must exactly match the name used in the `ManagedCluster` resource above.
 
 ### Complete Auto-Import Process
 
+#### Option 1
+
 Follow the [official ACM documentation](https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.10/html-single/clusters/index#importing-clusters-auto-import-secret) to create the auto-import secret.
+
+#### Option 2: Manual Import
+
+In the ACM hub, extract the import manifest for your MCE cluster:
+
+```bash
+# Replace mce-hosting-east with your actual MCE cluster name
+oc get secret mce-hosting-east-import -n mce-hosting-east -o jsonpath={.data.import\\.yaml} | base64 --decode > import.yaml
+```
+
+Then apply the import.yaml to the MCE cluster:
+
+```bash
+# On the MCE cluster, apply the import manifest
+oc apply -f import.yaml
+```
+
+#### Verification
 
 After successful import, verify the cluster status:
 
@@ -319,34 +269,25 @@ oc get managedcluster
 
 Expected output:
 ```
-NAME            HUB ACCEPTED   MANAGED CLUSTER URLS                                         JOINED   AVAILABLE   AGE
-local-cluster   true           https://api.acm-hub.example.com:6443                        True     True        44h
-mce-a           true           https://api.mce-a.example.com:6443                          True     True        27s
+NAME               HUB ACCEPTED   MANAGED CLUSTER URLS                                         JOINED   AVAILABLE   AGE
+local-cluster      true           https://api.acm-hub.example.com:6443                        True     True        44h
+mce-hosting-east   true           https://api.mce-hosting-east.example.com:6443               True     True        27s
 ```
+
+### ✅ Step 2 Verification Checklist
+
+Before proceeding to Step 3, verify:
+
+- [ ] MCE cluster appears in `oc get managedcluster` with `JOINED=True` and `AVAILABLE=True`
+- [ ] Klusterlet is running in the correct namespace on the MCE cluster
+- [ ] No conflicts with existing cluster management (if applicable)
+- [ ] Network connectivity is established between ACM hub and MCE cluster
 
 **⚠️ Important**: Do not enable other ACM addons for imported MCE clusters beyond the required ones.
 
 ## Step 3: Enable HyperShift Addon for MCE Clusters
 
 ### Configure HyperShift Addon Deployment
-
-Update the HyperShift addon deployment configuration:
-
-```bash
-# Set installation namespace
-oc patch addondeploymentconfig hypershift-addon-deploy-config \
-  -n multicluster-engine \
-  --type=merge \
-  -p '{"spec":{"agentInstallNamespace":"open-cluster-management-agent-addon-discovery"}}'
-
-# Configure addon variables
-oc patch addondeploymentconfig hypershift-addon-deploy-config \
-  -n multicluster-engine \
-  --type=merge \
-  -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value":"true"},{"name":"disableHOManagement","value":"true"}]}}'
-```
-
-### Enable Addon for MCE Clusters
 
 Enable the HyperShift addon for your imported MCE clusters:
 
@@ -375,6 +316,15 @@ hypershift-addon-agent               1/1     1            1           24h
 klusterlet-addon-workmgr             1/1     1            1           24h
 managed-serviceaccount-addon-agent   1/1     1            1           24h
 ```
+
+### ✅ Step 3 Verification Checklist
+
+Before proceeding to Step 4, verify:
+
+- [ ] HyperShift addon is enabled for all target MCE clusters
+- [ ] `hypershift-addon-agent` deployment is running on each MCE cluster
+- [ ] Addon status shows as healthy in ACM console
+- [ ] No error messages in addon agent logs
 
 ## Step 4: Discover Hosted Clusters
 
@@ -406,13 +356,13 @@ To customize the naming:
 oc patch addondeploymentconfig hypershift-addon-deploy-config \
   -n multicluster-engine \
   --type=merge \
-  -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value":"true"},{"name":"disableHOManagement","value":"true"},{"name":"discoveryPrefix","value":""}]}}'
+  -p '{"spec":{"customizedVariables":[{"name":"discoveryPrefix","value":""}]}}'
 
 # Use custom prefix
 oc patch addondeploymentconfig hypershift-addon-deploy-config \
   -n multicluster-engine \
   --type=merge \
-  -p '{"spec":{"customizedVariables":[{"name":"disableMetrics","value":"true"},{"name":"disableHOManagement","value":"true"},{"name":"discoveryPrefix","value":"custom-prefix"}]}}'
+  -p '{"spec":{"customizedVariables":[{"name":"discoveryPrefix","value":"custom-prefix"}]}}'
 ```
 
 **Important**: Using an empty string as the custom prefix is not recommended as it can cause klusterlet naming collisions within the MCE cluster. If you need to remove the discovery prefix entirely, ensure all hosted clusters are first detached from their respective MCE clusters and run the following command to disable the auto-import.
@@ -574,6 +524,16 @@ oc get managedcluster
 
 ![Auto-Imported Clusters](./images/discovery3.png)
 
+### ✅ Step 5 Verification Checklist
+
+After configuring auto-import, verify:
+
+- [ ] Auto-import policy is created and compliant
+- [ ] `DiscoveredCluster` resources are created for hosted clusters
+- [ ] Hosted clusters appear as managed clusters in ACM
+- [ ] All required addons are installed on imported hosted clusters
+- [ ] Policy compliance shows no violations
+
 ## Lifecycle Management
 
 ### Hosted Cluster Management
@@ -693,27 +653,103 @@ For comprehensive guidance, refer to the [ACM backup and restore documentation](
 
 ## Troubleshooting
 
-### Common Issues
+### Common Issues and Solutions
 
-1. **Addon Installation Failures**: Verify namespace configurations and klusterlet config references
-2. **Discovery Not Working**: Check HyperShift addon deployment and network connectivity
-3. **Import Failures**: Verify auto-import policy syntax and ConfigMap filters
-4. **Naming Conflicts**: Review and adjust discovery prefix configuration
+#### 1. Addon Installation Failures
 
-### Verification Commands
+**Symptoms**: HyperShift addon fails to install or shows error status
 
+**Troubleshooting Steps**:
 ```bash
 # Check addon status
+oc get managedclusteraddon hypershift-addon -n <mce-cluster-name>
+
+# Check klusterlet configuration
+oc get klusterletaddonconfig -n <mce-cluster-name>
+
+# Verify namespace configuration
+oc get deployment -n open-cluster-management-agent-addon-discovery
+```
+
+**Common Causes**:
+- Incorrect klusterlet config annotation
+- Namespace conflicts with existing addons
+- Network connectivity issues
+
+#### 2. Discovery Not Working
+
+**Symptoms**: Hosted clusters not appearing as `DiscoveredCluster` resources
+
+**Troubleshooting Steps**:
+```bash
+# Check HyperShift addon agent logs
+oc logs deployment/hypershift-addon-agent -n open-cluster-management-agent-addon-discovery
+
+# Verify hosted clusters exist in MCE
+oc get hostedcluster --all-namespaces
+
+# Check addon deployment configuration
+oc get addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine -o yaml
+```
+
+**Common Causes**:
+- HyperShift addon not properly configured
+- Network connectivity issues between ACM and MCE
+- Hosted clusters not in "Available" state
+
+#### 3. Auto-Import Policy Issues
+
+**Symptoms**: Discovered clusters not being automatically imported
+
+**Troubleshooting Steps**:
+```bash
+# Check policy status
+oc get policy policy-mce-hcp-autoimport -n open-cluster-management-global-set
+
+# Verify policy compliance
+oc describe policy policy-mce-hcp-autoimport -n open-cluster-management-global-set
+
+# Check ConfigMap filter
+oc get configmap discovery-config -n open-cluster-management-global-set -o yaml
+```
+
+**Common Causes**:
+- Policy syntax errors
+- Incorrect ConfigMap filter configuration
+- Previously imported annotation blocking re-import
+
+#### 4. Naming Conflicts
+
+**Symptoms**: Klusterlet installation failures due to naming collisions
+
+**Troubleshooting Steps**:
+```bash
+# Check for existing klusterlets
+oc get klusterlet --all-namespaces
+
+# Review discovery prefix configuration
+oc get addondeploymentconfig hypershift-addon-deploy-config -n multicluster-engine -o jsonpath='{.spec.customizedVariables}'
+```
+
+**Solutions**:
+- Configure appropriate discovery prefix
+- Ensure unique cluster names
+- Clean up conflicting resources
+
+### Diagnostic Commands
+
+```bash
+# Complete system status check
+oc get managedcluster
 oc get managedclusteraddon --all-namespaces
-
-# Verify discovery agent
-oc get deployment hypershift-addon-agent -n open-cluster-management-agent-addon-discovery
-
-# Check discovered clusters
 oc get discoveredcluster --all-namespaces
-
-# Monitor policy compliance
 oc get policy -n open-cluster-management-global-set
+
+# Detailed addon status
+oc describe managedclusteraddon hypershift-addon -n <mce-cluster-name>
+
+# Check agent logs
+oc logs deployment/hypershift-addon-agent -n open-cluster-management-agent-addon-discovery --tail=50
 ```
 
 ## Best Practices
