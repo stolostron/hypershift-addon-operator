@@ -7,7 +7,7 @@ IMG ?= $(REPO)hypershift-addon-operator:latest
 IMG_CANARY ?= $(REPO)hypershift-addon-operator-canary-test:latest
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.28.3
+ENVTEST_K8S_VERSION = 1.24.5
 
 KUBECTL?=kubectl
 
@@ -59,8 +59,7 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: fmt vet envtest ## Run tests.
-	@mkdir -p $(PROJECT_DIR)/testbin
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path --bin-dir $(PROJECT_DIR)/testbin 2>/dev/null || echo "")" go test $(shell go list ./... | grep -v /test/e2e) -coverprofile cover.out
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test $(shell go list ./... | grep -v /test/e2e) -coverprofile cover.out
 
 ##@ Build
 .PHONY: vendor
