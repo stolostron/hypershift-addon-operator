@@ -24,7 +24,8 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift-addon .
 
 LABEL com.redhat.component="multicluster-engine-hypershift-addon-operator-container" \
-      name="multicluster-engine/hypershift-addon-operator" \
+      name="multicluster-engine/hypershift-addon-rhel9-operator" \
+      cpe="cpe:/a:redhat:multicluster_engine:2.9::el9" \
       version="2.9" \
       summary="multicluster-engine-hypershift-addon-operator" \
       io.openshift.tags="data,images" \
