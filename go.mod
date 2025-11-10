@@ -1,6 +1,6 @@
 module github.com/stolostron/hypershift-addon-operator
 
-go 1.24.0
+go 1.24.6
 
 toolchain go1.24.9
 
