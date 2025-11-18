@@ -1048,10 +1048,16 @@ func (c *agentController) SyncAddOnPlacementScore(ctx context.Context, startup b
 			metrics.PlacementScoreFailureCount.Inc()
 			return err
 		}
+		// Cap the score at 100 since AddOnPlacementScore API validates that scores must be <= 100
+		scoreValue := hcCountValue
+		if scoreValue > 100 {
+			c.log.Info(fmt.Sprintf("Hosted cluster count (%d) exceeds placement score maximum (100), capping score at 100", hcCountValue))
+			scoreValue = 100
+		}
 		scores := []clusterv1alpha1.AddOnPlacementScoreItem{
 			{
 				Name:  util.HostedClusterScoresScoreName,
-				Value: hcCountValue,
+				Value: scoreValue,
 			},
 		}
 
