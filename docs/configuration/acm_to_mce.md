@@ -41,6 +41,8 @@ Prevent MCE from managing the HyperShift operator during the conversion:
 oc annotate deployment operator -n hypershift hypershift.open-cluster-management.io/not-by-mce="true"
 ```
 
+> **Note**: For more details about this annotation and how it works, see [Disabling HyperShift Operator Management](./disable_hypershift_operator_management.md).
+
 ### Step 2: Disable HyperShift Local Hosting Component
 
 Edit the MCE configuration to disable local hosting:

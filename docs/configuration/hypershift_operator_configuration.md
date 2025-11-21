@@ -2,6 +2,8 @@
 
 Hypershift operator installation flags.
 
+> **Note**: By default, the hypershift addon agent automatically manages the lifecycle (installation, upgrades) of the HyperShift operator. If you want to disable this automatic management, see [Disabling HyperShift Operator Management](./disable_hypershift_operator_management.md).
+
 ```
 Flags:
       --additional-trust-bundle string                 Path to a file with user CA bundle
