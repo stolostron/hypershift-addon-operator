@@ -21,6 +21,7 @@ Guides for planning and provisioning HyperShift hosted clusters.
 Configuration guides for setting up HyperShift components and cloud providers.
 
 - **[HyperShift Operator Configuration](./configuration/hypershift_operator_configuration.md)** - Configure the HyperShift operator
+- **[Disable HyperShift Operator Management](./configuration/disable_hypershift_operator_management.md)** - Prevent automatic operator lifecycle management
 - **[AWS Cloud Provider Secret](./configuration/cloud_provider_secret_aws.md)** - Set up AWS credentials for hosted clusters
 - **[Creating AWS STS Roles](./configuration/creating_role_sts_aws.md)** - Configure AWS Security Token Service roles
 - **[ACM to MCE Migration](./configuration/acm_to_mce.md)** - Migrate from ACM to MCE setup

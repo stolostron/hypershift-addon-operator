@@ -4,6 +4,8 @@
 
 Without upgrading MCE or ACM, you can create configmap called `hypershift-override-images` in the managed (hosting) cluster namespace on the MCE or ACM hub cluster to upgrade the hypershift operator that was installed by the hypershift `ManagedClusterAddon` on that specific hosting cluster. The hypershift addon agent watches for changes in `hypershift-override-images` configmap and determines whether to upgrade the hypershift operator. This action should not have impact on other running hosted contol planes or the hypershift operator installed on other hosting clusters.
 
+> **Note**: If you want to completely disable automatic lifecycle management of the HyperShift operator, see [Disabling HyperShift Operator Management](../configuration/disable_hypershift_operator_management.md).
+
 This is a sample configmap YAML. In `data`, you do not have to specify all three images. Specify images you want to override.
 
 ```YAML
