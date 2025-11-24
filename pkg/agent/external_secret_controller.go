@@ -37,8 +37,9 @@ var ExternalSecretPredicateFunctions = predicate.Funcs{
 			return false
 		}
 
-		// Only for hosted cluster klusterlets
-		return newKlusterlet.Spec.DeployOption.Mode == operatorapiv1.InstallModeSingletonHosted
+		// Only for hosted cluster klusterlets (both SingletonHosted and Hosted modes)
+		return newKlusterlet.Spec.DeployOption.Mode == operatorapiv1.InstallModeSingletonHosted ||
+			newKlusterlet.Spec.DeployOption.Mode == operatorapiv1.InstallModeHosted
 	},
 	UpdateFunc: func(e event.UpdateEvent) bool {
 		return false
