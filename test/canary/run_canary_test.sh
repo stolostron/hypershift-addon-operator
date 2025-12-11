@@ -3,9 +3,8 @@
 # This script is run on the AWS hub cluster
 
 # If the cluster is not AWS then exit gracefully and report success
-# TODO ACM-3290 to support all platforms
 CLOUD_LABEL=$(kubectl get managedcluster local-cluster -o jsonpath='{.metadata.labels.cloud}')
-if [ "$CLOUD_LABEL" != "Amazon" ]; then
+if [[ "$CLOUD_LABEL" != "Amazon" ]]; then
     echo "Skipping test execution. The local-cluster managedcluster does not have a cloud label with the value: Amazon"
     cp /hypershift-success.xml /results
     exit 0
@@ -39,63 +38,63 @@ fi
 # Default the result to failed until it's successful.
 cp /hypershift-failed.xml /results
 
-if [ -z ${OCP_RELEASE_IMAGE+x} ]; then
+if [[ -z ${OCP_RELEASE_IMAGE+x} ]]; then
   echo "OCP_RELEASE_IMAGE is not defined"
   exit 1
 fi
 
-if [ -z ${HUB_OCP_VERSION+x} ]; then
+if [[ -z ${HUB_OCP_VERSION+x} ]]; then
   echo "HUB_OCP_VERSION is not defined"
   exit 1
 fi
 
-if [ -z ${UNSUPPORTED_OCP_VERSION+x} ]; then
+if [[ -z ${UNSUPPORTED_OCP_VERSION+x} ]]; then
   echo "UNSUPPORTED_OCP_VERSION is not defined"
   exit 1
 fi
 
-if [ -z ${OCP_PULL_SECRET+x} ]; then
+if [[ -z ${OCP_PULL_SECRET+x} ]]; then
   echo "OCP_PULL_SECRET is not defined"
   exit 1
 fi
 
-if [ -z ${HOSTING_CLUSTER_NAME+x} ]; then
+if [[ -z ${HOSTING_CLUSTER_NAME+x} ]]; then
   echo "HOSTING_CLUSTER_NAME is not defined"
   exit 1
 fi
 
-if [ -z ${REGION+x} ]; then
+if [[ -z ${REGION+x} ]]; then
   echo "REGION is not defined"
   exit 1
 fi
 
-if [ -z ${BASE_DOMAIN+x} ]; then
+if [[ -z ${BASE_DOMAIN+x} ]]; then
   echo "BASE_DOMAIN is not defined"
   exit 1
 fi
 
-if [ -z ${EXT_DNS_DOMAIN+x} ]; then
+if [[ -z ${EXT_DNS_DOMAIN+x} ]]; then
   echo "EXT_DNS_DOMAIN is not defined"
   exit 1
 fi
 
-if [ -z ${S3_BUCKET_NAME+x} ]; then
+if [[ -z ${S3_BUCKET_NAME+x} ]]; then
   echo "S3_BUCKET_NAME is not defined"
   exit 1
 fi
 
-if [ -z ${CLUSTER_NAME_PREFIX+x} ]; then
+if [[ -z ${CLUSTER_NAME_PREFIX+x} ]]; then
   echo "CLUSTER_NAME_PREFIX is not defined"
   exit 1
 fi
 
-if [ -z ${AWS_ACCESS_KEY_ID+x} ]; then
+if [[ -z ${AWS_ACCESS_KEY_ID+x} ]]; then
   echo "AWS_ACCESS_KEY_ID is not defined"
   exit 1
 fi
 
 
-if [ -z ${AWS_SECRET_ACCESS_KEY+x} ]; then
+if [[ -z ${AWS_SECRET_ACCESS_KEY+x} ]]; then
   echo "AWS_SECRET_ACCESS_KEY is not defined"
   exit 1
 fi
@@ -123,7 +122,7 @@ AWS_CREDS_FILE=~/.aws/credentials
 
 # Create ssh keys
 ssh-keygen -t rsa -b 4096 -f ssh-privatekey -q -N ""
-if [ $? -ne 0 ]; then
+if [[ $? -ne 0 ]]; then
   echo "failed to generate ssh keys"
   exit 1
 fi
@@ -155,7 +154,7 @@ IAM_OUTPUT_FILE_2=${CLUSTER_NAME_2}-iam
 
 # Generate the kubeconfig file of the hub cluster
 HUB_KUBECONFIG="kubeconfig.hub"
-if [ "${ENABLE_FOUNDATION_CANARY}" == "true" ]; then
+if [[ "${ENABLE_FOUNDATION_CANARY}" == "true" ]]; then
     ${KUBECTL_COMMAND} config view --flatten --minify > ./${HUB_KUBECONFIG}
 fi
 
@@ -196,7 +195,7 @@ createHostedCluster() {
 
     # Create AWS infrastructure
     ${HYPERSHIFT_COMMAND} create infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain ${vars[BASE_DOMAIN]} --infra-id ${vars[INFRA_ID]} --name ${vars[CLUSTER_NAME]} --region ${vars[REGION]} --output-file ${infraOutfile}
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "failed to crete infra"
         exit 1
     fi
@@ -216,7 +215,7 @@ createHostedCluster() {
 
     # Create AWS IAM
     ${HYPERSHIFT_COMMAND} create iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${vars[INFRA_ID]} --local-zone-id ${vars[LOCAL_ZONE_ID]} --private-zone-id ${vars[PRIVATE_ZONE_ID]} --public-zone-id ${vars[PUBLIC_ZONE_ID]} --output-file ${iamOutfile}
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) Failed to create IAM"
         echo "$(date) Destroying the AWS infrastructure"
         exit 1
@@ -235,7 +234,7 @@ createHostedCluster() {
 
     # Copy the template hostedcluster nodepool manifestwork YAML
     cp ./resources/hosted_cluster_manifestwork.yaml ./${vars[CLUSTER_NAME]}.yaml
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to copy hosted_cluster_manifestwork.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
         exit 1
@@ -243,7 +242,7 @@ createHostedCluster() {
 
     # Copy the template htpasswd manifestwork YAML
     cp ./resources/htpasswd.yaml ./${vars[CLUSTER_NAME]}-htpasswd.yaml
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to copy htpasswd.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
         exit 1
@@ -251,7 +250,7 @@ createHostedCluster() {
 
     # Copy the template managedcluster YAML
     cp ./resources/managedcluster.yaml ./${vars[CLUSTER_NAME]}-managedcluster.yaml
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to copy managedcluster.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
         exit 1
@@ -262,21 +261,21 @@ createHostedCluster() {
         do
             value=${vars[${key}]}
             sed -i -e "s|__${key}__|${value}|" ${vars[CLUSTER_NAME]}.yaml
-            if [ $? -ne 0 ]; then
+            if [[ $? -ne 0 ]]; then
                 echo "$(date) failed to substitue __${key}__ in ${vars[CLUSTER_NAME]}.yaml"
                 echo "$(date) Destroying the AWS infrastructure and IAM"
                 exit 1
             fi
 
             sed -i -e "s|__${key}__|${value}|" ${vars[CLUSTER_NAME]}-htpasswd.yaml
-            if [ $? -ne 0 ]; then
+            if [[ $? -ne 0 ]]; then
                 echo "$(date) failed to substitue __${key}__ in ${vars[CLUSTER_NAME]}-htpasswd.yaml"
                 echo "$(date) Destroying the AWS infrastructure and IAM"
                 exit 1
             fi
 
             sed -i -e "s|__${key}__|${value}|" ${vars[CLUSTER_NAME]}-managedcluster.yaml
-            if [ $? -ne 0 ]; then
+            if [[ $? -ne 0 ]]; then
                 echo "$(date) failed to substitue __${key}__ in ${vars[CLUSTER_NAME]}-managedcluster.yaml"
                 echo "$(date) Destroying the AWS infrastructure and IAM"
                 exit 1
@@ -285,21 +284,21 @@ createHostedCluster() {
 
     # Apply the managedcluster and manifestworks to get the hosted cluster created in the remote hosting cluster
     ${KUBECTL_COMMAND} apply -f ${vars[CLUSTER_NAME]}-managedcluster.yaml
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to apply ${vars[CLUSTER_NAME]}-managedcluster.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
         exit 1
     fi
 
     ${KUBECTL_COMMAND} apply -f ${vars[CLUSTER_NAME]}.yaml
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to apply ${vars[CLUSTER_NAME]}.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
         exit 1
     fi
 
     ${KUBECTL_COMMAND} apply -f ${vars[CLUSTER_NAME]}-htpasswd.yaml
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to apply ${vars[CLUSTER_NAME]}-htpasswd.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
         exit 1
@@ -311,7 +310,7 @@ deleteHostedCluster() {
     infraID=$2
 
     ${KUBECTL_COMMAND} delete -f ${clusterName}-managedcluster.yaml
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to delete -f ${clusterName}-managedcluster.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
         exit 1
@@ -322,14 +321,14 @@ deleteHostedCluster() {
 
     # Delete the manifestworks
     ${KUBECTL_COMMAND} delete -f ${clusterName}-htpasswd.yaml
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to delete -f ${clusterName}-htpasswd.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
         exit 1
     fi
 
     ${KUBECTL_COMMAND} delete -f ${clusterName}.yaml
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to delete -f ${clusterName}.yaml"
         echo "$(date) Destroying the AWS infrastructure and IAM"
         exit 1
@@ -374,7 +373,7 @@ verifyManifestWorkAPI() {
         --ginkgo.junit-report="${outputDir}/foundation-work-e2e-${clusterName}.xml" \
         -hub-kubeconfig=${hubKubeConfigFile} -webhook-deployment-name=cluster-manager-work-webhook \
         -cluster-name=${clusterName} -managed-kubeconfig=${managedKubeConfigFile} -eventually-timeout=180s
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to verify the ManifestWork API on cluster ${clusterName}"
         ${KUBECTL_COMMAND} get managedcluster ${clusterName} -o yaml
         processManifestWorkTestReport "${outputDir}/foundation-work-e2e-${clusterName}.xml"
@@ -387,14 +386,14 @@ verifyManifestWorkAPI() {
 processManifestWorkTestReport() {
     testReport=$1
 
-    if [ -e ${testReport} ]
+    if [[ -e ${testReport} ]]
     then
         #set the priority and severity of the test cases
         sed -i -e 's/\[It\]/Server Foundation: \[P2\]\[Sev2\]\[server-foundation\]/' \
             -e 's/"\[BeforeSuite\]"/"Server Foundation: \[P2\]\[Sev2\]\[server-foundation\] BeforeSuite"/' \
             -e 's/"\[AfterSuite\]"/"Server Foundation: \[P2\]\[Sev2\]\[server-foundation\] AfterSuite"/' \
             ${testReport}
-        if [ $? -ne 0 ]; then
+        if [[ $? -ne 0 ]]; then
             echo "$(date) failed to set the priority and severity of the test cases in ${testReport}"
             exit 1
         fi
@@ -410,9 +409,9 @@ verifyHostedCluster() {
     hostedClusterCompleted=false
     nodePoolReady=false
 
-    while [ ${FOUND} -eq 1 ]; do
+    while [[ ${FOUND} -eq 1 ]]; do
         # Wait up to 45 minutes, re-try every 30 seconds
-        if [ $SECONDS -gt 2700 ]; then
+        if [[ $SECONDS -gt 2700 ]]; then
             echo "$(date) Timeout waiting for a successful provisioning of hosted cluster."
             ${KUBECTL_COMMAND} get managedcluster ${infraId} -o yaml
             echo "$(date) Destroying the AWS infrastructure and IAM"
@@ -474,7 +473,7 @@ verifyHostedCluster() {
         (( SECONDS = SECONDS + 30 ))
     done
 
-    if [ "${ENABLE_FOUNDATION_CANARY}" == "true" ]; then
+    if [[ "${ENABLE_FOUNDATION_CANARY}" == "true" ]]; then
         # Verify ManifestWork API on the hosted cluster
         echo "$(date) ==== Verifying ManifestWork API on hosted cluster  ${infraId} ===="
         ${KUBECTL_COMMAND} -n ${HOSTING_CLUSTER_NAME} get secret "${infraId}-admin-kubeconfig" -o jsonpath={.data\.kubeconfig} | base64 -d > "kubeconfig.${infraId}"
@@ -489,16 +488,16 @@ waitForManagedClusterDelete() {
 
     resName=$1
 
-    while [ ${FOUND} -eq 1 ]; do
+    while [[ ${FOUND} -eq 1 ]]; do
         # Wait up to 30 minutes
-        if [ $SECONDS -gt 1800 ]; then
+        if [[ $SECONDS -gt 1800 ]]; then
             echo "$(date) Timed out waiting for managed cluster ${resName} to be deleted."
             ${KUBECTL_COMMAND} get managedcluster ${resName} -o yaml
             exit 1
         fi
 
         ${KUBECTL_COMMAND} get managedcluster ${resName}
-        if [ $? -eq 0 ]; then
+        if [[ $? -eq 0 ]]; then
             echo "$(date) managed cluster ${resName} still exists"
         else
             echo "$(date) managed cluster ${resName} not found"
@@ -517,16 +516,16 @@ waitForManifestworkDelete() {
     resNamespace=$1
     resName=$2
 
-    while [ ${FOUND} -eq 1 ]; do
+    while [[ ${FOUND} -eq 1 ]]; do
         # Wait up to 30 minutes
-        if [ $SECONDS -gt 1800 ]; then
+        if [[ $SECONDS -gt 1800 ]]; then
             echo "$(date) Timed out waiting for manifestwork ${resNamespace}/${resName} to be deleted."
             ${KUBECTL_COMMAND} get manifestwork ${resName} -n ${resNamespace} -o yaml
             exit 1
         fi
 
         ${KUBECTL_COMMAND} get manifestwork ${resName} -n ${resNamespace}
-        if [ $? -eq 0 ]; then
+        if [[ $? -eq 0 ]]; then
             echo "$(date) manifestwork ${resNamespace}/${resName} still exists"
         else
             echo "$(date) manifestwork ${resNamespace}/${resName} not found"
@@ -540,19 +539,19 @@ waitForManifestworkDelete() {
 
 enableHypershiftForLocalCluster() {
     ${KUBECTL_COMMAND} get secret hypershift-operator-oidc-provider-s3-credentials -n local-cluster
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         # Create secrets for hypershift operator installation
         ${KUBECTL_COMMAND} create secret generic hypershift-operator-oidc-provider-s3-credentials --from-file=credentials=${AWS_CREDS_FILE} --from-literal=bucket=${S3_BUCKET_NAME} --from-literal=region=${REGION} -n local-cluster
-        if [ $? -ne 0 ]; then
+        if [[ $? -ne 0 ]]; then
             echo "$(date) failed to create secret hypershift-operator-oidc-provider-s3-credentials"
             exit 1
         fi
     fi
 
     ${KUBECTL_COMMAND} get secret hypershift-operator-external-dns-credentials -n local-cluster
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         ${KUBECTL_COMMAND} create secret generic hypershift-operator-external-dns-credentials --from-file=credentials=${AWS_CREDS_FILE} --from-literal=provider=aws --from-literal=domain-filter=${EXT_DNS_DOMAIN} -n local-cluster
-        if [ $? -ne 0 ]; then
+        if [[ $? -ne 0 ]]; then
             echo "$(date) failed to acreate secret hypershift-operator-external-dns-credentials"
             exit 1
         fi
@@ -560,7 +559,7 @@ enableHypershiftForLocalCluster() {
 
     # Enable the hypershift feature. This also installs the hypershift addon for local-cluster
     ${KUBECTL_COMMAND} patch mce multiclusterengine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift","enabled": true}]}}}'
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to enable hypershift in MCE"
         exit 1
     fi
@@ -569,9 +568,9 @@ enableHypershiftForLocalCluster() {
     FOUND=1
     SECONDS=0
     running="\([0-9]\+\)\/\1"
-    while [ ${FOUND} -eq 1 ]; do
+    while [[ ${FOUND} -eq 1 ]]; do
         # Wait up to 5min
-        if [ $SECONDS -gt 300 ]; then
+        if [[ $SECONDS -gt 300 ]]; then
             echo "Timeout waiting for hypershift-addon to be available."
             echo "List of current pods:"
             ${KUBECTL_COMMAND} get managedclusteraddon hypershift-addon -n local-cluster -o yaml
@@ -600,29 +599,29 @@ installOcBinary() {
     exit 1
   fi
 
-  curl -k -LO https://${DOWNLOAD_URL}/amd64/linux/oc.tar
-  if [ $? -ne 0 ];
+  curl --cacert /var/run/secrets/kubernetes.io/serviceaccount/ca.crt --fail -LO "https://${DOWNLOAD_URL}/amd64/linux/oc.tar"
+  if [[ $? -ne 0 ]];
   then
     echo "$(date) oc.tar download failed"
     exit 1
   fi
 
   tar -xvf oc.tar
-  if [ $? -ne 0 ];
+  if [[ $? -ne 0 ]];
   then
     echo "$(date) failed to decompress oc.tar"
     exit 1
   fi
 
   chmod +x oc
-  if [ $? -ne 0 ];
+  if [[ $? -ne 0 ]];
   then
     echo "$(date) failed to chmod +x oc"
     exit 1
   fi
 
   mv oc /bin
-  if [ $? -ne 0 ];
+  if [[ $? -ne 0 ]];
   then
     echo "$(date) failed to move oc to /bin"
     exit 1
@@ -634,7 +633,7 @@ installHypershiftBinary() {
   # creating "infra" and "iam". So the developer version of the CLI needs to be extracted from the hypershift operator pod
   ${KUBECTL_COMMAND} get namespace hypershift
 
-  if [ $? -ne 0 ];
+  if [[ $? -ne 0 ]];
   then
     echo "$(date) hypershift namespace not found"
     exit 1
@@ -654,25 +653,25 @@ installHypershiftBinary() {
 
   # Extract the hypershift CLI from the hypershift operator pod. hypershift-no-cgo is built with no CGO enabled. 
   ${OC_COMMAND} rsync ${HO_POD_NAME}:/usr/bin/hypershift-no-cgo /tmp
-  if [ $? -ne 0 ]; then
+  if [[ $? -ne 0 ]]; then
       echo "$(date) failed to extract hypershift CLI from the hypershift operator pod"
       exit 1
   fi
 
   mv /tmp/hypershift-no-cgo /tmp/hypershift
-  if [ $? -ne 0 ]; then
+  if [[ $? -ne 0 ]]; then
     echo "$(date) failed to mv /tmp/hypershift-no-cgo /tmp/hypershift"
     exit 1
   fi
 
   chmod +x /tmp/hypershift
-  if [ $? -ne 0 ]; then
+  if [[ $? -ne 0 ]]; then
     echo "$(date) failed to chmod +x /tmp/hypershift"
     exit 1
   fi
 
   mv /tmp/hypershift /bin
-  if [ $? -ne 0 ]; then
+  if [[ $? -ne 0 ]]; then
     echo "$(date) failed to mv extracted hypershift binary to /bin"
     exit 1
   fi
@@ -680,13 +679,13 @@ installHypershiftBinary() {
 
 enableHostedModeAddon() {
     ${KUBECTL_COMMAND} apply -f resources/addonconfig.yaml
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to apply resources/addonconfig.yaml"
         exit 1
     fi
 
     ${KUBECTL_COMMAND} patch clustermanagementaddon work-manager --type merge -p '{"spec":{"supportedConfigs":[{"defaultConfig":{"name":"addon-hosted-config","namespace":"multicluster-engine"},"group":"addon.open-cluster-management.io","resource":"addondeploymentconfigs"}]}}'
-    if [ $? -ne 0 ]; then
+    if [[ $? -ne 0 ]]; then
         echo "$(date) failed to patch clustermanagementaddon work-manager"
         exit 1
     fi
@@ -711,12 +710,12 @@ fi
 echo "$(date) ==== Enable hosted mode addon configuration ===="
 enableHostedModeAddon
 
-if [ "${ENABLE_FOUNDATION_CANARY}" == "true" ]; then
+if [[ "${ENABLE_FOUNDATION_CANARY}" == "true" ]]; then
     # Only verify the hosting cluster when the hosting cluster is local-cluster.
     # If other managed cluster is chosen, there is no way to get the kubeconfig of the hosting cluster,
     # which is required to run the foundation canary test.
     # TODO: support hosting cluster other than local-cluster
-    if [ "${HOSTING_CLUSTER_NAME}" == "local-cluster" ]; then
+    if [[ "${HOSTING_CLUSTER_NAME}" == "local-cluster" ]]; then
         # Verify hosting cluster
         echo "$(date) ==== Verifying hosting cluster  ${HOSTING_CLUSTER_NAME} ===="
         verifyHostingCluster ${HUB_KUBECONFIG} ${HOSTING_CLUSTER_NAME} ${HUB_KUBECONFIG}
