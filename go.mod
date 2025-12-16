@@ -195,5 +195,7 @@ require (
 // Copied from hypershift
 replace (
 	cloud.google.com/go/compute => cloud.google.com/go v0.93.3
+	// CVE-2025-30204, GHSA-mh63-6h87-95cp: golang-jwt DoS vulnerability
+	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.18.0
 )
