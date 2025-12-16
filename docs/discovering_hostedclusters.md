@@ -262,6 +262,33 @@ This hypershift addon deployed by ACM acts as a discovery agent that discovers h
 
 <img width="1483" alt="image" src="./images/discovery2.png">
 
+### Enable Other ACM Addons (Optional)
+
+**⚠️ Important**: Only enable additional ACM addons if required for your specific use case. The basic integration works with just the core addons configured above.
+
+Create a `KlusterletAddonConfig` resource for each MCE cluster to enable additional ACM addons:
+
+```yaml
+cat <<EOF | oc apply -f -
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: mce-a  # Must match your ManagedCluster name
+  namespace: mce-a  # Must match your ManagedCluster name
+spec:
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: true
+EOF
+```
+
+**Note**: Replace `mce-a` with the actual name of your MCE cluster. This must exactly match the name used in the `ManagedCluster` resource above.
+
 ### Naming Convention 
 
 When a discovered hosted cluster is auto-imported into the ACM hub, it becomes ACM's managed cluster and the naming convention of the managed cluster is `mce-cluster-name`-`hosted-cluster-name`. If all the hosted clusters are named uniquely across the fleet, you can configure `discoveryPrefix` in the `hypershift-addon-deploy-config` `addondeploymentconfig` in the previous step so that no prefix is used to name the discovered cluster.
