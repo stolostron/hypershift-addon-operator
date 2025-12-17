@@ -128,8 +128,10 @@ func (c *UpgradeController) RunHypershiftCleanup(ctx context.Context) error {
 		return err
 	}
 	if hasHCs {
-		c.log.Info("skip deletion of the hypershift operator, there are existing HostedClusters")
-		return nil
+		c.log.Info("blocking addon uninstallation: " +
+			"hypershift operator is managed by MCE and there are existing HostedClusters")
+		return fmt.Errorf("cannot uninstall hypershift addon: the hypershift operator is installed by MCE " +
+			"and there are existing HostedClusters. Please delete all HostedClusters before uninstalling the addon")
 	}
 
 	args := []string{

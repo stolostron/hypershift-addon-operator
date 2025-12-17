@@ -650,9 +650,10 @@ func TestRunHypershiftInstall(t *testing.T) {
 	assert.Nil(t, err, "err nil when hosted cluster is created successfull")
 
 	// Cleanup
-	// Hypershift deployment is not deleted because there is an existing hostedcluster
+	// Addon uninstallation is blocked because the hypershift operator is managed by MCE and there is an existing hostedcluster
 	err = aCtrl.RunHypershiftCmdWithRetires(ctx, 3, time.Second*10, aCtrl.RunHypershiftCleanup)
-	assert.Nil(t, err, "is nil if cleanup is succcessful")
+	assert.NotNil(t, err, "is not nil because addon uninstallation is blocked when hypershift operator is managed by MCE and hosted clusters exist")
+	assert.Contains(t, err.Error(), "the hypershift operator is installed by MCE and there are existing HostedClusters")
 
 	// Check hypershift deployment is not deleted
 	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, dp)
