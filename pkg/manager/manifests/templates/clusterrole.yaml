@@ -62,7 +62,7 @@ rules:
     verbs: ["get", "list", "watch", "create", "patch", "update", "delete"] 
   - apiGroups: ["apiextensions.k8s.io"]
     resources: ["customresourcedefinitions"]
-    verbs: ["update", "patch", "create"]                       
+    verbs: ["get", "list", "update", "patch", "create"]                       
   - apiGroups: ["authentication.k8s.io"]
     resources: ["tokenreviews"]
     verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]    
