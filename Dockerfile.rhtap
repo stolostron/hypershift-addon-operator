@@ -25,6 +25,7 @@ COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/
 
 LABEL com.redhat.component="multicluster-engine-hypershift-addon-operator-container" \
       name="multicluster-engine/hypershift-addon-operator" \
+      cpe="cpe:/a:redhat:multicluster_engine:2.8::el9" \
       version="2.8" \
       summary="multicluster-engine-hypershift-addon-operator" \
       io.openshift.tags="data,images" \
