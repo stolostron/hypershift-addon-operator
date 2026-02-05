@@ -6,7 +6,7 @@ This document describes various ways to deploy hosted clusters on a single or mu
 
 This is the default hosting cluster topology where MCE hub cluster is the only hosting cluster for all hosted control planes. 
 
-<img width="637" alt="image" src="./images/topology1.png">
+<img width="637" alt="image" src="../images/topology1.png">
 
 
 When MCE is installed and MultiClusterEngine instance is created, it auto-enables the following components.
@@ -115,7 +115,7 @@ Clusters in this scenario:
 - MCE cluster
 - OCP cluster that is imported into MCE as a managed cluster
 
-<img width="944" alt="image" src="./images/topology2.png">
+<img width="944" alt="image" src="../images/topology2.png">
 
 This is a topology where your MCE hub cluster has one or more remote managed OCP clusters and you want to have hosted control planes in those clusters instead of or on top of having hosted control planes in the hub cluster. Unlike how the `hypershift-addon` managed cluster addon is automatically enabled for `local-cluster` in the default topology described above, this topology requires you to enable the `hypershift-addon` managed cluster addon manually for the remote managed cluster.
 
