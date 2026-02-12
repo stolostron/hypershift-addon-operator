@@ -69,7 +69,7 @@ The **ACM Hub Cluster** serves as the central management plane and provides:
 - **Worker Nodes**: Can be located external to the MCE hosting cluster
 - **Separate Disaster Recovery**: Have their own backup and restore processes independent of ACM
 
-![Architecture Diagram](./images/discovery1.png)
+![Architecture Diagram](./../images/discovery1.png)
 
 
 ### Scaling Considerations
@@ -343,7 +343,7 @@ In the ACM hub console:
 2. Click the **Discovered clusters** tab
 3. View discovered hosted clusters with type `MultiClusterEngineHCP`
 
-![Discovered Clusters View](./images/discovery2.png)
+![Discovered Clusters View](./../images/discovery2.png)
 
 ### Configure Naming Convention
 
@@ -522,7 +522,7 @@ oc get discoveredcluster --all-namespaces
 oc get managedcluster
 ```
 
-![Auto-Imported Clusters](./images/discovery3.png)
+![Auto-Imported Clusters](./../images/discovery3.png)
 
 ### ✅ Step 5 Verification Checklist
 
@@ -543,8 +543,8 @@ After configuring auto-import, verify:
 
 **Important**: Hosted cluster lifecycle management (create, scale, delete) must be performed through the MCE console, not ACM.
 
-![MCE Console - Hosted Clusters](./images/discovery4.png)
-![MCE Console - Cluster Details](./images/discovery5.png)
+![MCE Console - Hosted Clusters](./../images/discovery4.png)
+![MCE Console - Cluster Details](./../images/discovery5.png)
 
 ### Detaching Hosted Clusters
 
@@ -639,7 +639,7 @@ For comprehensive guidance, refer to the [ACM backup and restore documentation](
 
 1. **Discovered Cluster Links**: Console links for `MultiClusterEngineHCP` type discovered clusters do not open the cluster console
 
-   ![UI Limitation - Links](./images/discovery6.png)
+   ![UI Limitation - Links](./../images/discovery6.png)
 
 2. **Import Action**: Do not use the "Import cluster" action menu for `MultiClusterEngineHCP` discovered clusters - use only the auto-import policy
 
