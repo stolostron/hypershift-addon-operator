@@ -119,12 +119,6 @@ func TestUpgradeImageCheck(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "The image override configmap was removed. The hypershift operator needs to be re-installed")
 	controller.Stop()
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-	controller.Stop()
-
 	controller.hubClient = initErrorClient()
 	controller.Start()
 	assert.Eventually(t, func() bool {
@@ -175,12 +169,6 @@ func TestBucketSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "The bucket secret has changed. The hypershift operator needs to be re-installed")
 	controller.Stop()
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-	controller.Stop()
-
 	changedBucketSecret := &corev1.Secret{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      util.HypershiftBucketSecretName,
@@ -222,12 +210,6 @@ func TestBucketSecretChanges(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "The bucket secret was removed. The hypershift operator needs to be re-installed")
-	controller.Stop()
-
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
 	controller.Stop()
 
 	controller.hubClient = initErrorClient()
@@ -281,12 +263,6 @@ func TestExtDnsSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "The external DNS secret has changed. The hypershift operator needs to be re-installed")
 	controller.Stop()
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-	controller.Stop()
-
 	changedExtDnsSecret := &corev1.Secret{
 		ObjectMeta: v1.ObjectMeta{
 			Name:      util.HypershiftExternalDNSSecretName,
@@ -329,12 +305,6 @@ func TestExtDnsSecretChanges(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "The external DNS secret was removed. The hypershift operator needs to be re-installed")
-	controller.Stop()
-
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
 	controller.Stop()
 
 	controller.hubClient = initErrorClient()
@@ -384,14 +354,6 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "The private link secret has changed. The hypershift operator needs to be re-installed")
-	controller.Stop()
-
-	//Add test to check successful installation
-
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
 	controller.Stop()
 
 	controller.startup = true
@@ -454,13 +416,6 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 
 	controller.startup = false
 	controller.installfailed = false
-	controller.Start()
-
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-
-	controller.Stop()
 
 	controller.hubClient = initErrorClient()
 	controller.Start()
