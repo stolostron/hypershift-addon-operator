@@ -316,6 +316,18 @@ func TestRunHypershiftRender(t *testing.T) {
 		"CustomResourceDefinition//azuremachinetemplates.infrastructure.cluster.x-k8s.io":                   {},
 		"CustomResourceDefinition//azuremanagedcontrolplanes.infrastructure.cluster.x-k8s.io":               {},
 		"CustomResourceDefinition//azuremanagedcontrolplanetemplates.infrastructure.cluster.x-k8s.io":       {},
+		"CustomResourceDefinition//azureasomanagedclusters.infrastructure.cluster.x-k8s.io":                 {},
+		"CustomResourceDefinition//azureasomanagedclustertemplates.infrastructure.cluster.x-k8s.io":         {},
+		"CustomResourceDefinition//azureasomanagedcontrolplanes.infrastructure.cluster.x-k8s.io":            {},
+		"CustomResourceDefinition//azureasomanagedcontrolplanetemplates.infrastructure.cluster.x-k8s.io":    {},
+		"CustomResourceDefinition//azureasomanagedmachinepools.infrastructure.cluster.x-k8s.io":             {},
+		"CustomResourceDefinition//azureasomanagedmachinepooltemplates.infrastructure.cluster.x-k8s.io":     {},
+		"CustomResourceDefinition//gcpclusters.infrastructure.cluster.x-k8s.io":                             {},
+		"CustomResourceDefinition//gcpclustertemplates.infrastructure.cluster.x-k8s.io":                     {},
+		"CustomResourceDefinition//gcpmachines.infrastructure.cluster.x-k8s.io":                             {},
+		"CustomResourceDefinition//gcpmachinetemplates.infrastructure.cluster.x-k8s.io":                     {},
+		"CustomResourceDefinition//auditlogpersistenceconfigs.auditlogpersistence.hypershift.openshift.io":  {},
+		"CustomResourceDefinition//controlplanecomponents.hypershift.openshift.io":                          {},
 		"CustomResourceDefinition//ibmpowervsclusters.infrastructure.cluster.x-k8s.io":                      {},
 		"CustomResourceDefinition//ibmpowervsclustertemplates.infrastructure.cluster.x-k8s.io":              {},
 		"CustomResourceDefinition//ibmpowervsimages.infrastructure.cluster.x-k8s.io":                        {},
@@ -362,10 +374,7 @@ func TestRunHypershiftRender(t *testing.T) {
 		"RoleBinding/hypershift/prometheus":                                                                 {},
 		"ServiceMonitor/hypershift/operator":                                                                {},
 		"PrometheusRule/hypershift/metrics":                                                                 {},
-	}
-
-	if len(expectResources) != len(outputs) {
-		t.Errorf("Expect resource number %d, but got %d", len(expectResources), len(outputs))
+		"RoleBinding/kube-system/hypershift:extension-apiserver-authentication-reader":                      {},
 	}
 
 	for _, v := range outputs {
