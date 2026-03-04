@@ -399,10 +399,12 @@ spec:
 
 ### Create Auto-Import Policy
 
-Apply this policy to automatically import discovered hosted clusters:
+Apply this policy to automatically import discovered hosted clusters.
 
-```yaml
-cat <<EOF | oc apply -f -
+**Note:** If you see `error: control characters are not allowed` when pasting, copy the YAML from the second block below into a file (e.g. `policy-mce-hcp-autoimport.yaml`) and run `oc apply -f policy-mce-hcp-autoimport.yaml` instead.
+
+```bash
+cat <<'EOF' | oc apply -f -
 apiVersion: policy.open-cluster-management.io/v1
 kind: Policy
 metadata:
