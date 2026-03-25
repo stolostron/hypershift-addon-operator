@@ -21,6 +21,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
+	clusterv1 "open-cluster-management.io/api/cluster/v1"
 )
 
 const localClusterName = "local-cluster"
@@ -65,6 +66,8 @@ var _ = BeforeSuite(func() {
 	err = appsv1.AddToScheme(k8sscheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	err = discoveryv1.AddToScheme(k8sscheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = clusterv1.AddToScheme(k8sscheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Register and start the Foo controller

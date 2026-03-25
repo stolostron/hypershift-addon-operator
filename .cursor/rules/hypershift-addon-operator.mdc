@@ -1,0 +1,75 @@
+---
+description: Project conventions for hypershift-addon-operator
+alwaysApply: true
+---
+
+# Hypershift Addon Operator
+
+Go module: `github.com/stolostron/hypershift-addon-operator`
+
+Deploys the HyperShift operator onto managed clusters as an OCM addon for ACM / multicluster-engine. Two runtime modes: **hub manager** (`pkg/manager`) and **spoke agent** (`pkg/agent`).
+
+## Architecture
+
+- `cmd/main.go` — single binary, Cobra subcommands: `manager`, `agent`, `cleanup`
+- `pkg/manager/` — hub-side addon manager using `open-cluster-management.io/addon-framework`; runs a second `ctrl.Manager` for custom controllers (see `README_CUSTOM_CONTROLLERS.md`)
+- `pkg/agent/` — spoke-side controllers: HyperShift install, addon status, auto-import, discovery, external secrets, HCP kubeconfig, capacity
+- `pkg/install/` — HyperShift operator install/upgrade lifecycle on spoke
+- `pkg/metrics/` — Prometheus metrics collectors
+- `pkg/util/` — shared constants (names, namespaces, labels, images)
+- `hack/crds/` — static CRD YAML for envtest
+- `test/e2e/` — Ginkgo e2e tests (separate from unit tests)
+
+## Development Commands
+
+```
+make build          # vendor + fmt + vet, outputs bin/hypershift-addon
+make test           # fmt + vet + envtest, runs all tests except e2e with coverage
+make test-no-cover  # same without coverage
+make fmt            # go fmt ./...
+make vet            # go vet ./...
+make vendor         # go mod tidy + go mod vendor
+make docker-build   # build container image
+make build-e2e      # compile e2e test binary
+```
+
+## Coding Conventions
+
+- **Dependencies are vendored** — run `make vendor` after changing `go.mod`
+- **controller-runtime is pinned** via `replace` in `go.mod` to v0.19.6 for compatibility; APIs must match that version
+- **No golangci-lint** — `go fmt` and `go vet` are the enforced gates
+- **Logging**: use `github.com/go-logr/logr` (zapr adapter); structured logging with meaningful context
+- **Constants**: put shared names, namespaces, labels, and image defaults in `pkg/util/constant.go`
+
+## Controller Patterns
+
+- Spoke controllers: implement `Reconcile(ctx, ctrl.Request) (ctrl.Result, error)` + `SetupWithManager` using `ctrl.NewControllerManagedBy(mgr).For(...).Complete(...)`
+- Hub custom controllers: register on the **second** `ctrl.Manager` (`customMgr`) in `pkg/manager/manager.go`; follow the pattern in `README_CUSTOM_CONTROLLERS.md`
+- Use predicates to filter events and reduce unnecessary reconciliations
+- Set owner references when creating dependent resources
+
+## Testing
+
+- **Unit/integration**: standard `testing` package, `testify/assert`, `testify/suite`, `controller-runtime/pkg/client/fake`
+- **envtest**: `KUBEBUILDER_ASSETS` with K8s 1.28.3; CRDs from `hack/crds/`
+- **Ginkgo/Gomega**: used in `pkg/agent` suites and `test/e2e`
+- **Metrics tests**: `prometheus/client_golang/prometheus/testutil`
+- **e2e tests** are excluded from `make test`; built and run separately via `make build-e2e`
+
+## Scheme Registration
+
+No project-owned CRDs — consumes types from OCM, HyperShift, OpenShift, MCE, discovery, OLM. Register external types on `runtime.Scheme` in `init()` blocks (see `pkg/agent/agent.go`, `pkg/manager/manager.go`).
+
+## Ecosystem Integration Map
+
+| Project | Module | Role in this operator |
+|---------|--------|-----------------------|
+| **OCM Addon Framework** | `open-cluster-management.io/addon-framework` | Hub-side addon lifecycle: registration, template rendering, health probes. `pkg/manager` builds on `addonmanager` + `addonfactory`. |
+| **OCM API** | `open-cluster-management.io/api` | Types: `ManagedCluster`, `ManagedClusterAddOn`, `ClusterManagementAddOn`, `AddOnDeploymentConfig`, `AddOnPlacementScore`. |
+| **HyperShift** | `github.com/openshift/hypershift` + `/api` | The operator this addon installs/upgrades on spoke clusters. Types: `HostedCluster`, `HostedControlPlane`, `NodePool`. `pkg/install` manages its deployment lifecycle. |
+| **OpenShift API** | `github.com/openshift/api` | Platform types: `Infrastructure`, `Route`, `ClusterVersion`, `ImageStream`. Used for environment detection and image overrides. |
+| **MCE / Backplane Operator** | `github.com/stolostron/backplane-operator` | Types: `MultiClusterEngine`. The addon checks MCE presence and version to gate features. |
+| **Discovery** | `github.com/stolostron/discovery` | Types: `DiscoveryConfig`, `DiscoveredCluster`. `pkg/agent` runs a discovery agent; `pkg/manager` has a `DiscoveryConfigController`. |
+| **Klusterlet Addon Controller** | `github.com/stolostron/klusterlet-addon-controller` | Types: `KlusterletAddonConfig`. Used to detect ACM installation and configure managed cluster addons. |
+| **OLM** | `github.com/operator-framework/api` | Types: `ClusterServiceVersion`. Used to find the installed MCE/ACM CSV for version detection. |
+| **Prometheus Operator** | `github.com/prometheus-operator/prometheus-operator` | Types: `ServiceMonitor`. `pkg/metrics` creates monitoring resources. |
