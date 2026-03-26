@@ -5,4 +5,4 @@ metadata:
 rules:
   - apiGroups: ["cluster.open-cluster-management.io"]
     resources: ["managedclusters"]
-    verbs: ["get", "list", "delete"]    
+    verbs: ["get", "list", "watch", "delete"]    

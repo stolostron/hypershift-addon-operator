@@ -29,6 +29,7 @@ const (
 	DiscoveryAgentName           = "discovery-agent"
 	ExternalSecretControllerName = "external-secret"
 	AgentDeploymentName          = "hypershift-addon-agent"
+	LabelAgentName               = "label-agent"
 
 	HypershiftOverrideImagesCM = "hypershift-override-images"
 	ImageUpgradeControllerName = "hypershift-image-upgrade"
