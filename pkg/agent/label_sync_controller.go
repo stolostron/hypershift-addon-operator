@@ -169,21 +169,24 @@ func (c *LabelAgent) syncLabelsFromHub(
 			continue
 		}
 
-		// Find if there is a hosted cluster label with one on the hub
 		spokeValue, existsOnSpoke := spokeLabels[hubKey]
-		// if it doesnt it will get added
+		managed := false
 		if !existsOnSpoke {
 			spokeLabels[hubKey] = hubValue
 			changed = true
-			// if same label exist on both but isnt the same then either set it if it was
-			// a label previously added via propagation or existed before propagation
+			managed = true
 		} else if hubValue != spokeValue {
 			if previousAnnotationTracking[hubKey] {
 				spokeLabels[hubKey] = hubValue
 				changed = true
+				managed = true
 			}
+		} else {
+			managed = true
 		}
-		labelsToPropagate[hubKey] = true
+		if managed {
+			labelsToPropagate[hubKey] = true
+		}
 	}
 
 	// go through the previous tracking labels and if they dont exist on the current hub labels

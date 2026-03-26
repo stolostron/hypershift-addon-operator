@@ -192,9 +192,10 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		}
 	}()
 
-	// func to sync the cache
-	if !hubCache.WaitForCacheSync(ctx) {
-		return fmt.Errorf("hub cache failed to sync")
+	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if !hubCache.WaitForCacheSync(syncCtx) {
+		return fmt.Errorf("hub cache failed to sync within 30s")
 	}
 
 	spokeKubeClient, err := client.New(spokeConfig, client.Options{Scheme: scheme})

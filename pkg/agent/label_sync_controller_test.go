@@ -437,7 +437,6 @@ func TestLabelPropagation(t *testing.T) {
 			expectedLabels: map[string]string{
 				"cluster.open-cluster-management.io/clusterset": "default",
 			},
-			expectedAnnotationKeys: []string{"cluster.open-cluster-management.io/clusterset"},
 		},
 		{
 			name: "tracked clusterset label updated when hub changes",
