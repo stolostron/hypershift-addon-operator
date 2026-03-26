@@ -46,6 +46,8 @@ func (c *LabelAgent) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(c)
 }
 
+// Reconcile syncs non-system labels from the ACM hub ManagedCluster to the
+// corresponding spoke ManagedCluster, correcting drift and tracking propagated keys.
 func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	c.log.Info("reconciling label sync", "managedcluster", req.Name)
 
@@ -70,7 +72,7 @@ func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// Verify this is a hosted cluster MC (check created-via annotation)
-	if !(spokeMC.Annotations[createdViaAnno] == createdViaHypershift) {
+	if spokeMC.Annotations[createdViaAnno] != createdViaHypershift {
 		c.log.Info("this is not a hosted cluster or is missing the hypershift annotation, skip label checking")
 		return ctrl.Result{}, nil
 	}
@@ -94,7 +96,7 @@ func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		c.log.Error(err, "error syncing labels", "hubMC", hubMCName, "spokeMC", spokeMC.Name)
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+	return ctrl.Result{}, nil
 }
 
 // isSystemLabel returns true if the label key is managed by OCM/system
@@ -136,7 +138,9 @@ func isSystemLabel(key string) bool {
 
 // syncLabelsFromHub applies non-system labels from the hub MC to the spoke MC,
 // using the tracking annotation to manage additions, updates, and removals.
-func (c *LabelAgent) syncLabelsFromHub(ctx context.Context, spokeMC *clusterv1.ManagedCluster, hubMC *clusterv1.ManagedCluster) error {
+func (c *LabelAgent) syncLabelsFromHub(
+	ctx context.Context, spokeMC, hubMC *clusterv1.ManagedCluster,
+) error {
 	// Read the current tracking annotation (propagatedLabelsAnno) from spokeMC
 	// Parse the comma-separated list of previously propagated label keys
 	previousAnnotationTracking := map[string]bool{}
@@ -227,6 +231,8 @@ func (c *LabelAgent) syncLabelsFromHub(ctx context.Context, spokeMC *clusterv1.M
 	return c.spokeClient.Patch(ctx, spokeMC, patch)
 }
 
+// mapHubMCToSpokeMC translates a hub ManagedCluster event into a reconcile
+// request for the corresponding spoke ManagedCluster.
 func (c *LabelAgent) mapHubMCToSpokeMC(ctx context.Context, hubMC *clusterv1.ManagedCluster) []reconcile.Request {
 	spokeMCName := c.getSpokeMCName(hubMC.Name)
 	if spokeMCName == "" {
@@ -237,6 +243,8 @@ func (c *LabelAgent) mapHubMCToSpokeMC(ctx context.Context, hubMC *clusterv1.Man
 	}
 }
 
+// getSpokeMCName derives the spoke ManagedCluster name from a hub MC name
+// by stripping the discovery prefix (default, custom, or empty).
 func (c *LabelAgent) getSpokeMCName(hubMCName string) string {
 	prefix, set := os.LookupEnv("DISCOVERY_PREFIX")
 	if set {
@@ -259,6 +267,7 @@ func (c *LabelAgent) getSpokeMCName(hubMCName string) string {
 	return ""
 }
 
+// getHubMCName returns the hub ManagedCluster name for a given spoke MC name.
 func (c *LabelAgent) getHubMCName(spokeMCName string) string {
 	return getDiscoveredClusterName(c.clusterName, spokeMCName, c.log)
 }
