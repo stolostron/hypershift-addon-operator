@@ -8,6 +8,7 @@ import (
 	"github.com/go-logr/zapr"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -16,6 +17,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
 func strPtr(s string) *string { return &s }
@@ -757,6 +759,164 @@ func TestMultiClusterLabelPropagation(t *testing.T) {
 	}
 }
 
+func TestReconcileDisableDiscovery(t *testing.T) {
+	ctx := context.Background()
+	spoke, hub := initLabelSyncClient(t)
+	zapLog, _ := zap.NewDevelopment()
+
+	os.Setenv("DISABLE_HC_DISCOVERY", "true")
+	defer os.Unsetenv("DISABLE_HC_DISCOVERY")
+
+	spokeMC := &clusterv1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "hc1",
+			Annotations: map[string]string{createdViaAnno: createdViaHypershift},
+			Labels:      map[string]string{"existing": "value"},
+		},
+	}
+	hubMC := &clusterv1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:   "mce-hc1",
+			Labels: map[string]string{"env": "prod"},
+		},
+	}
+
+	assert.Nil(t, spoke.Create(ctx, spokeMC))
+	assert.Nil(t, hub.Create(ctx, hubMC))
+
+	lc := &LabelAgent{
+		hubClient:        hub,
+		spokeClient:      spoke,
+		clusterName:      "mce",
+		localClusterName: "local-cluster",
+		log:              zapr.NewLogger(zapLog),
+	}
+
+	result, err := lc.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "hc1"},
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+
+	retrieved := &clusterv1.ManagedCluster{}
+	assert.Nil(t, spoke.Get(ctx, types.NamespacedName{Name: "hc1"}, retrieved))
+	_, exists := retrieved.Labels["env"]
+	assert.False(t, exists, "labels should not propagate when discovery is disabled")
+}
+
+func TestReconcileSpokeNotFound(t *testing.T) {
+	ctx := context.Background()
+	spoke, hub := initLabelSyncClient(t)
+	zapLog, _ := zap.NewDevelopment()
+	os.Unsetenv("DISCOVERY_PREFIX")
+
+	lc := &LabelAgent{
+		hubClient:        hub,
+		spokeClient:      spoke,
+		clusterName:      "mce",
+		localClusterName: "local-cluster",
+		log:              zapr.NewLogger(zapLog),
+	}
+
+	result, err := lc.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: "does-not-exist"},
+	})
+	assert.Nil(t, err)
+	assert.Equal(t, ctrl.Result{}, result)
+}
+
+func TestGetSpokeMCName(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+
+	tests := []struct {
+		name            string
+		hubMCName       string
+		clusterName     string
+		discoveryPrefix *string
+		expected        string
+	}{
+		{
+			name:        "default prefix - matching hub MC",
+			hubMCName:   "cluster-mce-hc-app1",
+			clusterName: "cluster-mce",
+			expected:    "hc-app1",
+		},
+		{
+			name:        "default prefix - non-matching hub MC returns empty",
+			hubMCName:   "other-mce-hc-app1",
+			clusterName: "cluster-mce",
+			expected:    "",
+		},
+		{
+			name:            "custom prefix - matching hub MC",
+			hubMCName:       "custom-hc-web",
+			clusterName:     "cluster-mce",
+			discoveryPrefix: strPtr("custom"),
+			expected:        "hc-web",
+		},
+		{
+			name:            "custom prefix - non-matching hub MC returns empty",
+			hubMCName:       "other-hc-web",
+			clusterName:     "cluster-mce",
+			discoveryPrefix: strPtr("custom"),
+			expected:        "",
+		},
+		{
+			name:            "empty prefix - hub name equals spoke name",
+			hubMCName:       "hc-app1",
+			clusterName:     "cluster-mce",
+			discoveryPrefix: strPtr(""),
+			expected:        "hc-app1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if tt.discoveryPrefix != nil {
+				os.Setenv("DISCOVERY_PREFIX", *tt.discoveryPrefix)
+				defer os.Unsetenv("DISCOVERY_PREFIX")
+			} else {
+				os.Unsetenv("DISCOVERY_PREFIX")
+			}
+
+			lc := &LabelAgent{
+				clusterName: tt.clusterName,
+				log:         zapr.NewLogger(zapLog),
+			}
+			result := lc.getSpokeMCName(tt.hubMCName)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestMapHubMCToSpokeMC(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	os.Unsetenv("DISCOVERY_PREFIX")
+
+	lc := &LabelAgent{
+		clusterName: "cluster-mce",
+		log:         zapr.NewLogger(zapLog),
+	}
+
+	t.Run("matching hub MC returns reconcile request", func(t *testing.T) {
+		hubMC := &clusterv1.ManagedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "cluster-mce-hc-app1"},
+		}
+		requests := lc.mapHubMCToSpokeMC(context.Background(), hubMC)
+		assert.Equal(t, []reconcile.Request{
+			{NamespacedName: types.NamespacedName{Name: "hc-app1"}},
+		}, requests)
+	})
+
+	t.Run("non-matching hub MC returns nil", func(t *testing.T) {
+		hubMC := &clusterv1.ManagedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "other-mce-hc-app1"},
+		}
+		requests := lc.mapHubMCToSpokeMC(context.Background(), hubMC)
+		assert.Nil(t, requests)
+	})
+}
+
 func TestLabelEventFilters(t *testing.T) {
 	pred := labelEventFilters()
 
@@ -797,6 +957,21 @@ func TestLabelEventFilters(t *testing.T) {
 		result := pred.Update(event.UpdateEvent{
 			ObjectOld: nonHostedMC.DeepCopy(),
 			ObjectNew: nonHostedMC,
+		})
+		assert.False(t, result)
+	})
+
+	t.Run("CreateFunc rejects non-ManagedCluster object", func(t *testing.T) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "some-pod"}}
+		result := pred.Create(event.CreateEvent{Object: pod})
+		assert.False(t, result)
+	})
+
+	t.Run("UpdateFunc rejects non-ManagedCluster object", func(t *testing.T) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "some-pod"}}
+		result := pred.Update(event.UpdateEvent{
+			ObjectOld: pod,
+			ObjectNew: pod,
 		})
 		assert.False(t, result)
 	})
