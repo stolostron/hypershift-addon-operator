@@ -59,6 +59,7 @@ func TestUpgradeImageCheck(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test image override configmap was created successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
@@ -99,6 +100,7 @@ func TestUpgradeImageCheck(t *testing.T) {
 		return false
 	}, 10*time.Second, 1*time.Second, "The image override configmap was updated successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
@@ -113,6 +115,7 @@ func TestUpgradeImageCheck(t *testing.T) {
 		return errors.IsNotFound(err)
 	}, 10*time.Second, 1*time.Second, "The image override configmap was deleted successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
@@ -169,6 +172,7 @@ func TestBucketSecretChanges(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test bucket secret was created successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
@@ -204,6 +208,7 @@ func TestBucketSecretChanges(t *testing.T) {
 		return false
 	}, 10*time.Second, 1*time.Second, "The bucket secret was updated successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
@@ -218,6 +223,7 @@ func TestBucketSecretChanges(t *testing.T) {
 		return errors.IsNotFound(err)
 	}, 10*time.Second, 1*time.Second, "The test bucket secret was deleted successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
@@ -275,6 +281,7 @@ func TestExtDnsSecretChanges(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test external DNS secret was created successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
@@ -311,6 +318,7 @@ func TestExtDnsSecretChanges(t *testing.T) {
 		return false
 	}, 10*time.Second, 1*time.Second, "The external DNS secret was updated successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
@@ -325,6 +333,7 @@ func TestExtDnsSecretChanges(t *testing.T) {
 		return errors.IsNotFound(err)
 	}, 10*time.Second, 1*time.Second, "The test external DNS secret was deleted successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
@@ -380,13 +389,12 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test private link secret was created successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 	assert.Eventually(t, func() bool {
 		return controller.reinstallNeeded
 	}, 10*time.Second, 1*time.Second, "The private link secret has changed. The hypershift operator needs to be re-installed")
 	controller.Stop()
-
-	//Add test to check successful installation
 
 	controller.Start()
 	assert.Eventually(t, func() bool {
@@ -394,6 +402,7 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
 	controller.Stop()
 
+	controller.reinstallNeeded = false
 	controller.startup = true
 	controller.installfailed = false
 	controller.Start()
@@ -426,6 +435,7 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 		return false
 	}, 10*time.Second, 1*time.Second, "The private link secret was updated successfully")
 
+	controller.reinstallNeeded = false
 	controller.startup = false
 	controller.installfailed = false
 	controller.Start()
@@ -444,6 +454,7 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 		return errors.IsNotFound(err)
 	}, 10*time.Second, 1*time.Second, "The test private link secret was deleted successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 
 	assert.Eventually(t, func() bool {
@@ -600,6 +611,7 @@ func TestInstallFlagChanges(t *testing.T) {
 		return false
 	}, 10*time.Second, 1*time.Second, "The install flag configmap was updated successfully")
 
+	controller.reinstallNeeded = false
 	controller.Start()
 
 	assert.Eventually(t, func() bool {
