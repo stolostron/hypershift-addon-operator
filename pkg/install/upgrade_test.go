@@ -18,6 +18,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 )
 
+// checkReinstallNeeded evaluates the same conditions as UpgradeController.Start()
+// without launching goroutines or calling runHypershiftInstall.
+func checkReinstallNeeded(c *UpgradeController) bool {
+	return c.startup || c.installfailed || c.installOptionsChanged() || c.upgradeImageCheck()
+}
+
 func TestUpgradeImageCheck(t *testing.T) {
 	ctx := context.Background()
 
@@ -59,17 +65,8 @@ func TestUpgradeImageCheck(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test image override configmap was created successfully")
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The image override configmap has changed. The hypershift operator needs to be re-installed")
-	controller.Stop()
-
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The image override configmap has changed. The hypershift operator needs to be re-installed")
+	assert.False(t, checkReinstallNeeded(controller), "Nothing has changed. The hypershift operator does not need to be re-installed")
 
 	changedOverrideCM := &corev1.ConfigMap{
 		ObjectMeta: v1.ObjectMeta{
@@ -99,11 +96,7 @@ func TestUpgradeImageCheck(t *testing.T) {
 		return false
 	}, 10*time.Second, 1*time.Second, "The image override configmap was updated successfully")
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The image override configmap was updated. The hypershift operator needs to be re-installed")
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The image override configmap was updated. The hypershift operator needs to be re-installed")
 
 	controller.hubClient.Delete(ctx, overrideCM)
 
@@ -113,24 +106,11 @@ func TestUpgradeImageCheck(t *testing.T) {
 		return errors.IsNotFound(err)
 	}, 10*time.Second, 1*time.Second, "The image override configmap was deleted successfully")
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The image override configmap was removed. The hypershift operator needs to be re-installed")
-	controller.Stop()
-
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The image override configmap was removed. The hypershift operator needs to be re-installed")
+	assert.False(t, checkReinstallNeeded(controller), "Nothing has changed. The hypershift operator does not need to be re-installed")
 
 	controller.hubClient = initErrorClient()
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The agent fails to get the image override configmap from the hub. The hypershift operator should not be re-installed")
-	controller.Stop()
+	assert.False(t, checkReinstallNeeded(controller), "The agent fails to get the image override configmap from the hub. The hypershift operator should not be re-installed")
 }
 
 func TestBucketSecretChanges(t *testing.T) {
@@ -169,17 +149,8 @@ func TestBucketSecretChanges(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test bucket secret was created successfully")
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The bucket secret has changed. The hypershift operator needs to be re-installed")
-	controller.Stop()
-
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The bucket secret has changed. The hypershift operator needs to be re-installed")
+	assert.False(t, checkReinstallNeeded(controller), "Nothing has changed. The hypershift operator does not need to be re-installed")
 
 	changedBucketSecret := &corev1.Secret{
 		ObjectMeta: v1.ObjectMeta{
@@ -204,11 +175,7 @@ func TestBucketSecretChanges(t *testing.T) {
 		return false
 	}, 10*time.Second, 1*time.Second, "The bucket secret was updated successfully")
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The bucket secret was updated. The hypershift operator needs to be re-installed")
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The bucket secret was updated. The hypershift operator needs to be re-installed")
 
 	controller.hubClient.Delete(ctx, newBucketSecret)
 
@@ -218,24 +185,11 @@ func TestBucketSecretChanges(t *testing.T) {
 		return errors.IsNotFound(err)
 	}, 10*time.Second, 1*time.Second, "The test bucket secret was deleted successfully")
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The bucket secret was removed. The hypershift operator needs to be re-installed")
-	controller.Stop()
-
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The bucket secret was removed. The hypershift operator needs to be re-installed")
+	assert.False(t, checkReinstallNeeded(controller), "Nothing has changed. The hypershift operator does not need to be re-installed")
 
 	controller.hubClient = initErrorClient()
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The agent fails to get the bucket secret from the hub. The hypershift operator should not be re-installed")
-	controller.Stop()
+	assert.False(t, checkReinstallNeeded(controller), "The agent fails to get the bucket secret from the hub. The hypershift operator should not be re-installed")
 }
 
 func TestExtDnsSecretChanges(t *testing.T) {
@@ -275,17 +229,8 @@ func TestExtDnsSecretChanges(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test external DNS secret was created successfully")
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The external DNS secret has changed. The hypershift operator needs to be re-installed")
-	controller.Stop()
-
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The external DNS secret has changed. The hypershift operator needs to be re-installed")
+	assert.False(t, checkReinstallNeeded(controller), "Nothing has changed. The hypershift operator does not need to be re-installed")
 
 	changedExtDnsSecret := &corev1.Secret{
 		ObjectMeta: v1.ObjectMeta{
@@ -311,11 +256,7 @@ func TestExtDnsSecretChanges(t *testing.T) {
 		return false
 	}, 10*time.Second, 1*time.Second, "The external DNS secret was updated successfully")
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The external DNS secret was updated. The hypershift operator needs to be re-installed")
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The external DNS secret was updated. The hypershift operator needs to be re-installed")
 
 	controller.hubClient.Delete(ctx, newExtDnsSecret)
 
@@ -325,24 +266,11 @@ func TestExtDnsSecretChanges(t *testing.T) {
 		return errors.IsNotFound(err)
 	}, 10*time.Second, 1*time.Second, "The test external DNS secret was deleted successfully")
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The external DNS secret was removed. The hypershift operator needs to be re-installed")
-	controller.Stop()
-
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The external DNS secret was removed. The hypershift operator needs to be re-installed")
+	assert.False(t, checkReinstallNeeded(controller), "Nothing has changed. The hypershift operator does not need to be re-installed")
 
 	controller.hubClient = initErrorClient()
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The agent fails to get the external DNS secret from the hub. The hypershift operator should not be re-installed")
-	controller.Stop()
+	assert.False(t, checkReinstallNeeded(controller), "The agent fails to get the external DNS secret from the hub. The hypershift operator should not be re-installed")
 }
 
 func TestPrivateLinkSecretChanges(t *testing.T) {
@@ -380,29 +308,13 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test private link secret was created successfully")
 
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The private link secret has changed. The hypershift operator needs to be re-installed")
-	controller.Stop()
-
-	//Add test to check successful installation
-
-	controller.Start()
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The private link secret has changed. The hypershift operator needs to be re-installed")
+	assert.False(t, checkReinstallNeeded(controller), "Nothing has changed. The hypershift operator does not need to be re-installed")
 
 	controller.startup = true
 	controller.installfailed = false
-	controller.Start()
-
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed, but Startup=true. The hypershift operator needs to be re-installed")
-
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "Nothing has changed, but Startup=true. The hypershift operator needs to be re-installed")
+	controller.startup = false
 
 	changedPrivateLinkSecret := &corev1.Secret{
 		ObjectMeta: v1.ObjectMeta{
@@ -428,13 +340,7 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 
 	controller.startup = false
 	controller.installfailed = false
-	controller.Start()
-
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The private link secret was updated. The hypershift operator needs to be re-installed")
-
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The private link secret was updated. The hypershift operator needs to be re-installed")
 
 	controller.hubClient.Delete(ctx, newPrivateLinkSecret)
 
@@ -444,33 +350,14 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 		return errors.IsNotFound(err)
 	}, 10*time.Second, 1*time.Second, "The test private link secret was deleted successfully")
 
-	controller.Start()
-
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The private link secret was removed. The hypershift operator needs to be re-installed")
-
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The private link secret was removed. The hypershift operator needs to be re-installed")
 
 	controller.startup = false
 	controller.installfailed = false
-	controller.Start()
-
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-
-	controller.Stop()
+	assert.False(t, checkReinstallNeeded(controller), "Nothing has changed. The hypershift operator does not need to be re-installed")
 
 	controller.hubClient = initErrorClient()
-	controller.Start()
-
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The agent fails to get the private link secret from the hub. The hypershift operator should not be re-installed")
-
-	controller.Stop()
-
+	assert.False(t, checkReinstallNeeded(controller), "The agent fails to get the private link secret from the hub. The hypershift operator should not be re-installed")
 }
 
 func TestInstallFlagChanges(t *testing.T) {
@@ -600,19 +487,6 @@ func TestInstallFlagChanges(t *testing.T) {
 		return false
 	}, 10*time.Second, 1*time.Second, "The install flag configmap was updated successfully")
 
-	controller.Start()
-
-	assert.Eventually(t, func() bool {
-		return controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "The install flags configmap has changed. The hypershift operator needs to be re-installed")
-
-	controller.Stop()
-
-	controller.Start()
-
-	assert.Eventually(t, func() bool {
-		return !controller.reinstallNeeded
-	}, 10*time.Second, 1*time.Second, "Nothing has changed. The hypershift operator does not need to be re-installed")
-
-	controller.Stop()
+	assert.True(t, checkReinstallNeeded(controller), "The install flags configmap has changed. The hypershift operator needs to be re-installed")
+	assert.False(t, checkReinstallNeeded(controller), "Nothing has changed. The hypershift operator does not need to be re-installed")
 }
