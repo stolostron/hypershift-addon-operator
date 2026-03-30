@@ -64,7 +64,11 @@ func (c *UpgradeController) RunHypershiftCmdWithRetires(
 
 	}
 
-	return fmt.Errorf("failed to install the hypershift operator and apply its crd after %v retires, err: %w", attempts, err)
+	return fmt.Errorf(
+		"failed to install the hypershift operator and apply its crd after %v retires, err: %w",
+		attempts,
+		err,
+	)
 }
 
 func getRandInt(m int64) int64 {
@@ -76,7 +80,10 @@ func getRandInt(m int64) int64 {
 	return n.Int64()
 }
 
-func (c *UpgradeController) runHypershiftRender(ctx context.Context, args []string) ([]unstructured.Unstructured, error) {
+func (c *UpgradeController) runHypershiftRender(
+	ctx context.Context,
+	args []string,
+) ([]unstructured.Unstructured, error) {
 	out := []unstructured.Unstructured{}
 	if c.hypershiftInstallExecutor == nil {
 		return out, fmt.Errorf("failed to run hypershift cmd, no install executor specified")
@@ -186,7 +193,8 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	// If the hypershift operator installation failed in the previous attempt, no checking. We need to
 	// install again.
 	// For now, assume that secrets did not change (MCE upgrade or pod re-cycle scenarios)
-	// If controllerStartup = false, we are here because the image override configmap or some operator secrets have changed. No check required.
+	// If controllerStartup = false, we are here because the image override configmap
+	// or some operator secrets have changed. No check required.
 	reinstallCheckRequired := (operatorDeployment != nil) && controllerStartup && !c.installfailed
 
 	c.log.Info("reinstallCheckRequired = " + strconv.FormatBool(reinstallCheckRequired))
@@ -215,6 +223,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	awsPlatform := false
 	oidcBucket := true
 	privateLinkCreds := true
+	azurePrivateCreds := true
 
 	//Attempt to retrieve oidc bucket secret
 	bucketSecretKey := types.NamespacedName{Name: util.HypershiftBucketSecretName, Namespace: c.clusterName}
@@ -239,11 +248,27 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	// cache the private link secret for comparison againt the hub's to detect any change
 	c.privateLinkSecret = *spl
 
+	// Attempt to retrieve Azure private credentials
+	azurePrivateSecretKey := types.NamespacedName{Name: util.HypershiftAzurePrivateSecretName, Namespace: c.clusterName}
+	sAzurePrivate := &corev1.Secret{}
+	if err := c.hubClient.Get(ctx, azurePrivateSecretKey, sAzurePrivate); err != nil {
+		c.log.Info(fmt.Sprintf("azure private secret(%s) not found on the hub.", azurePrivateSecretKey))
+		azurePrivateCreds = false
+	}
+	// cache the Azure private secret for comparison against the hub's to detect any change
+	c.azurePrivateSecret = *sAzurePrivate
+
 	//Platform is aws if either secret exists
 	awsPlatform = oidcBucket || privateLinkCreds
 	c.awsPlatform = awsPlatform
 	if !awsPlatform {
-		c.log.Info(fmt.Sprintf("bucket secret(%s) and private link secret(%s) not found on the hub, installing hypershift operator for non-AWS platform.", bucketSecretKey, privateSecretKey))
+		c.log.Info(
+			fmt.Sprintf(
+				"bucket secret(%s) and private link secret(%s) not found on the hub, installing for non-AWS platform.",
+				bucketSecretKey,
+				privateSecretKey,
+			),
+		)
 	}
 
 	args := []string{
@@ -324,6 +349,29 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	// Get the hypershift operator installation flags configmap from the hub
 	installFlagsCM, _ := c.getConfigMapFromHub(util.HypershiftInstallFlagsCM)
 	c.installFlagsConfigmap = installFlagsCM
+	installFlagsToAdd := []string{}
+	if installFlagsCM.Data != nil {
+		installFlagsToAdd = strings.Fields(installFlagsCM.Data["installFlagsToAdd"])
+	}
+
+	if strings.EqualFold(getParamValue(installFlagsToAdd, "--private-platform"), "Azure") {
+		if getParamValue(installFlagsToAdd, "--azure-pls-resource-group") == "" {
+			return fmt.Errorf(
+				"azure private platform requires --azure-pls-resource-group in %s configmap",
+				util.HypershiftInstallFlagsCM,
+			)
+		}
+
+		if !azurePrivateCreds {
+			return fmt.Errorf("azure private secret(%s) was not found on the hub", azurePrivateSecretKey)
+		}
+
+		if err := c.createSpokeSecret(ctx, sAzurePrivate); err != nil {
+			return err
+		}
+		// The managed Azure private secret name is fixed, so inject it automatically.
+		args = append(args, "--azure-private-secret", util.HypershiftAzurePrivateSecretName)
+	}
 
 	hypershiftImage := c.operatorImage
 	imageStreamCMData := make(map[string]string, 0)
@@ -345,9 +393,10 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			!(c.operatorImagesUpdated(im, *operatorDeployment) ||
 				c.secretDataUpdated(util.HypershiftBucketSecretName, *se) ||
 				c.secretDataUpdated(util.HypershiftPrivateLinkSecretName, *spl) ||
+				c.secretDataUpdated(util.HypershiftAzurePrivateSecretName, *sAzurePrivate) ||
 				c.secretDataUpdated(util.HypershiftExternalDNSSecretName, *sExtDNS) ||
 				c.configmapDataUpdated(util.HypershiftInstallFlagsCM, installFlagsCM)) {
-			c.log.Info("no change in hypershift operator images, secrets and install flags, skipping hypershift operator installation")
+			c.log.Info("no image/secret/install-flag change, skip hypershift operator installation")
 			return nil
 		}
 	} else {
@@ -403,6 +452,9 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	if err := c.saveSecretLocally(ctx, spl); err != nil { // private link secret
 		return err
 	}
+	if err := c.saveSecretLocally(ctx, sAzurePrivate); err != nil { // azure private secret
+		return err
+	}
 	if err := c.saveSecretLocally(ctx, sExtDNS); err != nil { // external DNS secret
 		return err
 	}
@@ -441,11 +493,15 @@ func (c *UpgradeController) buildOtherInstallFlags(installFlagsCM corev1.ConfigM
 	telemetryArgs := []string{
 		"--platform-monitoring", "OperatorOnly",
 	}
-	if !contains(flagsToRemove, "--platform-monitoring") { // if the flagsToRemove contains --platform-monitoring, do not add it
-		if contains(flagsToAdd, "--platform-monitoring") { // if the flagsToAdd contains --platform-monitoring, get the value from the list
+	// If flagsToRemove contains --platform-monitoring, do not add it.
+	if !contains(flagsToRemove, "--platform-monitoring") {
+		// If flagsToAdd contains --platform-monitoring, use its value.
+		if contains(flagsToAdd, "--platform-monitoring") {
 			val := getParamValue(flagsToAdd, "--platform-monitoring")
 			if val == "" {
-				c.log.Info("--platform-monitoring does not have any value in installParamsToAdd, setting it to default [ --platform-monitoringOperatorOnly ]")
+				c.log.Info(
+					"--platform-monitoring has no value in installParamsToAdd; using default [ --platform-monitoring OperatorOnly ]",
+				)
 				args = append(args, telemetryArgs...)
 			} else {
 				c.log.Info(fmt.Sprintf("updating the install flag [ --platform-monitoring %s ]", val))
@@ -530,17 +586,28 @@ func getParamValue(s []string, e string) string {
 	return ""
 }
 
-func (c *UpgradeController) createAwsSpokeSecret(ctx context.Context, hubSecret *corev1.Secret, regionRequired bool) error {
+func (c *UpgradeController) createAwsSpokeSecret(
+	ctx context.Context,
+	hubSecret *corev1.Secret,
+	regionRequired bool,
+) error {
 	spokeSecret := hubSecret.DeepCopy()
 
 	region := hubSecret.Data["region"]
 	awsSecretKey := hubSecret.Data["aws-secret-access-key"]
 	awsKeyId := hubSecret.Data["aws-access-key-id"]
-	if (hubSecret.Data["credentials"] == nil && (awsKeyId == nil || awsSecretKey == nil)) || (region == nil && regionRequired) {
+	missingCreds := hubSecret.Data["credentials"] == nil && (awsKeyId == nil || awsSecretKey == nil)
+	missingRegion := region == nil && regionRequired
+	if missingCreds || missingRegion {
 		return fmt.Errorf("secret(%s/%s) does not contain a valid credential or region", hubSecret.Namespace, hubSecret.Name)
 	} else {
 		if awsSecretKey != nil {
-			spokeSecret.Data["credentials"] = []byte(fmt.Sprintf("[default]\naws_access_key_id = %s\naws_secret_access_key = %s", awsKeyId, awsSecretKey))
+			credentials := fmt.Sprintf(
+				"[default]\naws_access_key_id = %s\naws_secret_access_key = %s",
+				awsKeyId,
+				awsSecretKey,
+			)
+			spokeSecret.Data["credentials"] = []byte(credentials)
 		}
 	}
 
@@ -555,7 +622,14 @@ func (c *UpgradeController) createSpokeSecret(ctx context.Context, hubSecret *co
 			Namespace: hypershiftOperatorKey.Namespace,
 		},
 	}
-	c.log.Info(fmt.Sprintf("createorupdate the the secret (%s/%s) on cluster %s", hypershiftOperatorKey.Namespace, hubSecret.Name, hubSecret.Namespace))
+	c.log.Info(
+		fmt.Sprintf(
+			"createorupdate the the secret (%s/%s) on cluster %s",
+			hypershiftOperatorKey.Namespace,
+			hubSecret.Name,
+			hubSecret.Namespace,
+		),
+	)
 	_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeSecret, func() error {
 		spokeSecret.Data = map[string][]byte{
 			"credentials": hubSecret.Data["credentials"],
@@ -575,7 +649,14 @@ func (c *UpgradeController) saveSecretLocally(ctx context.Context, hubSecret *co
 				Namespace: c.addonNamespace,
 			},
 		}
-		c.log.Info(fmt.Sprintf("save the secret (%s/%s) locally on cluster %s", c.addonNamespace, hubSecret.Name, c.clusterName))
+		c.log.Info(
+			fmt.Sprintf(
+				"save the secret (%s/%s) locally on cluster %s",
+				c.addonNamespace,
+				hubSecret.Name,
+				c.clusterName,
+			),
+		)
 		_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeSecret, func() error {
 			spokeSecret.Data = hubSecret.Data
 			return nil
@@ -593,7 +674,14 @@ func (c *UpgradeController) saveConfigmapLocally(ctx context.Context, hubConfigm
 				Namespace: c.addonNamespace,
 			},
 		}
-		c.log.Info(fmt.Sprintf("save the configmap (%s/%s) locally on cluster %s", c.addonNamespace, hubConfigmap.Name, c.clusterName))
+		c.log.Info(
+			fmt.Sprintf(
+				"save the configmap (%s/%s) locally on cluster %s",
+				c.addonNamespace,
+				hubConfigmap.Name,
+				c.clusterName,
+			),
+		)
 		_, err := controllerutil.CreateOrUpdate(ctx, c.spokeUncachedClient, spokeConfigmap, func() error {
 			spokeConfigmap.Data = hubConfigmap.Data
 			return nil
@@ -655,7 +743,13 @@ func (c *UpgradeController) isHypershiftOperatorByMCE(ctx context.Context) bool 
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
-		c.log.Info(fmt.Sprintf("hypershift operator %s deployment not found after install, err: %v", hypershiftOperatorKey, err))
+		c.log.Info(
+			fmt.Sprintf(
+				"hypershift operator %s deployment not found after install, err: %v",
+				hypershiftOperatorKey,
+				err,
+			),
+		)
 		return false
 	}
 
@@ -790,7 +884,12 @@ func (c *UpgradeController) readInDownstreamOverride() ([]byte, error) {
 	// Override the image values in the installer provided imagestream with this
 	imUpgradeConfigMap, _ := c.getConfigMapFromHub(util.HypershiftOverrideImagesCM)
 	if imUpgradeConfigMap.Data != nil {
-		c.log.Info(fmt.Sprintf("found %s configmap, overriding hypershift images in the imagestream", util.HypershiftOverrideImagesCM))
+		c.log.Info(
+			fmt.Sprintf(
+				"found %s configmap, overriding hypershift images in the imagestream",
+				util.HypershiftOverrideImagesCM,
+			),
+		)
 
 		im, err = c.getUpdatedImageStream(im, imUpgradeConfigMap.Data)
 		if err != nil {
@@ -916,7 +1015,12 @@ func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
 }
 
 func (c *UpgradeController) secretDataUpdated(secretName string, secret corev1.Secret) bool {
-	c.log.Info(fmt.Sprintf("comparing hypershift operator installation secret(%s) to the locally saved secret", secretName))
+	c.log.Info(
+		fmt.Sprintf(
+			"comparing hypershift operator installation secret(%s) to the locally saved secret",
+			secretName,
+		),
+	)
 	secretKey := types.NamespacedName{Name: secretName, Namespace: c.addonNamespace}
 	localSecret := &corev1.Secret{}
 	if err := c.spokeUncachedClient.Get(context.TODO(), secretKey, localSecret); err != nil && !apierrors.IsNotFound(err) {
@@ -932,7 +1036,12 @@ func (c *UpgradeController) secretDataUpdated(secretName string, secret corev1.S
 }
 
 func (c *UpgradeController) configmapDataUpdated(cmName string, cm corev1.ConfigMap) bool {
-	c.log.Info(fmt.Sprintf("comparing hypershift operator installation flags configmap(%s) to the locally saved configmap", cmName))
+	c.log.Info(
+		fmt.Sprintf(
+			"comparing hypershift operator installation flags configmap(%s) to the locally saved configmap",
+			cmName,
+		),
+	)
 	cmKey := types.NamespacedName{Name: cmName, Namespace: c.addonNamespace}
 	localCM := &corev1.ConfigMap{}
 	if err := c.spokeUncachedClient.Get(context.TODO(), cmKey, localCM); err != nil && !apierrors.IsNotFound(err) {

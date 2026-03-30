@@ -58,10 +58,11 @@ const (
 	ImageStreamAgentCapiProvider    = "cluster-api-provider-agent"
 	ImageStreamHypershiftOperator   = "hypershift-operator"
 
-	HypershiftBucketSecretName      = "hypershift-operator-oidc-provider-s3-credentials"
-	HypershiftPrivateLinkSecretName = "hypershift-operator-private-link-credentials"
-	HypershiftExternalDNSSecretName = "hypershift-operator-external-dns-credentials"
-	ManagedClusterAnnoKey           = "cluster.open-cluster-management.io/managedcluster-name"
+	HypershiftBucketSecretName       = "hypershift-operator-oidc-provider-s3-credentials"
+	HypershiftPrivateLinkSecretName  = "hypershift-operator-private-link-credentials"
+	HypershiftAzurePrivateSecretName = "hypershift-operator-azure-credentials"
+	HypershiftExternalDNSSecretName  = "hypershift-operator-external-dns-credentials"
+	ManagedClusterAnnoKey            = "cluster.open-cluster-management.io/managedcluster-name"
 
 	// HyperShift install job
 	HypershiftInstallJobName           = "hypershift-install-job-"

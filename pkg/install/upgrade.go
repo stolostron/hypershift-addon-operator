@@ -36,6 +36,7 @@ type UpgradeController struct {
 	bucketSecret              corev1.Secret
 	extDnsSecret              corev1.Secret
 	privateLinkSecret         corev1.Secret
+	azurePrivateSecret        corev1.Secret
 	imageOverrideConfigmap    corev1.ConfigMap
 	installFlagsConfigmap     corev1.ConfigMap
 	reinstallNeeded           bool // this is used only for code test
@@ -120,6 +121,13 @@ func (c *UpgradeController) installOptionsChanged() bool {
 	newPrivateLinkSecret, err := c.getSecretFromHub(util.HypershiftPrivateLinkSecretName)
 	if err == nil && c.secretDataChanged(newPrivateLinkSecret, c.privateLinkSecret, util.HypershiftPrivateLinkSecretName) {
 		c.privateLinkSecret = newPrivateLinkSecret // save the new secret for the next cycle of comparison
+		return true
+	}
+
+	// check for changes in Azure private secret
+	newAzurePrivateSecret, err := c.getSecretFromHub(util.HypershiftAzurePrivateSecretName)
+	if err == nil && c.secretDataChanged(newAzurePrivateSecret, c.azurePrivateSecret, util.HypershiftAzurePrivateSecretName) {
+		c.azurePrivateSecret = newAzurePrivateSecret // save the new secret for the next cycle of comparison
 		return true
 	}
 
