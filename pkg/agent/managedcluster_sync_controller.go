@@ -2,10 +2,10 @@ package agent
 
 import (
 	"context"
+	"maps"
 	"os"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/go-logr/logr"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -85,10 +85,10 @@ func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	hubMC := &clusterv1.ManagedCluster{}
 	if err := c.hubClient.Get(ctx, types.NamespacedName{Name: hubMCName}, hubMC); err != nil {
 		if apierrors.IsNotFound(err) {
-			c.log.Info("error getting HostedCluster from ACM hub", "name", hubMCName)
-			return ctrl.Result{RequeueAfter: 1 * time.Minute}, nil
+			c.log.Info("hub ManagedCluster not found, removing propagated labels", "name", hubMCName)
+			return ctrl.Result{}, c.removePropagatedLabels(ctx, spokeMC)
 		}
-		c.log.Info("error getting HostedCluster from ACM hub", "name", hubMCName)
+		c.log.Error(err, "error getting ManagedCluster from ACM hub", "name", hubMCName)
 		return ctrl.Result{}, err
 	}
 
@@ -100,9 +100,9 @@ func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 // isSystemLabel returns true if the label key is managed by OCM/system
-// and should never be propagated.
+// and should never be propagated. The cluster.open-cluster-management.io/
+// prefix is explicitly allowed for clusterset label propagation.
 func isSystemLabel(key string) bool {
-	// Check exact key matches
 	var systemLabelKeys = map[string]bool{
 		"name":                          true,
 		"vendor":                        true,
@@ -120,16 +120,19 @@ func isSystemLabel(key string) bool {
 		return true
 	}
 
+	if strings.HasPrefix(key, "cluster.open-cluster-management.io/") {
+		return false
+	}
+
 	var systemPrefixes = []string{
-		"feature.open-cluster-management.io/",
-		"hypershift.open-cluster-management.io/",
-		"hypershift.openshift.io/",
-		"node.kubernetes.io/",
-		"feature.node.kubernetes.io/",
+		"open-cluster-management.io/",
+		"kubernetes.io/",
+		"openshift.io/",
+		"k8s.io/",
 	}
 
 	for _, p := range systemPrefixes {
-		if strings.HasPrefix(key, p) {
+		if strings.Contains(key, p) {
 			return true
 		}
 	}
@@ -234,6 +237,24 @@ func (c *LabelAgent) syncLabelsFromHub(
 	return c.spokeClient.Patch(ctx, spokeMC, patch)
 }
 
+// removePropagatedLabels removes all previously propagated labels from the spoke
+// ManagedCluster and clears the tracking annotation. Called when the hub MC is deleted.
+func (c *LabelAgent) removePropagatedLabels(ctx context.Context, spokeMC *clusterv1.ManagedCluster) error {
+	anno := spokeMC.Annotations[propagatedLabelAnnotation]
+	if anno == "" {
+		return nil
+	}
+
+	patch := client.MergeFrom(spokeMC.DeepCopy())
+	for _, key := range strings.Split(anno, ",") {
+		delete(spokeMC.Labels, key)
+	}
+	delete(spokeMC.Annotations, propagatedLabelAnnotation)
+
+	c.log.Info("removing propagated labels from spoke", "spokeMC", spokeMC.Name, "labels", anno)
+	return c.spokeClient.Patch(ctx, spokeMC, patch)
+}
+
 // mapHubMCToSpokeMC translates a hub ManagedCluster event into a reconcile
 // request for the corresponding spoke ManagedCluster.
 func (c *LabelAgent) mapHubMCToSpokeMC(ctx context.Context, hubMC *clusterv1.ManagedCluster) []reconcile.Request {
@@ -291,6 +312,9 @@ func labelEventFilters() predicate.Predicate {
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			mc, ok := e.ObjectNew.(*clusterv1.ManagedCluster)
 			if !ok {
+				return false
+			}
+			if maps.Equal(e.ObjectOld.GetLabels(), e.ObjectNew.GetLabels()) {
 				return false
 			}
 			return mc.Annotations[createdViaAnno] == createdViaHypershift

@@ -279,12 +279,12 @@ func TestLabelPropagation(t *testing.T) {
 			notExpectedLabels: []string{"env"},
 		},
 		{
-			name: "hub MC not found - spoke labels unchanged",
+			name: "hub MC not found - propagated labels removed, local labels kept",
 			spokeHostedCluster: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-					Labels:      map[string]string{"existing": "value"},
+					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "env,team"},
+					Labels:      map[string]string{"existing": "value", "env": "prod", "team": "backend"},
 				},
 			},
 			hubHostedCluster: nil,
@@ -292,6 +292,7 @@ func TestLabelPropagation(t *testing.T) {
 			expectedLabels: map[string]string{
 				"existing": "value",
 			},
+			notExpectedLabels: []string{"env", "team"},
 		},
 		{
 			name: "hub has nil labels - previously tracked labels removed",
@@ -944,17 +945,29 @@ func TestLabelEventFilters(t *testing.T) {
 		assert.False(t, result)
 	})
 
-	t.Run("UpdateFunc accepts hosted cluster MC", func(t *testing.T) {
+	t.Run("UpdateFunc accepts hosted cluster MC with label change", func(t *testing.T) {
+		oldMC := hostedMC.DeepCopy()
+		oldMC.Labels = map[string]string{"env": "staging"}
 		result := pred.Update(event.UpdateEvent{
-			ObjectOld: hostedMC.DeepCopy(),
+			ObjectOld: oldMC,
 			ObjectNew: hostedMC,
 		})
 		assert.True(t, result)
 	})
 
-	t.Run("UpdateFunc rejects non-hosted cluster MC", func(t *testing.T) {
+	t.Run("UpdateFunc rejects hosted cluster MC with no label change", func(t *testing.T) {
 		result := pred.Update(event.UpdateEvent{
-			ObjectOld: nonHostedMC.DeepCopy(),
+			ObjectOld: hostedMC.DeepCopy(),
+			ObjectNew: hostedMC,
+		})
+		assert.False(t, result)
+	})
+
+	t.Run("UpdateFunc rejects non-hosted cluster MC", func(t *testing.T) {
+		oldMC := nonHostedMC.DeepCopy()
+		oldMC.Labels = map[string]string{"env": "staging"}
+		result := pred.Update(event.UpdateEvent{
+			ObjectOld: oldMC,
 			ObjectNew: nonHostedMC,
 		})
 		assert.False(t, result)
