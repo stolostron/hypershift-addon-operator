@@ -20,7 +20,7 @@ rules:
   # Allow addon to install hypershift
   - apiGroups: ["cluster.open-cluster-management.io"]
     resources: ["clusterclaims", "managedclusters"]
-    verbs: ["get", "list", "create", "patch", "update", "delete"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
   - apiGroups: ["operator.open-cluster-management.io"]
     resources: ["klusterlets"]
     verbs: ["get", "list", "patch", "update", "watch"] 

@@ -18,6 +18,7 @@ import (
 	"go.uber.org/zap"
 	utilflag "k8s.io/component-base/cli/flag"
 	"open-cluster-management.io/addon-framework/pkg/version"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 func main() {
@@ -35,6 +36,7 @@ func main() {
 	}
 
 	logger = zapr.NewLogger(zapLog)
+	ctrl.SetLogger(logger)
 
 	command := newCommand(logger)
 

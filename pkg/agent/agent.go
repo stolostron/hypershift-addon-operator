@@ -33,6 +33,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -171,6 +172,30 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	if err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("failed to create hubClient, err: %w", err)
+	}
+
+	// create a controller-runtime cache for the ACM Hub to watch ManagedCluster resources
+	hubCache, err := cache.New(hubConfig, cache.Options{
+		Scheme: scheme,
+		ByObject: map[client.Object]cache.ByObject{
+			&clusterv1.ManagedCluster{}: {},
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("failed to create hub cache, err: %w", err)
+	}
+
+	// start the hub cache in a go routine to avoid blocking the rest of the code setup
+	go func() {
+		if err := hubCache.Start(ctx); err != nil {
+			log.Error(err, "hub cache failed")
+		}
+	}()
+
+	syncCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if !hubCache.WaitForCacheSync(syncCtx) {
+		return fmt.Errorf("hub cache failed to sync within 30s")
 	}
 
 	spokeKubeClient, err := client.New(spokeConfig, client.Options{Scheme: scheme})
@@ -344,6 +369,20 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	if err := mgr.AddReadyzCheck("readyz", healthz.Ping); err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
 		return fmt.Errorf("unable to set up ready check, err: %w", err)
+	}
+
+	labelAgent := &LabelAgent{
+		hubClient:        hubClient,
+		spokeClient:      spokeKubeClient,
+		hubCache:         hubCache,
+		clusterName:      aCtrl.clusterName,
+		localClusterName: aCtrl.localClusterName,
+		log:              o.Log.WithName("label-agent"),
+	}
+
+	if err = labelAgent.SetupWithManager(mgr); err != nil {
+		metrics.AddonAgentFailedToStartBool.Set(1)
+		return fmt.Errorf("unable to create label agent controller: %v", err)
 	}
 
 	return mgr.Start(ctrl.SetupSignalHandler())
