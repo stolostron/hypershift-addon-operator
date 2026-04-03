@@ -37,7 +37,9 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 				Name: managedMCEClusterName,
 			},
 		}
-		Expect(k8sClient.Create(ctx, &mcNs)).Should(Succeed())
+		if err := k8sClient.Create(ctx, &mcNs); err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).NotTo(HaveOccurred())
+		}
 
 		By("Create the hosted cluster namespace")
 		hcNs := corev1.Namespace{
@@ -45,7 +47,9 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 				Name: hcNamespace,
 			},
 		}
-		Expect(k8sClient.Create(ctx, &hcNs)).Should(Succeed())
+		if err := k8sClient.Create(ctx, &hcNs); err != nil && !apierrors.IsAlreadyExists(err) {
+			Expect(err).NotTo(HaveOccurred())
+		}
 	})
 
 	Context("When a hosted cluster is created and its kube API server becomes ready", func() {
@@ -274,6 +278,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 			err = k8sClient.Delete(ctx, hc)
 			Expect(err).NotTo(HaveOccurred())
 
+			os.Unsetenv("DISABLE_HC_DISCOVERY")
 		})
 	})
 
