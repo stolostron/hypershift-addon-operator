@@ -103,7 +103,11 @@ ifndef ignore-not-found
 endif
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
-ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+# Keep setup-envtest aligned with controller-runtime to avoid
+# requiring a newer Go toolchain than this repo uses in CI.
+# Use Replace.Version when go.mod replaces controller-runtime (see require vs replace).
+ENVTEST_VERSION ?= $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
+ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
 .PHONY: envtest
 envtest: ## Download envtest-setup locally if necessary.
 	$(call go-get-tool,$(ENVTEST),$(ENVTEST_PACKAGE))

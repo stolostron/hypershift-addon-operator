@@ -428,6 +428,108 @@ func TestPrivateLinkSecretChanges(t *testing.T) {
 
 }
 
+func TestAzurePrivateSecretChanges(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	controller := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+		azurePrivateSecret:        corev1.Secret{},
+	}
+
+	newAzurePrivateSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftAzurePrivateSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"credentials": []byte(`my-credential-file`),
+		},
+	}
+	controller.hubClient.Create(ctx, newAzurePrivateSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftAzurePrivateSecretName}, theSecret)
+		return err == nil
+	}, 10*time.Second, 1*time.Second, "The test Azure private secret was created successfully")
+
+	controller.Start()
+
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The Azure private secret has changed. The hypershift operator needs to be re-installed")
+
+	controller.Stop()
+
+	changedAzurePrivateSecret := &corev1.Secret{
+		ObjectMeta: v1.ObjectMeta{
+			Name:      util.HypershiftAzurePrivateSecretName,
+			Namespace: controller.clusterName,
+		},
+		Data: map[string][]byte{
+			"credentials": []byte(`my-new-credential-file`),
+		},
+	}
+
+	controller.hubClient.Update(ctx, changedAzurePrivateSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftAzurePrivateSecretName}, theSecret)
+		if err == nil {
+			return string(theSecret.Data["credentials"]) == "my-new-credential-file"
+		}
+		return false
+	}, 10*time.Second, 1*time.Second, "The Azure private secret was updated successfully")
+
+	controller.startup = false
+	controller.installfailed = false
+	controller.Start()
+
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The Azure private secret was updated. The hypershift operator needs to be re-installed")
+
+	controller.Stop()
+
+	controller.hubClient.Delete(ctx, newAzurePrivateSecret)
+
+	assert.Eventually(t, func() bool {
+		theSecret := &corev1.Secret{}
+		err := controller.hubClient.Get(ctx, types.NamespacedName{Namespace: controller.clusterName, Name: util.HypershiftAzurePrivateSecretName}, theSecret)
+		return errors.IsNotFound(err)
+	}, 10*time.Second, 1*time.Second, "The test Azure private secret was deleted successfully")
+
+	controller.Start()
+
+	assert.Eventually(t, func() bool {
+		return controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The Azure private secret was removed. The hypershift operator needs to be re-installed")
+
+	controller.Stop()
+
+	controller.startup = false
+	controller.installfailed = false
+
+	controller.hubClient = initErrorClient()
+	controller.Start()
+
+	assert.Eventually(t, func() bool {
+		return !controller.reinstallNeeded
+	}, 10*time.Second, 1*time.Second, "The agent fails to get the Azure private secret from the hub. The hypershift operator should not be re-installed")
+
+	controller.Stop()
+}
+
 func TestInstallFlagChanges(t *testing.T) {
 	ctx := context.Background()
 

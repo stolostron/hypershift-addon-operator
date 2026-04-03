@@ -966,6 +966,120 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 }
 
+func TestRunHypershiftInstallPrivateAzure(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	aCtrl := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+	}
+
+	addonNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: aCtrl.addonNamespace,
+		},
+	}
+	aCtrl.hubClient.Create(ctx, addonNs)
+	defer aCtrl.hubClient.Delete(ctx, addonNs)
+
+	pullSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      aCtrl.pullSecret,
+			Namespace: aCtrl.addonNamespace,
+		},
+		Data: map[string][]byte{
+			".dockerconfigjson": []byte(`docker-pull-secret`),
+		},
+	}
+	aCtrl.hubClient.Create(ctx, pullSecret)
+
+	installFlagsConfigmap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftInstallFlagsCM,
+			Namespace: aCtrl.clusterName,
+		},
+		Data: map[string]string{
+			"installFlagsToAdd": "--private-platform Azure --azure-pls-resource-group abcd-rg",
+		},
+	}
+	err := aCtrl.hubClient.Create(ctx, installFlagsConfigmap)
+	assert.Nil(t, err, "is nil when install flags configmap is created successfully")
+	defer aCtrl.hubClient.Delete(ctx, installFlagsConfigmap)
+
+	azurePrivateSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftAzurePrivateSecretName,
+			Namespace: aCtrl.clusterName,
+		},
+		Data: map[string][]byte{
+			"credentials": []byte(`azure-private-credentials`),
+		},
+	}
+	aCtrl.hubClient.Create(ctx, azurePrivateSecret)
+	defer aCtrl.hubClient.Delete(ctx, azurePrivateSecret)
+
+	err = installHyperShiftOperator(t, ctx, aCtrl, false)
+	defer deleteAllInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
+	assert.Nil(t, err, "is nil if install HyperShift is successful")
+
+	// Check hypershift-operator-azure-credentials secret exists in hypershift namespace
+	spokeAzureSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftAzurePrivateSecretName,
+			Namespace: "hypershift",
+		},
+	}
+	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(spokeAzureSecret), spokeAzureSecret)
+	assert.Nil(t, err, "is nil when Azure private secret is found in hypershift namespace")
+	assert.Equal(t, []byte(`azure-private-credentials`), spokeAzureSecret.Data["credentials"], "the credentials should be equal if the copy was a success")
+
+	installJobList := &kbatch.JobList{}
+	err = aCtrl.spokeUncachedClient.List(ctx, installJobList)
+	if assert.Nil(t, err, "listing jobs should succeed: %s", err) {
+		if assert.Equal(t, 1, len(installJobList.Items), "there should be exactly one install job") {
+			installJob := installJobList.Items[0]
+			expectArgs := []string{
+				"--namespace", "hypershift",
+				"--azure-private-secret", util.HypershiftAzurePrivateSecretName,
+				"--hypershift-image", "my-test-image",
+				"--platform-monitoring", "OperatorOnly",
+				"--enable-uwm-telemetry-remote-write",
+				"--enable-defaulting-webhook",
+				"--enable-validating-webhook",
+				"--private-platform", "Azure",
+				"--azure-pls-resource-group", "abcd-rg",
+			}
+			// Flag order varies (e.g. --azure-private-secret is injected before --hypershift-image);
+			// compare as sets so the test stays stable.
+			assert.ElementsMatch(
+				t,
+				expectArgs,
+				installJob.Spec.Template.Spec.Containers[0].Args,
+				"mismatched container arguments",
+			)
+		}
+	}
+
+	// Check hypershift-operator-azure-credentials secret exists in addon namespace
+	localAzurePrivateSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftAzurePrivateSecretName,
+			Namespace: aCtrl.addonNamespace,
+		},
+	}
+	err = aCtrl.spokeUncachedClient.Get(ctx, ctrlClient.ObjectKeyFromObject(localAzurePrivateSecret), localAzurePrivateSecret)
+	assert.Nil(t, err, "is nil when locally saved Azure private secret is found")
+	assert.Equal(t, []byte(`azure-private-credentials`), localAzurePrivateSecret.Data["credentials"], "the credentials should be equal if the local save was a success")
+}
+
 func TestRunHypershiftInstallEnableRHOBS(t *testing.T) {
 	ctx := context.Background()
 
