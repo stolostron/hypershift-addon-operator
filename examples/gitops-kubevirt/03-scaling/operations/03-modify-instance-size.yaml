@@ -1,0 +1,66 @@
+# Operation 3: Modify Instance Size
+# Changes worker node compute resources
+#
+# This patch demonstrates vertical scaling by modifying the compute resources
+# assigned to each worker node. We're increasing from 4 cores/16Gi to 8 cores/32Gi.
+#
+# Important notes:
+# - Changing compute spec triggers a rolling update of nodes
+# - Existing nodes will be replaced with new nodes having the new spec
+# - This respects the upgradeType setting (Replace vs InPlace)
+# - Workloads will be evicted and rescheduled during this process
+#
+# Timeline:
+# - Apply patch: immediate
+# - HyperShift detects change: seconds
+# - Node replacement cycle: 5-10 minutes per node (depends on upgradeType)
+# - Total time for N nodes: 5-10 minutes per node + 10 minutes
+#
+# Vertical scaling considerations:
+# - Larger instances = higher resource cost
+# - Fewer nodes may be sufficient for same workload capacity
+# - Combine with autoscaling for best efficiency
+# - Monitor node utilization before/after scaling
+#
+# Usage:
+#   oc apply -f operations/03-modify-instance-size.yaml
+#
+# Or via Git:
+#   1. Edit base/nodepool.yaml spec.platform.kubevirt.compute
+#   2. Change cores: 4 to cores: 8
+#   3. Change memory: 16Gi to memory: 32Gi
+#   4. Commit and push
+#   5. Watch: oc get nodepool -n clusters example-hcp-workers -w
+#
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-hcp-workers
+  namespace: clusters
+spec:
+  clusterName: example-hcp
+
+  autoScaling:
+    minReplicas: 2
+    maxReplicas: 8
+
+  management:
+    autoRepair: true
+    upgradeType: Replace
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      compute:
+        # Changed from 4 to 8 cores
+        cores: 8
+        # Changed from 16Gi to 32Gi memory
+        memory: 32Gi
+      rootVolume:
+        persistent:
+          size: 120Gi
+        type: Persistent
+
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.21.0-multi

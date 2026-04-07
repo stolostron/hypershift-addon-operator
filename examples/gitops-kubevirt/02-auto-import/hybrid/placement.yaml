@@ -1,0 +1,24 @@
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: Placement
+metadata:
+  name: hostedclusters
+  namespace: clusters
+spec:
+  clusterSets:
+  - hostedclusters
+
+  # Preference settings for cluster selection
+  predicates:
+  # Only select clusters that are ready
+  - requiredClusterConditionType: ManagedClusterConditionAvailable
+
+  # Optional: Add tolerations, score adjustments, etc.
+  # tolerations:
+  # - key: "dedicated"
+  #   operator: "Equal"
+  #   value: "gpu"
+  #   effect: "NoSchedule"
+
+  # NumberOfClusters can limit how many clusters get selected
+  # Leave empty to select all clusters in the set
+  # numberOfClusters: 10

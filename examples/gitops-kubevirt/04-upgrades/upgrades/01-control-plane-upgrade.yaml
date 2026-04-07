@@ -1,0 +1,94 @@
+# Upgrade 1: Control Plane Upgrade
+# Upgrades HostedCluster release image from 4.21.0-multi to 4.21.1-multi (patch / z-stream).
+#
+# Important: This upgrades ONLY the control plane (etcd, API server, controllers, etc.)
+# Nodes stay on 4.21.0-multi until you apply a separate NodePool upgrade (upgrades 2 or 3).
+#
+# OpenShift / HyperShift skew (summary):
+# - Control plane can run ahead of worker nodes within supported skew for the release.
+# - After control plane upgrade, plan the NodePool upgrade within your platform guidance.
+#
+# Upgrade safety:
+# 1. Control plane upgrade is generally the first step in a staged rollout.
+# 2. This example uses a single patch step (4.21.0 → 4.21.1), not a multi-minor jump.
+# 3. Always test in non-production first.
+#
+# Prerequisites:
+# - Review release notes for your target image (e.g. OpenShift 4.21 documentation).
+# - Ensure cluster is healthy: oc get clusteroperators (on the hosted cluster)
+# - Valid pull credentials for quay.io/openshift-release-dev (pull-secret)
+# - Scheduled maintenance window recommended
+#
+# Timeline:
+# - Preparation: 5-10 minutes
+# - Control plane update: 15-30 minutes
+#   - etcd upgrade: 5-10 minutes
+#   - API server replacement: 5-10 minutes
+#   - Controller restart: 5-10 minutes
+# - Total: 20-40 minutes
+#
+# Monitoring:
+# - Watch ClusterVersion: oc get clusterversion -w
+# - Check control plane pods: oc get pods -n clusters-example-hcp -w
+# - Monitor API availability
+#
+# Rollback (if needed — risky in production):
+# - Revert to 4.21.0-multi image in hostedcluster.yaml
+# - Coordinate NodePool version with support if you downgrade the control plane
+#
+# Usage:
+#   oc apply -f upgrades/01-control-plane-upgrade.yaml
+#
+# Or via Git:
+#   1. Edit base/hostedcluster.yaml
+#   2. Set spec.release.image to quay.io/openshift-release-dev/ocp-release:4.21.1-multi
+#   3. Commit and push
+#   4. Watch: oc get clusterversion -w
+#
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: example-hcp
+  namespace: clusters
+spec:
+  release:
+    # Upgraded from 4.21.0-multi to 4.21.1-multi (control plane only)
+    image: quay.io/openshift-release-dev/ocp-release:4.21.1-multi
+
+  pullSecret:
+    name: pull-secret
+
+  sshKey:
+    name: ssh-key
+
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+    networkType: OVNKubernetes
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      baseDomain: example.com
+
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+
+  dns:
+    baseDomain: example.com
+
+  infraID: example-hcp

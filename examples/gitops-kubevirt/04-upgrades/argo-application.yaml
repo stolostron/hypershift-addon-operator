@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: example-hcp-upgrades
+  namespace: openshift-gitops
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/YOUR_ORG/hypershift-addon-operator.git
+    targetRevision: main
+    path: examples/gitops-kubevirt/04-upgrades/base
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: clusters
+
+  syncPolicy:
+    # Start with manual sync for upgrades
+    syncOptions:
+    - CreateNamespace=true
+    - PruneLast=true
+
+    # For upgrades, consider keeping manual sync for safety
+    # Only enable automated sync if you understand the implications
+    # automated:
+    #   prune: true
+    #   selfHeal: false
+
+  # Ignore differences in ACM auto-created resources
+  ignoreDifferences:
+  - group: cluster.open-cluster-management.io
+    kind: ManagedCluster
+    jsonPointers:
+    - /metadata
+    - /spec

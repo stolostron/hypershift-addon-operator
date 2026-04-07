@@ -1,0 +1,27 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-hcp-auto-workers
+  namespace: clusters
+spec:
+  clusterName: example-hcp-auto
+
+  replicas: 2
+
+  management:
+    autoRepair: true
+    upgradeType: Replace
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      compute:
+        cores: 4
+        memory: 16Gi
+      rootVolume:
+        persistent:
+          size: 120Gi
+        type: Persistent
+
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.21.0-multi

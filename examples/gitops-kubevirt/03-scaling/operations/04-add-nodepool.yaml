@@ -1,0 +1,71 @@
+# Operation 4: Add Second NodePool
+# Creates a new NodePool with different characteristics
+#
+# This demonstrates multi-NodePool management, common for:
+# - Workload isolation (e.g., compute vs storage workloads)
+# - Different resource sizes for different job types
+# - GPU/special hardware pools
+# - Regional distribution in multi-zone clusters
+#
+# New NodePool characteristics:
+# - Name: example-hcp-infra
+# - Purpose: Infrastructure/batch workloads
+# - Size: Smaller (2 cores, 8Gi memory) for cost efficiency
+# - Nodes: Fixed at 2 (no autoscaling)
+# - Taints: NoSchedule for standard workloads
+# - Labels: Dedicated for selective workload targeting
+#
+# Usage:
+#   oc apply -f operations/04-add-nodepool.yaml
+#
+# Then verify:
+#   oc get nodepool -n clusters
+#   oc get nodes -L node-type=infra
+#
+# Deploy workloads to the infra pool:
+#   podSpec:
+#     tolerations:
+#     - key: node-type
+#       operator: Equal
+#       value: infra
+#       effect: NoSchedule
+#     nodeSelector:
+#       node-type: infra
+#
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-hcp-infra
+  namespace: clusters
+spec:
+  clusterName: example-hcp
+
+  replicas: 2
+
+  taints:
+  - key: node-type
+    value: infra
+    effect: NoSchedule
+
+  labels:
+  - key: node-type
+    value: infra
+
+  management:
+    autoRepair: true
+    upgradeType: Replace
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      compute:
+        cores: 2
+        memory: 8Gi
+      rootVolume:
+        persistent:
+          size: 120Gi
+        type: Persistent
+
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.21.0-multi

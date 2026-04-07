@@ -49,4 +49,4 @@ hypershift-addon   True
 ```
 
 ## Metrics Dashboard
-[Instructions here](example/metricsDashboard/README.md)
+[Instructions here](docs/metricsDashboard/README.md)

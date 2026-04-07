@@ -1,0 +1,127 @@
+# Upgrade 3: NodePool Upgrade - Rolling Update (InPlace) Strategy
+# Upgrades NodePool from 4.21.0-multi to 4.21.1-multi using InPlace with RollingUpdate
+#
+# InPlace Strategy with RollingUpdate:
+# - Boots new OS version alongside existing nodes
+# - Workloads gradually migrate to new nodes
+# - Old nodes are drained and removed once workloads migrate
+# - Requires capacity headroom (temporarily running both old+new)
+# - Smoother user experience, less disruption
+#
+# Comparison with Replace:
+# Replace:    Faster, cleaner state, requires capacity for all pods on remaining nodes
+# InPlace:    Smoother, less disruptive, requires temporary extra capacity during upgrade
+#
+# When to use InPlace + RollingUpdate:
+# - Have stateful workloads (StatefulSets, Databases)
+# - Can afford temporary capacity increase (2N during rolling)
+# - Want to minimize user-facing disruptions
+# - Can tolerate longer total upgrade duration
+#
+# When NOT to use InPlace:
+# - Cannot afford 2x temporary capacity
+# - Have very tight resource constraints
+# - Prefer faster upgrade completion
+#
+# Prerequisites for safe InPlace upgrade:
+# - Pod Disruption Budgets for mission-critical apps
+# - At least 50% extra capacity available during upgrade
+# - Network and storage can handle 2x node count temporarily
+# - Application health checks and readiness probes configured
+#
+# RollingUpdate specifics:
+# - maxUnavailable: 1 (how many nodes can be unavailable during rolling update)
+#   - If cluster has 2 nodes: 1 old, 1 new at a time = max 1 unavailable
+#   - If cluster has 4 nodes: keep at least 3 available during rolling
+# - Works by:
+#   1. Spin up new node with new OS
+#   2. Wait for it to be Ready
+#   3. Drain and cordon old node
+#   4. Pods migrate to new node
+#   5. Delete old node
+#   6. Repeat for next node
+#
+# Timeline (RollingUpdate with maxUnavailable: 1):
+# - Per node: 10-20 minutes
+# - 2 nodes: 20-40 minutes
+# - 4 nodes: 40-80 minutes
+# - Total: N * 10-20 min per node
+#
+# Monitoring During InPlace Upgrade:
+#   # Watch NodePool status
+#   oc get nodepool -n clusters example-hcp-workers -w
+#   # Look for: UPDATED field increasing, READY staying stable or increasing
+#
+#   # Watch nodes
+#   oc get nodes -w
+#   # Look for: Old nodes becoming NotReady → New nodes becoming Ready
+#
+#   # Check rolling update progress in conditions
+#   oc describe nodepool -n clusters example-hcp-workers
+#
+#   # Monitor pod scheduling during migration
+#   oc get pods -A -o wide
+#
+#   # Check for pods stuck in pending
+#   oc get pods -A --field-selector=status.phase=Pending
+#
+#   # Monitor VMs in management cluster
+#   oc get vm -n clusters-example-hcp -w
+#
+# Advanced: Custom maxUnavailable (if supported):
+# - maxUnavailable: 0   = Never exceed current capacity (slowest, safest)
+# - maxUnavailable: 1   = At most 1 node down (recommended)
+# - maxUnavailable: 2   = At most 2 nodes down (faster, less safe)
+# - maxUnavailable: 50% = 50% of nodes can be unavailable (use with caution)
+#
+# Rollback (if needed):
+# - Revert to 4.21.0-multi image in nodepool.yaml
+# - Already-migrated pods stay on new nodes
+# - Remaining old nodes finish upgrade normally
+# - Not recommended mid-upgrade
+#
+# Usage:
+#   oc apply -f upgrades/03-nodepool-upgrade-rolling.yaml
+#
+# Or via Git:
+#   1. Edit base/nodepool.yaml
+#   2. Set release.image to quay.io/openshift-release-dev/ocp-release:4.21.1-multi
+#   3. Change upgradeType: Replace → upgradeType: InPlace
+#   4. Add management.maxUnavailable: 1 (or maxSurge: 1 for extra capacity)
+#   5. Commit and push
+#   6. Watch: oc get nodepool -w
+#
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-hcp-workers
+  namespace: clusters
+spec:
+  clusterName: example-hcp
+
+  replicas: 2
+
+  management:
+    autoRepair: true
+    # InPlace: Keep workloads running, update OS in-place
+    upgradeType: InPlace
+    # RollingUpdate configuration
+    # How many nodes can be unavailable during rolling update
+    # For 2 nodes: maxUnavailable=1 means always 1+ nodes available
+    maxUnavailable: 1
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      compute:
+        cores: 4
+        memory: 16Gi
+      rootVolume:
+        persistent:
+          size: 120Gi
+        type: Persistent
+
+  release:
+    # Upgraded from 4.21.0-multi to 4.21.1-multi
+    image: quay.io/openshift-release-dev/ocp-release:4.21.1-multi

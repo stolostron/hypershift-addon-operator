@@ -1,0 +1,105 @@
+# Upgrade 2: NodePool Upgrade - Replace Strategy
+# Upgrades NodePool from 4.21.0-multi to 4.21.1-multi using Replace upgrade type
+#
+# Replace Strategy (upgradeType: Replace):
+# - Deletes old nodes
+# - Creates new nodes with updated image
+# - Workloads are evicted, rescheduled to remaining nodes
+# - More disruptive, requires capacity headroom
+# - Cleaner state (no rolling update overlap)
+#
+# Comparison:
+# Replace:        Delete old → Create new → Workload reschedule → All new
+# InPlace:        Create new → Migrate workload → Delete old → All new (during migration)
+# RollingUpdate:  Mix of old/new during process → Eventually all new
+#
+# When to use Replace:
+# - Sufficient cluster capacity to absorb all pods on fewer nodes
+# - Workloads are resilient (StatelessSets, Deployments)
+# - Want guaranteed clean state
+# - Have PDBs configured to prevent cascading failures
+#
+# When NOT to use Replace:
+# - Running StatefulSets with persistence
+# - Insufficient capacity for full cluster on remaining nodes
+# - Have critical single-pod services
+#
+# Prerequisites for safe Replace upgrade:
+# - Pod Disruption Budgets configured for critical apps
+# - Sufficient cluster capacity: ensure remaining nodes can hold all pods
+# - No single-pod deployments without PDBs
+# - Outbound network access for image pull
+#
+# Workflow safety:
+# 1. Review current pod distribution: oc get pods -A -o wide
+# 2. Check capacity: oc top nodes
+# 3. Identify critical apps without PDB: oc get pdb -A
+# 4. Create PDBs for critical apps if needed
+# 5. Apply the upgrade (GitOps commit or kubectl apply)
+# 6. Monitor replacement: oc get nodepool, oc get nodes
+# 7. Wait for all nodes READY
+#
+# Timeline:
+# - Start replacement: 2-5 minutes (old nodes marked unschedulable)
+# - Pod eviction: 5-10 minutes
+# - New node provisioning: 5-10 minutes per node
+# - Total for 2 nodes: 15-30 minutes
+#
+# Monitoring During Upgrade:
+#   # Watch NodePool status
+#   oc get nodepool -n clusters example-hcp-workers -w
+#
+#   # Monitor node transitions
+#   oc get nodes -w
+#
+#   # Check for stuck pods
+#   oc get pods -A --field-selector=status.phase=Pending
+#
+#   # Monitor VM replacement in management cluster
+#   oc get vm -n clusters-example-hcp -w
+#
+# Troubleshooting:
+# - Pods stuck in Pending: Check node capacity, PDB constraints
+# - Nodes stuck NotReady: Check VM status, network connectivity
+# - Slow eviction: Check PDB config, workload distribution
+#
+# Usage:
+#   oc apply -f upgrades/02-nodepool-upgrade-replace.yaml
+#
+# Or via Git:
+#   1. Edit base/nodepool.yaml
+#   2. Set release.image to quay.io/openshift-release-dev/ocp-release:4.21.1-multi
+#   3. Keep upgradeType: Replace (or verify it's set)
+#   4. Commit and push
+#   5. Watch upgrade: oc get nodepool -w, oc get nodes -w
+#
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-hcp-workers
+  namespace: clusters
+spec:
+  clusterName: example-hcp
+
+  replicas: 2
+
+  management:
+    autoRepair: true
+    # Replace: Delete old nodes, create new ones
+    upgradeType: Replace
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      compute:
+        cores: 4
+        memory: 16Gi
+      rootVolume:
+        persistent:
+          size: 120Gi
+        type: Persistent
+
+  release:
+    # Upgraded from 4.21.0-multi to 4.21.1-multi
+    image: quay.io/openshift-release-dev/ocp-release:4.21.1-multi

@@ -1,0 +1,53 @@
+# Operation 5: Remove NodePool
+# Demonstrates NodePool cleanup
+#
+# This is a guide for removing a NodePool. The actual removal is done via
+# kubectl delete, not by applying a manifest.
+#
+# Important considerations before removal:
+# 1. Drain workloads: Pods will be evicted and need to reschedule elsewhere
+# 2. Check node utilization: Ensure other pools can absorb the workload
+# 3. Monitor status: Track pod eviction and rescheduling
+# 4. Plan timing: Do during maintenance windows to avoid user impact
+#
+# Removal procedure:
+#
+# Step 1: List NodePools to identify the one to remove
+#   oc get nodepool -n clusters
+#
+# Step 2: Check what's running on the pool (optional)
+#   oc get pods --all-namespaces -o wide | grep <node-name>
+#
+# Step 3: Delete the NodePool
+#   oc delete nodepool -n clusters example-hcp-infra
+#
+# Step 4: Monitor the deletion
+#   oc get nodepool -n clusters -w
+#   oc get nodes -w
+#
+# Step 5: Verify deletion complete
+#   - NodePool resource gone
+#   - Associated VMs terminated
+#   - Nodes removed from cluster
+#   - Pods rescheduled to remaining nodes
+#
+# Timeline:
+# - Deletion initiated: immediate
+# - Pods evicted and rescheduled: 2-5 minutes
+# - VMs terminated: 3-5 minutes
+# - Resource cleanup: 5-10 minutes total
+#
+# Expected events:
+# - Pod evictions and reschedules (check events)
+# - Node NotReady status
+# - Node deletion
+# - VM termination
+#
+# If using Git-based workflow:
+# Simply remove the NodePool YAML file from your repository and commit.
+# Argo CD will delete it from the cluster.
+#
+---
+# No manifest needed for deletion
+# Use: oc delete nodepool -n clusters example-hcp-infra
+# Or remove the 04-add-nodepool.yaml from your Git repo and commit

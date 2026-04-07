@@ -1,0 +1,8 @@
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: example-hcp-disabled
+  # Note: No namespace - ManagedCluster is cluster-scoped
+spec:
+  hubAcceptsClient: true
+  leaseDurationSeconds: 60

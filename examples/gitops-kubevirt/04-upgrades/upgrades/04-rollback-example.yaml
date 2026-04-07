@@ -1,0 +1,178 @@
+# Rollback Example: Revert to 4.21.0-multi
+# Shows how to rollback if an upgrade causes issues
+#
+# IMPORTANT: Rollback is complex and risky!
+# Only attempt if:
+# 1. Cluster is still functional
+# 2. You have support/expert guidance
+# 3. It's early in upgrade (haven't moved much workload)
+#
+# Rollback Risks and Considerations:
+#
+# 1. Control Plane Downgrade:
+#    - Can corrupt etcd if not done carefully
+#    - Not officially supported by OpenShift
+#    - Cluster may be in inconsistent state
+#    - Some resources created on 4.21.1 may not be compatible with 4.21.0
+#    - Recommendation: Contact Red Hat support before attempting
+#
+# 2. NodePool Rollback (After Replace Upgrade):
+#    - Old nodes are already deleted
+#    - Must recreate from scratch
+#    - Simpler than control plane but slower
+#    - Workloads already running on new nodes
+#
+# 3. NodePool Rollback (After InPlace Upgrade):
+#    - Old nodes may still be running (if upgrade in-progress)
+#    - Some pods already migrated to new nodes
+#    - Attempting to move workloads back is complex
+#    - Not recommended
+#
+# Better Alternatives to Rollback:
+#
+# 1. Stay on Upgraded Version:
+#    - Most issues can be resolved on target version
+#    - Faster than rolling back
+#    - Safer than downgrading
+#    - Work with vendor support to fix root cause
+#
+# 2. Partial Rollback:
+#    - Keep control plane at 4.21.1
+#    - Rollback nodes to 4.21.0
+#    - Requires tight coordination with support
+#    - Control plane at N+1 relative to nodes is within skew
+#
+# 3. If You Must Rollback:
+#    - NodePool rollback first (always)
+#    - Control plane only if absolutely necessary
+#    - Have backup of etcd
+#    - Stop all workload changes during rollback
+#    - Monitor for data corruption
+#    - Contact Red Hat support
+#
+# PROCEDURE IF YOU MUST ROLLBACK:
+#
+# Step 1: Check Cluster Health
+#   oc get clusterversion
+#   oc get clusteroperators
+#   oc get hostedcluster -n clusters example-hcp
+#
+# Step 2: Rollback NodePool FIRST
+#   oc apply -f upgrades/04-rollback-example.yaml
+#   # OR manually:
+#   oc patch nodepool -n clusters example-hcp-workers \
+#     --type merge -p '{"spec":{"release":{"image":"quay.io/openshift-release-dev/ocp-release:4.21.0-multi"}}}'
+#
+#   # Monitor
+#   oc get nodepool -n clusters example-hcp-workers -w
+#   oc get nodes -w
+#   # Wait for all nodes to reach 4.21.0 and Ready state
+#
+# Step 3: Only if NodePool rollback successful, consider Control Plane
+#   # DO NOT attempt without support guidance!
+#   # Edit base/hostedcluster.yaml to change image back to 4.21.0-multi
+#   oc apply -f upgrades/04-rollback-example.yaml
+#   oc patch hostedcluster -n clusters example-hcp \
+#     --type merge -p '{"spec":{"release":{"image":"quay.io/openshift-release-dev/ocp-release:4.21.0-multi"}}}'
+#
+#   # Monitor (this is risky!)
+#   oc get clusterversion -w
+#   oc get pods -n clusters-example-hcp -w
+#
+# Step 4: Validate Cluster
+#   oc get clusterversion
+#   oc get clusteroperators | grep -v "True.*False.*False"
+#   oc get nodes
+#
+# Git-based Rollback (Recommended if using Git):
+#
+#   git log --oneline
+#   # Find the commit before upgrade
+#   git revert <upgrade-commit-hash>
+#   # Or
+#   git checkout <pre-upgrade-commit> -- base/
+#   git commit -m "rollback: revert to 4.21.0-multi"
+#   git push
+#   # Argo CD auto-syncs
+#
+# WARNING: This manifest REVERTS both control plane and nodes to 4.21.0-multi
+# Only use this if you truly need to rollback and understand the risks!
+#
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: example-hcp
+  namespace: clusters
+spec:
+  release:
+    # Reverted from 4.21.1-multi back to 4.21.0-multi
+    # WARNING: Control plane downgrade is risky!
+    image: quay.io/openshift-release-dev/ocp-release:4.21.0-multi
+
+  pullSecret:
+    name: pull-secret
+
+  sshKey:
+    name: ssh-key
+
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+    networkType: OVNKubernetes
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      baseDomain: example.com
+
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+
+  dns:
+    baseDomain: example.com
+
+  infraID: example-hcp
+
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-hcp-workers
+  namespace: clusters
+spec:
+  clusterName: example-hcp
+
+  replicas: 2
+
+  management:
+    autoRepair: true
+    upgradeType: Replace
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      compute:
+        cores: 4
+        memory: 16Gi
+      rootVolume:
+        persistent:
+          size: 120Gi
+        type: Persistent
+
+  release:
+    # Reverted from 4.21.1-multi back to 4.21.0-multi
+    image: quay.io/openshift-release-dev/ocp-release:4.21.0-multi

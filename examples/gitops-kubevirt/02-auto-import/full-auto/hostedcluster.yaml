@@ -1,0 +1,47 @@
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: example-hcp-auto
+  namespace: clusters
+  # Auto-import: hypershift-addon creates ManagedCluster when HC is Available
+  # unless the hub sets autoImportDisabled on hypershift-addon-deploy-config.
+spec:
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.21.0-multi
+
+  pullSecret:
+    name: pull-secret
+
+  sshKey:
+    name: ssh-key
+
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+    networkType: OVNKubernetes
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      baseDomain: example.com
+
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+
+  dns:
+    baseDomain: example.com
+
+  infraID: example-hcp-auto

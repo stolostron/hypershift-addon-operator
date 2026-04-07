@@ -1,0 +1,35 @@
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: example-hcp-disabled
+  namespace: example-hcp-disabled
+spec:
+  clusterName: example-hcp-disabled
+  clusterNamespace: example-hcp-disabled
+
+  # Application Manager - enable for managing applications
+  applicationManager:
+    enabled: true
+    evictionHardDrains: []
+    evictionSoftDrains:
+    - tolerationSeconds: 300
+      triggerDuration: 5m
+
+  # Certificate Policy Controller - for certificate compliance
+  certPolicyController:
+    enabled: true
+
+  # IAM Policy Controller - for role/user compliance
+  iamPolicyController:
+    enabled: true
+
+  # Policy Framework - for policy evaluation
+  policyController:
+    enabled: true
+
+  # Search - for cluster resource search capability
+  searchCollector:
+    enabled: true
+
+  # Work Manager - for manifest delivery
+  # This is the core addon for HCP
