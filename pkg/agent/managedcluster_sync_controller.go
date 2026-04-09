@@ -122,6 +122,8 @@ func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 				c.log.Error(err, "error removing HC propagated labels from hub", "hubMC", hubMCName)
 				return ctrl.Result{}, err
 			}
+		} else if !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
 		}
 	}
 
