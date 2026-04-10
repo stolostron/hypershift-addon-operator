@@ -358,9 +358,10 @@ func TestLabelPropagation(t *testing.T) {
 				assert.False(t, exists, "label %s should not exist", key)
 			}
 			if tt.expectedAnnoKeys != nil {
-				anno := mc.Annotations[propagatedLabelAnnotation]
+				tracked := parseAnnotation(mc.Annotations[propagatedLabelAnnotation])
+				assert.Len(t, tracked, len(tt.expectedAnnoKeys))
 				for _, key := range tt.expectedAnnoKeys {
-					assert.Contains(t, anno, key)
+					assert.True(t, tracked[key], "tracked key %s missing", key)
 				}
 			}
 		})
@@ -658,15 +659,17 @@ func runHCLabelTest(t *testing.T, tt hcLabelTestCase) {
 		assert.False(t, exists, "spoke label %s should not exist", key)
 	}
 	if tt.expectedHCAnnoKeysOnSpoke != nil {
-		anno := mc.Annotations[hcPropagatedLabelAnnotation]
+		tracked := parseAnnotation(mc.Annotations[hcPropagatedLabelAnnotation])
+		assert.Len(t, tracked, len(tt.expectedHCAnnoKeysOnSpoke))
 		for _, key := range tt.expectedHCAnnoKeysOnSpoke {
-			assert.Contains(t, anno, key)
+			assert.True(t, tracked[key], "spoke hc-tracked key %s missing", key)
 		}
 	}
 	if tt.expectedHubAnnoKeysOnSpoke != nil {
-		anno := mc.Annotations[propagatedLabelAnnotation]
+		tracked := parseAnnotation(mc.Annotations[propagatedLabelAnnotation])
+		assert.Len(t, tracked, len(tt.expectedHubAnnoKeysOnSpoke))
 		for _, key := range tt.expectedHubAnnoKeysOnSpoke {
-			assert.Contains(t, anno, key)
+			assert.True(t, tracked[key], "spoke hub-tracked key %s missing", key)
 		}
 	}
 
@@ -681,9 +684,10 @@ func runHCLabelTest(t *testing.T, tt hcLabelTestCase) {
 			assert.False(t, exists, "hub label %s should not exist", key)
 		}
 		if tt.expectedHCAnnoKeysOnHub != nil {
-			anno := hubMC.Annotations[hcPropagatedLabelAnnotation]
+			tracked := parseAnnotation(hubMC.Annotations[hcPropagatedLabelAnnotation])
+			assert.Len(t, tracked, len(tt.expectedHCAnnoKeysOnHub))
 			for _, key := range tt.expectedHCAnnoKeysOnHub {
-				assert.Contains(t, anno, key)
+				assert.True(t, tracked[key], "hub hc-tracked key %s missing", key)
 			}
 		}
 	}
@@ -1033,15 +1037,21 @@ func TestFindHostedCluster(t *testing.T) {
 				Labels:      map[string]string{testAutoCreatedForInfra: testInfraID},
 			},
 		}
+		// Name-only match (no infraID, no annotation)
 		assert.Nil(t, spoke.Create(ctx, &hyperv1beta1.HostedCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "clusters"},
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "wrong-ns"},
+		}))
+		// InfraID match with a different name
+		assert.Nil(t, spoke.Create(ctx, &hyperv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "infra-hc", Namespace: "clusters"},
 			Spec:       hyperv1beta1.HostedClusterSpec{InfraID: testInfraID},
 		}))
 
 		result, err := lc.findHostedCluster(ctx, spokeMC)
 		assert.Nil(t, err)
 		assert.NotNil(t, result)
-		assert.Equal(t, "my-hc", result.Name)
+		assert.Equal(t, "infra-hc", result.Name, "infraID match should win over name")
+		assert.Equal(t, "clusters", result.Namespace)
 	})
 
 	t.Run("annotation match takes priority over infraID", func(t *testing.T) {
