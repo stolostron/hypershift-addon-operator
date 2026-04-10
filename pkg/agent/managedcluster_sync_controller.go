@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"sort"
@@ -30,6 +31,8 @@ const (
 	hcPropagatedLabelAnnotation = "hypershift.open-cluster-management.io/hc-propagated-labels"
 	autoInfraLabelName          = "hypershift.openshift.io/auto-created-for-infra"
 )
+
+var errAmbiguousHCMatch = errors.New("multiple HostedClusters match by name")
 
 type LabelAgent struct {
 	hubClient        client.Client
@@ -90,12 +93,13 @@ func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 
 	// HC sync (highest priority -- HC labels override everything)
 	hc, err := c.findHostedCluster(ctx, spokeMC)
-	if err != nil {
+	if errors.Is(err, errAmbiguousHCMatch) {
+		// Multiple HCs share the same name; skip HC sync entirely to avoid
+		// propagating from the wrong HC or cleaning up labels that are still valid.
+	} else if err != nil {
 		c.log.Error(err, "error finding HostedCluster", "spokeMC", spokeMC.Name)
 		return ctrl.Result{}, err
-	}
-
-	if hc != nil {
+	} else if hc != nil {
 		if err := c.syncHCLabelsToSpoke(ctx, spokeMC, hc); err != nil {
 			c.log.Error(err, "error syncing HC labels to spoke", "hc", hc.Name, "spokeMC", spokeMC.Name)
 			return ctrl.Result{}, err
@@ -204,7 +208,7 @@ func (c *LabelAgent) findHostedCluster(
 		}
 		c.log.Info("multiple HostedClusters match by name, add the managedcluster-name annotation to disambiguate",
 			"mcName", mcName, "namespaces", namespaces)
-		return nil, nil
+		return nil, errAmbiguousHCMatch
 	}
 }
 

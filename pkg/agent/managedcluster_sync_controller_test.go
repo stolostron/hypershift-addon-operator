@@ -23,566 +23,297 @@ import (
 )
 
 const (
-	testAnnotationEnvTeamTier = "env,team,tier"
-	testHubMCName             = "mce-my-hc"
-	testAutoCreatedForInfra   = "hypershift.openshift.io/auto-created-for-infra"
+	testHubMCName           = "mce-my-hc"
+	testAutoCreatedForInfra = "hypershift.openshift.io/auto-created-for-infra"
+	testCustomMCName        = "custom-name"
 )
 
 func strPtr(s string) *string { return &s }
 
 func initLabelSyncClient(t *testing.T) (client.Client, client.Client) {
 	scheme := runtime.NewScheme()
-	err := clusterv1.AddToScheme(scheme)
-	assert.Nil(t, err)
-	err = hyperv1beta1.AddToScheme(scheme)
-	assert.Nil(t, err)
-
-	spokeClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-	hubClient := fake.NewClientBuilder().WithScheme(scheme).Build()
-	return spokeClient, hubClient
+	assert.Nil(t, clusterv1.AddToScheme(scheme))
+	assert.Nil(t, hyperv1beta1.AddToScheme(scheme))
+	return fake.NewClientBuilder().WithScheme(scheme).Build(),
+		fake.NewClientBuilder().WithScheme(scheme).Build()
 }
+
+func newLabelAgent(t *testing.T, spoke, hub client.Client, clusterName string) *LabelAgent {
+	zapLog, _ := zap.NewDevelopment()
+	return &LabelAgent{
+		hubClient:        hub,
+		spokeClient:      spoke,
+		clusterName:      clusterName,
+		localClusterName: "local-cluster",
+		log:              zapr.NewLogger(zapLog),
+	}
+}
+
+func reconcileAndGet(
+	t *testing.T, lc *LabelAgent, spoke client.Client, name string,
+) *clusterv1.ManagedCluster {
+	_, err := lc.Reconcile(context.Background(), ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: name},
+	})
+	assert.Nil(t, err)
+	mc := &clusterv1.ManagedCluster{}
+	assert.Nil(t, spoke.Get(context.Background(), types.NamespacedName{Name: name}, mc))
+	return mc
+}
+
+// --- Hub-to-spoke label propagation ---
 
 func TestLabelPropagation(t *testing.T) {
 	tests := []struct {
-		name                   string
-		spokeHostedCluster     *clusterv1.ManagedCluster
-		hubHostedCluster       *clusterv1.ManagedCluster
-		importedMCEName        string
-		localClusterName       string
-		expectedLabels         map[string]string
-		notExpectedLabels      []string
-		discoveryPrefix        *string
-		expectedAnnotationKeys []string
+		name               string
+		spokeMC            *clusterv1.ManagedCluster
+		hubMC              *clusterv1.ManagedCluster
+		clusterName        string
+		localClusterName   string
+		discoveryPrefix    *string
+		expectedLabels     map[string]string
+		notExpectedLabels  []string
+		expectedAnnoKeys   []string
 	}{
 		{
-			name: "new hub labels propagated to spoke",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
+			name: "hub labels propagated to spoke",
+			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-					Labels:      map[string]string{},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "imported-mce-hostedcluster",
-					Annotations: map[string]string{},
-					Labels:      map[string]string{"newLabel": "newValue"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"newLabel": "newValue",
-			},
-		},
-		{
-			name: "dont override existing labels that isn't being tracked",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-					Labels:      map[string]string{"existingLabel": "oldValue"},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "imported-mce-hostedcluster",
-					Annotations: map[string]string{},
-					Labels:      map[string]string{"existingLabel": "newValue"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"existingLabel": "oldValue",
-			},
-		},
-		{
-			name: "override existing labels that is being tracked",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "existingLabel"},
-					Labels:      map[string]string{"existingLabel": "oldValue"},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "imported-mce-hostedcluster",
-					Annotations: map[string]string{},
-					Labels:      map[string]string{"existingLabel": "newValue"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"existingLabel": "newValue",
-			},
-		},
-		{
-			name: "system labels by exact key are not propagated",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
+					Name:        "hc1",
 					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
 				},
 			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
+			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"vendor": "OpenShift", "cloud": "Amazon", "clusterID": "abc-123", "env": "prod"},
+					Name:   "mce-hc1",
+					Labels: map[string]string{"env": "prod", "team": "backend"},
 				},
 			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"env": "prod",
-			},
-			notExpectedLabels: []string{"vendor", "cloud", "clusterID"},
+			clusterName:    "mce",
+			expectedLabels: map[string]string{"env": "prod", "team": "backend"},
+			expectedAnnoKeys: []string{"env", "team"},
 		},
 		{
-			name: "system labels by prefix are not propagated",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
+			name: "untracked label not overwritten",
+			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
+					Name:        "hc1",
+					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
+					Labels:      map[string]string{"env": "local-val"},
+				},
+			},
+			hubMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "mce-hc1",
+					Labels: map[string]string{"env": "hub-val"},
+				},
+			},
+			clusterName:    "mce",
+			expectedLabels: map[string]string{"env": "local-val"},
+		},
+		{
+			name: "tracked label overridden by hub",
+			spokeMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "hc1",
+					Annotations: map[string]string{
+						createdViaAnno:            createdViaHypershift,
+						propagatedLabelAnnotation: "env",
+					},
+					Labels: map[string]string{"env": "old"},
+				},
+			},
+			hubMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "mce-hc1",
+					Labels: map[string]string{"env": "new"},
+				},
+			},
+			clusterName:    "mce",
+			expectedLabels: map[string]string{"env": "new"},
+		},
+		{
+			name: "system labels filtered by key and prefix",
+			spokeMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "hc1",
 					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
 				},
 			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
+			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "imported-mce-hostedcluster",
+					Name: "mce-hc1",
 					Labels: map[string]string{
-						"feature.open-cluster-management.io/addon-search":      "available",
-						"hypershift.open-cluster-management.io/discovery-type": "MultiClusterEngineHCP",
-						"team": "backend",
+						"vendor": "OpenShift", "cloud": "Amazon", "region": "us-east-1",
+						"feature.open-cluster-management.io/addon-search": "available",
+						"env": "prod",
 					},
 				},
 			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"team": "backend",
-			},
-			notExpectedLabels: []string{
-				"feature.open-cluster-management.io/addon-search",
-				"hypershift.open-cluster-management.io/discovery-type",
-			},
+			clusterName:       "mce",
+			expectedLabels:    map[string]string{"env": "prod"},
+			notExpectedLabels: []string{"vendor", "cloud", "region", "feature.open-cluster-management.io/addon-search"},
 		},
 		{
-			name: "removed hub label is deleted from spoke",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
+			name: "hub label removed from spoke",
+			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "env,team"},
-					Labels:      map[string]string{"env": "prod", "team": "backend"},
+					Name: "hc1",
+					Annotations: map[string]string{
+						createdViaAnno:            createdViaHypershift,
+						propagatedLabelAnnotation: "env,team",
+					},
+					Labels: map[string]string{"env": "prod", "team": "backend", "local": "keep"},
 				},
 			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
+			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
+					Name:   "mce-hc1",
 					Labels: map[string]string{"env": "prod"},
 				},
 			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"env": "prod",
-			},
+			clusterName:       "mce",
+			expectedLabels:    map[string]string{"env": "prod", "local": "keep"},
 			notExpectedLabels: []string{"team"},
 		},
 		{
-			name: "spoke local labels are preserved alongside propagated labels",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
+			name: "hub MC not found cleans up tracked labels",
+			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-					Labels:      map[string]string{"local-label": "local-value"},
+					Name: "hc1",
+					Annotations: map[string]string{
+						createdViaAnno:            createdViaHypershift,
+						propagatedLabelAnnotation: "env,team",
+					},
+					Labels: map[string]string{"env": "prod", "team": "backend", "local": "keep"},
 				},
 			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"env": "prod"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"local-label": "local-value",
-				"env":         "prod",
-			},
+			hubMC:             nil,
+			clusterName:       "mce",
+			expectedLabels:    map[string]string{"local": "keep"},
+			notExpectedLabels: []string{"env", "team"},
 		},
 		{
-			name: "custom discovery prefix - labels propagate",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
+			name: "custom discovery prefix",
+			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
+					Name:        "hc1",
 					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
 				},
 			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
+			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "custom-hostedcluster",
+					Name:   "custom-hc1",
 					Labels: map[string]string{"env": "prod"},
 				},
 			},
-			importedMCEName: "imported-mce",
+			clusterName:     "mce",
 			discoveryPrefix: strPtr("custom"),
-			expectedLabels: map[string]string{
-				"env": "prod",
-			},
+			expectedLabels:  map[string]string{"env": "prod"},
 		},
 		{
-			name: "empty discovery prefix - hub name equals spoke name",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
+			name: "local-cluster skips reconcile",
+			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "hostedcluster",
-					Labels: map[string]string{"env": "staging"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			discoveryPrefix: strPtr(""),
-			expectedLabels: map[string]string{
-				"env": "staging",
-			},
-		},
-		{
-			name: "local-cluster agent skips reconcile",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
+					Name:        "hc1",
 					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
 					Labels:      map[string]string{"existing": "value"},
 				},
 			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
+			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "local-cluster-hostedcluster",
+					Name:   "local-cluster-hc1",
 					Labels: map[string]string{"env": "prod"},
 				},
 			},
-			importedMCEName:  "local-cluster",
-			localClusterName: "local-cluster",
-			expectedLabels: map[string]string{
-				"existing": "value",
-			},
+			clusterName:       "local-cluster",
+			localClusterName:  "local-cluster",
+			expectedLabels:    map[string]string{"existing": "value"},
 			notExpectedLabels: []string{"env"},
 		},
 		{
-			name: "missing created-via annotation skips reconcile",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
+			name: "missing annotation skips reconcile",
+			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "hostedcluster",
+					Name:   "hc1",
 					Labels: map[string]string{"existing": "value"},
 				},
 			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
+			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
+					Name:   "mce-hc1",
 					Labels: map[string]string{"env": "prod"},
 				},
 			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"existing": "value",
-			},
+			clusterName:       "mce",
+			expectedLabels:    map[string]string{"existing": "value"},
 			notExpectedLabels: []string{"env"},
 		},
 		{
-			name: "hub MC not found - propagated labels removed, local labels kept",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
+			name: "idempotent when already synced",
+			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "env,team"},
-					Labels:      map[string]string{"existing": "value", "env": "prod", "team": "backend"},
+					Name: "hc1",
+					Annotations: map[string]string{
+						createdViaAnno:            createdViaHypershift,
+						propagatedLabelAnnotation: "env",
+					},
+					Labels: map[string]string{"env": "prod"},
 				},
 			},
-			hubHostedCluster: nil,
-			importedMCEName:  "imported-mce",
-			expectedLabels: map[string]string{
-				"existing": "value",
+			hubMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   "mce-hc1",
+					Labels: map[string]string{"env": "prod"},
+				},
 			},
-			notExpectedLabels: []string{"env", "team"},
+			clusterName:    "mce",
+			expectedLabels: map[string]string{"env": "prod"},
 		},
 		{
-			name: "hub has nil labels - previously tracked labels removed",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
+			name: "matching labels auto-tracked",
+			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "env"},
-					Labels:      map[string]string{"env": "prod", "local": "keep"},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "imported-mce-hostedcluster",
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"local": "keep",
-			},
-			notExpectedLabels: []string{"env"},
-		},
-		{
-			name: "spoke has nil labels - hub labels added",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
+					Name:        "hc1",
 					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"env": "prod"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"env": "prod",
-			},
-			expectedAnnotationKeys: []string{"env"},
-		},
-		{
-			name: "idempotent - no changes when already synced",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "env"},
 					Labels:      map[string]string{"env": "prod"},
 				},
 			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
+			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
+					Name:   "mce-hc1",
 					Labels: map[string]string{"env": "prod"},
 				},
 			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"env": "prod",
-			},
+			clusterName:      "mce",
+			expectedLabels:   map[string]string{"env": "prod"},
+			expectedAnnoKeys: []string{"env"},
 		},
 		{
-			name: "multiple labels propagated and some removed",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
+			name: "multiple labels with partial removal",
+			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "env,team,old-label,deprecated"},
-					Labels:      map[string]string{"env": "prod", "team": "backend", "old-label": "remove-me", "deprecated": "remove-me-too", "local": "keep"},
+					Name: "hc1",
+					Annotations: map[string]string{
+						createdViaAnno:            createdViaHypershift,
+						propagatedLabelAnnotation: "env,team,old,deprecated",
+					},
+					Labels: map[string]string{
+						"env": "prod", "team": "backend",
+						"old": "rm", "deprecated": "rm", "local": "keep",
+					},
 				},
 			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
+			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
+					Name:   "mce-hc1",
 					Labels: map[string]string{"env": "staging", "team": "backend"},
 				},
 			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"env":   "staging",
-				"team":  "backend",
-				"local": "keep",
-			},
-			notExpectedLabels:      []string{"old-label", "deprecated"},
-			expectedAnnotationKeys: []string{"env", "team"},
-		},
-		{
-			name: "clusterset label propagated when only on hub",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"cluster.open-cluster-management.io/clusterset": "team-a-clusters"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"cluster.open-cluster-management.io/clusterset": "team-a-clusters",
-			},
-			expectedAnnotationKeys: []string{"cluster.open-cluster-management.io/clusterset"},
-		},
-		{
-			name: "matching labels on both sides are auto-tracked",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-					Labels:      map[string]string{"cluster.open-cluster-management.io/clusterset": "default"},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"cluster.open-cluster-management.io/clusterset": "default"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"cluster.open-cluster-management.io/clusterset": "default",
-			},
-			expectedAnnotationKeys: []string{"cluster.open-cluster-management.io/clusterset"},
-		},
-		{
-			name: "untracked label with different hub value is not overwritten",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-					Labels:      map[string]string{"cluster.open-cluster-management.io/clusterset": "default"},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"cluster.open-cluster-management.io/clusterset": "team-a"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"cluster.open-cluster-management.io/clusterset": "default",
-			},
-		},
-		{
-			name: "tracked clusterset label updated when hub changes",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "cluster.open-cluster-management.io/clusterset"},
-					Labels:      map[string]string{"cluster.open-cluster-management.io/clusterset": "default"},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"cluster.open-cluster-management.io/clusterset": "team-a"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"cluster.open-cluster-management.io/clusterset": "team-a",
-			},
-			expectedAnnotationKeys: []string{"cluster.open-cluster-management.io/clusterset"},
-		},
-		{
-			name: "tracking annotation records propagated keys",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"env": "prod", "team": "backend", "vendor": "OpenShift"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"env":  "prod",
-				"team": "backend",
-			},
-			notExpectedLabels:      []string{"vendor"},
-			expectedAnnotationKeys: []string{"env", "team"},
-		},
-		{
-			name: "spoke label value changed - corrected back to hub value",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "env"},
-					Labels:      map[string]string{"env": "WRONG"},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"env": "prod"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"env": "prod",
-			},
-			expectedAnnotationKeys: []string{"env"},
-		},
-		{
-			name: "spoke label deleted entirely - re-added from hub",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "env,team"},
-					Labels:      map[string]string{"local": "keep"},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"env": "prod", "team": "platform"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"env":   "prod",
-				"team":  "platform",
-				"local": "keep",
-			},
-			expectedAnnotationKeys: []string{"env", "team"},
-		},
-		{
-			name: "spoke label deleted and hub value changed simultaneously",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "env,team"},
-					Labels:      map[string]string{"env": "old-value"},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"env": "new-value", "team": "backend"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"env":  "new-value",
-				"team": "backend",
-			},
-			expectedAnnotationKeys: []string{"env", "team"},
-		},
-		{
-			name: "all propagated labels deleted from spoke - all re-added from hub",
-			spokeHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hostedcluster",
-					Annotations: map[string]string{
-						createdViaAnno:             createdViaHypershift,
-						propagatedLabelAnnotation:  testAnnotationEnvTeamTier,
-					},
-					Labels:      map[string]string{},
-				},
-			},
-			hubHostedCluster: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "imported-mce-hostedcluster",
-					Labels: map[string]string{"env": "prod", "team": "platform", "tier": "frontend"},
-				},
-			},
-			importedMCEName: "imported-mce",
-			expectedLabels: map[string]string{
-				"env":  "prod",
-				"team": "platform",
-				"tier": "frontend",
-			},
-			expectedAnnotationKeys: []string{"env", "team", "tier"},
+			clusterName:       "mce",
+			expectedLabels:    map[string]string{"env": "staging", "team": "backend", "local": "keep"},
+			notExpectedLabels: []string{"old", "deprecated"},
+			expectedAnnoKeys:  []string{"env", "team"},
 		},
 	}
 
@@ -590,7 +321,6 @@ func TestLabelPropagation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			spoke, hub := initLabelSyncClient(t)
-			zapLog, _ := zap.NewDevelopment()
 
 			if tt.discoveryPrefix != nil {
 				os.Setenv("DISCOVERY_PREFIX", *tt.discoveryPrefix)
@@ -599,54 +329,39 @@ func TestLabelPropagation(t *testing.T) {
 				os.Unsetenv("DISCOVERY_PREFIX")
 			}
 
-			localClusterName := "local-cluster"
+			localCluster := "local-cluster"
 			if tt.localClusterName != "" {
-				localClusterName = tt.localClusterName
+				localCluster = tt.localClusterName
 			}
 
-			labelController := &LabelAgent{
-				hubClient:        hub,
-				spokeClient:      spoke,
-				clusterName:      tt.importedMCEName,
-				localClusterName: localClusterName,
-				log:              zapr.NewLogger(zapLog),
+			lc := newLabelAgent(t, spoke, hub, tt.clusterName)
+			lc.localClusterName = localCluster
+
+			assert.Nil(t, spoke.Create(ctx, tt.spokeMC))
+			if tt.hubMC != nil {
+				assert.Nil(t, hub.Create(ctx, tt.hubMC))
 			}
 
-			err := spoke.Create(ctx, tt.spokeHostedCluster)
-			assert.Nil(t, err)
+			mc := reconcileAndGet(t, lc, spoke, tt.spokeMC.Name)
 
-			if tt.hubHostedCluster != nil {
-				err = hub.Create(ctx, tt.hubHostedCluster)
-				assert.Nil(t, err)
+			for key, val := range tt.expectedLabels {
+				assert.Equal(t, val, mc.Labels[key], "label %s", key)
 			}
-
-			_, err = labelController.Reconcile(ctx, ctrl.Request{
-				NamespacedName: types.NamespacedName{Name: tt.spokeHostedCluster.Name},
-			})
-			assert.Nil(t, err)
-
-			retrievedMC := &clusterv1.ManagedCluster{}
-			err = spoke.Get(ctx, types.NamespacedName{Name: tt.spokeHostedCluster.Name}, retrievedMC)
-			assert.Nil(t, err)
-
-			for key, expectedValue := range tt.expectedLabels {
-				assert.Equal(t, expectedValue, retrievedMC.Labels[key], "label %s mismatch", key)
-			}
-
 			for _, key := range tt.notExpectedLabels {
-				_, exists := retrievedMC.Labels[key]
-				assert.False(t, exists, "label %s should not be on spoke", key)
+				_, exists := mc.Labels[key]
+				assert.False(t, exists, "label %s should not exist", key)
 			}
-
-			if tt.expectedAnnotationKeys != nil {
-				anno := retrievedMC.Annotations[propagatedLabelAnnotation]
-				for _, key := range tt.expectedAnnotationKeys {
-					assert.Contains(t, anno, key, "tracking annotation should contain %s", key)
+			if tt.expectedAnnoKeys != nil {
+				anno := mc.Annotations[propagatedLabelAnnotation]
+				for _, key := range tt.expectedAnnoKeys {
+					assert.Contains(t, anno, key)
 				}
 			}
 		})
 	}
 }
+
+// --- HostedCluster-to-ManagedCluster label propagation ---
 
 type hcLabelTestCase struct {
 	name                       string
@@ -662,7 +377,7 @@ type hcLabelTestCase struct {
 	expectedHubAnnoKeysOnSpoke []string
 }
 
-func hcLabelBasicCases() []hcLabelTestCase {
+func hcLabelTestCases() []hcLabelTestCase {
 	return []hcLabelTestCase{
 		{
 			name: "HC label propagated to spoke and hub",
@@ -692,7 +407,7 @@ func hcLabelBasicCases() []hcLabelTestCase {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "my-hc",
 					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-					Labels:      map[string]string{"env": "old-local"},
+					Labels:      map[string]string{"env": "local-val"},
 				},
 			},
 			hc: &hyperv1beta1.HostedCluster{
@@ -704,10 +419,10 @@ func hcLabelBasicCases() []hcLabelTestCase {
 			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: testHubMCName},
 			},
-			expectedSpokeLabels: map[string]string{"env": "old-local"},
+			expectedSpokeLabels: map[string]string{"env": "local-val"},
 		},
 		{
-			name: "HC skips hub-tracked label on spoke when not HC-tracked",
+			name: "HC skips hub-tracked label when not HC-tracked",
 			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-hc",
@@ -734,7 +449,7 @@ func hcLabelBasicCases() []hcLabelTestCase {
 			expectedHubAnnoKeysOnSpoke: []string{"env"},
 		},
 		{
-			name: "HC system labels are not propagated",
+			name: "HC system labels not propagated",
 			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "my-hc",
@@ -758,13 +473,8 @@ func hcLabelBasicCases() []hcLabelTestCase {
 			expectedHCAnnoKeysOnSpoke: []string{"env"},
 			notExpectedHubLabels:      []string{testAutoCreatedForInfra},
 		},
-	}
-}
-
-func hcLabelAdvancedCases() []hcLabelTestCase {
-	return []hcLabelTestCase{
 		{
-			name: "HC label removed - cleaned from spoke and hub",
+			name: "HC label removed cleans up spoke and hub",
 			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-hc",
@@ -776,9 +486,7 @@ func hcLabelAdvancedCases() []hcLabelTestCase {
 				},
 			},
 			hc: &hyperv1beta1.HostedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "my-hc", Namespace: "clusters",
-				},
+				ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "clusters"},
 			},
 			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -792,7 +500,7 @@ func hcLabelAdvancedCases() []hcLabelTestCase {
 			notExpectedHubLabels:   []string{"env"},
 		},
 		{
-			name: "HC and admin hub labels coexist independently",
+			name: "HC and hub labels coexist independently",
 			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "my-hc",
@@ -816,7 +524,7 @@ func hcLabelAdvancedCases() []hcLabelTestCase {
 			expectedHubAnnoKeysOnSpoke: []string{"team"},
 		},
 		{
-			name: "HC with managedcluster-name annotation maps correctly",
+			name: "HC annotation match maps to correct MC",
 			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "custom-mc-name",
@@ -826,10 +534,8 @@ func hcLabelAdvancedCases() []hcLabelTestCase {
 			hc: &hyperv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-hc", Namespace: "clusters",
-					Labels: map[string]string{"env": "prod"},
-					Annotations: map[string]string{
-						util.ManagedClusterAnnoKey: "custom-mc-name",
-					},
+					Labels:      map[string]string{"env": "prod"},
+					Annotations: map[string]string{util.ManagedClusterAnnoKey: "custom-mc-name"},
 				},
 			},
 			hubMC: &clusterv1.ManagedCluster{
@@ -839,14 +545,12 @@ func hcLabelAdvancedCases() []hcLabelTestCase {
 			expectedHCAnnoKeysOnSpoke: []string{"env"},
 		},
 		{
-			name: "HC matched by infraID when MC has auto-created-for-infra label",
+			name: "HC matched by infraID",
 			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "my-hc",
+					Name:        "my-hc",
 					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-					Labels: map[string]string{
-						testAutoCreatedForInfra: "my-hc-abc12",
-					},
+					Labels:      map[string]string{testAutoCreatedForInfra: "my-hc-abc12"},
 				},
 			},
 			hc: &hyperv1beta1.HostedCluster{
@@ -854,9 +558,7 @@ func hcLabelAdvancedCases() []hcLabelTestCase {
 					Name: "my-hc", Namespace: "clusters",
 					Labels: map[string]string{"env": "prod"},
 				},
-				Spec: hyperv1beta1.HostedClusterSpec{
-					InfraID: "my-hc-abc12",
-				},
+				Spec: hyperv1beta1.HostedClusterSpec{InfraID: "my-hc-abc12"},
 			},
 			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: testHubMCName},
@@ -864,27 +566,64 @@ func hcLabelAdvancedCases() []hcLabelTestCase {
 			expectedSpokeLabels:      map[string]string{"env": "prod"},
 			expectedHCAnnoKeysOnSpoke: []string{"env"},
 		},
+		{
+			name: "HC deleted cleans up tracked labels",
+			spokeMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-hc",
+					Annotations: map[string]string{
+						createdViaAnno:              createdViaHypershift,
+						hcPropagatedLabelAnnotation: "env,tier",
+					},
+					Labels: map[string]string{"env": "prod", "tier": "frontend", "local": "keep"},
+				},
+			},
+			hc: nil,
+			hubMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        testHubMCName,
+					Annotations: map[string]string{hcPropagatedLabelAnnotation: "env,tier"},
+					Labels:      map[string]string{"env": "prod", "tier": "frontend", "admin": "keep"},
+				},
+			},
+			expectedSpokeLabels:    map[string]string{"local": "keep"},
+			notExpectedSpokeLabels: []string{"env", "tier"},
+			expectedHubLabels:      map[string]string{"admin": "keep"},
+			notExpectedHubLabels:   []string{"env", "tier"},
+		},
+		{
+			name: "hub sync skips HC-owned labels",
+			spokeMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:        "my-hc",
+					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
+				},
+			},
+			hc: &hyperv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-hc", Namespace: "clusters",
+					Labels: map[string]string{"env": "prod"},
+				},
+			},
+			hubMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   testHubMCName,
+					Labels: map[string]string{"env": "staging", "team": "platform"},
+				},
+			},
+			expectedSpokeLabels:       map[string]string{"env": "prod", "team": "platform"},
+			expectedHCAnnoKeysOnSpoke:  []string{"env"},
+			expectedHubAnnoKeysOnSpoke: []string{"team"},
+		},
 	}
-}
-
-func hcLabelTestCases() []hcLabelTestCase {
-	return append(hcLabelBasicCases(), hcLabelAdvancedCases()...)
 }
 
 func runHCLabelTest(t *testing.T, tt hcLabelTestCase) {
 	t.Helper()
 	ctx := context.Background()
 	spoke, hub := initLabelSyncClient(t)
-	zapLog, _ := zap.NewDevelopment()
 	os.Unsetenv("DISCOVERY_PREFIX")
-
-	lc := &LabelAgent{
-		hubClient:        hub,
-		spokeClient:      spoke,
-		clusterName:      "mce",
-		localClusterName: "local-cluster",
-		log:              zapr.NewLogger(zapLog),
-	}
+	lc := newLabelAgent(t, spoke, hub, "mce")
 
 	assert.Nil(t, spoke.Create(ctx, tt.spokeMC))
 	if tt.hc != nil {
@@ -894,50 +633,42 @@ func runHCLabelTest(t *testing.T, tt hcLabelTestCase) {
 		assert.Nil(t, hub.Create(ctx, tt.hubMC))
 	}
 
-	_, err := lc.Reconcile(ctx, ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: tt.spokeMC.Name},
-	})
-	assert.Nil(t, err)
-
-	retrievedSpoke := &clusterv1.ManagedCluster{}
-	assert.Nil(t, spoke.Get(ctx, types.NamespacedName{Name: tt.spokeMC.Name}, retrievedSpoke))
+	mc := reconcileAndGet(t, lc, spoke, tt.spokeMC.Name)
 
 	for key, val := range tt.expectedSpokeLabels {
-		assert.Equal(t, val, retrievedSpoke.Labels[key], "spoke label %s mismatch", key)
+		assert.Equal(t, val, mc.Labels[key], "spoke label %s", key)
 	}
 	for _, key := range tt.notExpectedSpokeLabels {
-		_, exists := retrievedSpoke.Labels[key]
+		_, exists := mc.Labels[key]
 		assert.False(t, exists, "spoke label %s should not exist", key)
 	}
-
 	if tt.expectedHCAnnoKeysOnSpoke != nil {
-		anno := retrievedSpoke.Annotations[hcPropagatedLabelAnnotation]
+		anno := mc.Annotations[hcPropagatedLabelAnnotation]
 		for _, key := range tt.expectedHCAnnoKeysOnSpoke {
-			assert.Contains(t, anno, key, "spoke hc-tracking annotation should contain %s", key)
+			assert.Contains(t, anno, key)
 		}
 	}
 	if tt.expectedHubAnnoKeysOnSpoke != nil {
-		anno := retrievedSpoke.Annotations[propagatedLabelAnnotation]
+		anno := mc.Annotations[propagatedLabelAnnotation]
 		for _, key := range tt.expectedHubAnnoKeysOnSpoke {
-			assert.Contains(t, anno, key, "spoke hub-tracking annotation should contain %s", key)
+			assert.Contains(t, anno, key)
 		}
 	}
 
 	if tt.hubMC != nil {
-		retrievedHub := &clusterv1.ManagedCluster{}
-		assert.Nil(t, hub.Get(ctx, types.NamespacedName{Name: tt.hubMC.Name}, retrievedHub))
-
+		hubMC := &clusterv1.ManagedCluster{}
+		assert.Nil(t, hub.Get(ctx, types.NamespacedName{Name: tt.hubMC.Name}, hubMC))
 		for key, val := range tt.expectedHubLabels {
-			assert.Equal(t, val, retrievedHub.Labels[key], "hub label %s mismatch", key)
+			assert.Equal(t, val, hubMC.Labels[key], "hub label %s", key)
 		}
 		for _, key := range tt.notExpectedHubLabels {
-			_, exists := retrievedHub.Labels[key]
+			_, exists := hubMC.Labels[key]
 			assert.False(t, exists, "hub label %s should not exist", key)
 		}
 		if tt.expectedHCAnnoKeysOnHub != nil {
-			anno := retrievedHub.Annotations[hcPropagatedLabelAnnotation]
+			anno := hubMC.Annotations[hcPropagatedLabelAnnotation]
 			for _, key := range tt.expectedHCAnnoKeysOnHub {
-				assert.Contains(t, anno, key, "hub hc-tracking annotation should contain %s", key)
+				assert.Contains(t, anno, key)
 			}
 		}
 	}
@@ -951,158 +682,38 @@ func TestHCLabelPropagation(t *testing.T) {
 	}
 }
 
-func TestHCDeletedCleansUpLabels(t *testing.T) {
-	ctx := context.Background()
-	spoke, hub := initLabelSyncClient(t)
-	zapLog, _ := zap.NewDevelopment()
-	os.Unsetenv("DISCOVERY_PREFIX")
-
-	lc := &LabelAgent{
-		hubClient:        hub,
-		spokeClient:      spoke,
-		clusterName:      "mce",
-		localClusterName: "local-cluster",
-		log:              zapr.NewLogger(zapLog),
-	}
-
-	spokeMC := &clusterv1.ManagedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "my-hc",
-			Annotations: map[string]string{
-				createdViaAnno:              createdViaHypershift,
-				hcPropagatedLabelAnnotation: "env,tier",
-			},
-			Labels: map[string]string{"env": "prod", "tier": "frontend", "local": "keep"},
-		},
-	}
-	hubMC := &clusterv1.ManagedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        testHubMCName,
-			Annotations: map[string]string{hcPropagatedLabelAnnotation: "env,tier"},
-			Labels:      map[string]string{"env": "prod", "tier": "frontend", "admin-label": "keep"},
-		},
-	}
-
-	assert.Nil(t, spoke.Create(ctx, spokeMC))
-	assert.Nil(t, hub.Create(ctx, hubMC))
-
-	_, err := lc.Reconcile(ctx, ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "my-hc"},
-	})
-	assert.Nil(t, err)
-
-	retrievedSpoke := &clusterv1.ManagedCluster{}
-	assert.Nil(t, spoke.Get(ctx, types.NamespacedName{Name: "my-hc"}, retrievedSpoke))
-	assert.Equal(t, "keep", retrievedSpoke.Labels["local"])
-	_, envExists := retrievedSpoke.Labels["env"]
-	assert.False(t, envExists, "env should be removed from spoke after HC deleted")
-	_, tierExists := retrievedSpoke.Labels["tier"]
-	assert.False(t, tierExists, "tier should be removed from spoke after HC deleted")
-
-	retrievedHub := &clusterv1.ManagedCluster{}
-	assert.Nil(t, hub.Get(ctx, types.NamespacedName{Name: testHubMCName}, retrievedHub))
-	assert.Equal(t, "keep", retrievedHub.Labels["admin-label"])
-	_, envExists = retrievedHub.Labels["env"]
-	assert.False(t, envExists, "env should be removed from hub after HC deleted")
-}
-
-func TestHubSyncSkipsHCOwnedLabels(t *testing.T) {
-	ctx := context.Background()
-	spoke, hub := initLabelSyncClient(t)
-	zapLog, _ := zap.NewDevelopment()
-	os.Unsetenv("DISCOVERY_PREFIX")
-
-	lc := &LabelAgent{
-		hubClient:        hub,
-		spokeClient:      spoke,
-		clusterName:      "mce",
-		localClusterName: "local-cluster",
-		log:              zapr.NewLogger(zapLog),
-	}
-
-	spokeMC := &clusterv1.ManagedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        "my-hc",
-			Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-		},
-	}
-	hc := &hyperv1beta1.HostedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name: "my-hc", Namespace: "clusters",
-			Labels: map[string]string{"env": "prod"},
-		},
-	}
-	hubMC := &clusterv1.ManagedCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   testHubMCName,
-			Labels: map[string]string{"env": "staging", "team": "platform"},
-		},
-	}
-
-	assert.Nil(t, spoke.Create(ctx, spokeMC))
-	assert.Nil(t, spoke.Create(ctx, hc))
-	assert.Nil(t, hub.Create(ctx, hubMC))
-
-	_, err := lc.Reconcile(ctx, ctrl.Request{
-		NamespacedName: types.NamespacedName{Name: "my-hc"},
-	})
-	assert.Nil(t, err)
-
-	retrieved := &clusterv1.ManagedCluster{}
-	assert.Nil(t, spoke.Get(ctx, types.NamespacedName{Name: "my-hc"}, retrieved))
-
-	// HC env=prod is new to spoke (spoke had no env) → HC adds it and tracks it
-	assert.Equal(t, "prod", retrieved.Labels["env"], "HC env should be added since spoke had no env")
-	assert.Equal(t, "platform", retrieved.Labels["team"], "admin hub label should be propagated")
-
-	assert.Contains(t, retrieved.Annotations[hcPropagatedLabelAnnotation], "env")
-	assert.Contains(t, retrieved.Annotations[propagatedLabelAnnotation], "team")
-	assert.NotContains(t, retrieved.Annotations[propagatedLabelAnnotation], "env",
-		"env should not be in hub tracking since HC owns it")
-}
+// --- Multi-cluster propagation ---
 
 func TestMultiClusterLabelPropagation(t *testing.T) {
 	ctx := context.Background()
 	spoke, hub := initLabelSyncClient(t)
-	zapLog, _ := zap.NewDevelopment()
 	os.Unsetenv("DISCOVERY_PREFIX")
+	lc := newLabelAgent(t, spoke, hub, "cluster-mce")
 
-	labelController := &LabelAgent{
-		hubClient:        hub,
-		spokeClient:      spoke,
-		clusterName:      "cluster-mce",
-		localClusterName: "local-cluster",
-		log:              zapr.NewLogger(zapLog),
-	}
-
-	type clusterPair struct {
+	type pair struct {
 		spoke          *clusterv1.ManagedCluster
 		hub            *clusterv1.ManagedCluster
 		expectedLabels map[string]string
 		notExpected    []string
 	}
 
-	clusters := []clusterPair{
+	clusters := []pair{
 		{
 			spoke: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "hc-app1",
 					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-					Labels:      map[string]string{"local-app1": "keep"},
+					Labels:      map[string]string{"local": "keep"},
 				},
 			},
 			hub: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:   "cluster-mce-hc-app1",
-					Labels: map[string]string{"env": "prod", "team": "platform", "vendor": "OpenShift"},
+					Labels: map[string]string{"env": "prod", "vendor": "OpenShift"},
 				},
 			},
-			expectedLabels: map[string]string{
-				"env":        "prod",
-				"team":       "platform",
-				"local-app1": "keep",
-			},
-			notExpected: []string{"vendor"},
+			expectedLabels: map[string]string{"env": "prod", "local": "keep"},
+			notExpected:    []string{"vendor"},
 		},
 		{
 			spoke: &clusterv1.ManagedCluster{
@@ -1113,83 +724,37 @@ func TestMultiClusterLabelPropagation(t *testing.T) {
 			},
 			hub: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name: "cluster-mce-hc-app2",
-					Labels: map[string]string{
-						"env":  "staging",
-						"tier": "backend",
-						"cluster.open-cluster-management.io/clusterset": "team-b",
-					},
+					Name:   "cluster-mce-hc-app2",
+					Labels: map[string]string{"env": "staging", "tier": "backend"},
 				},
 			},
-			expectedLabels: map[string]string{
-				"env":  "staging",
-				"tier": "backend",
-				"cluster.open-cluster-management.io/clusterset": "team-b",
-			},
-			notExpected: []string{"team"},
-		},
-		{
-			spoke: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "hc-app3",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
-					Labels:      map[string]string{"cost-center": "local-value"},
-				},
-			},
-			hub: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   "cluster-mce-hc-app3",
-					Labels: map[string]string{"region": "us-east-1", "cost-center": "hub-value", "compliance": "hipaa"},
-				},
-			},
-			expectedLabels: map[string]string{
-				"cost-center": "local-value",
-				"compliance":  "hipaa",
-			},
-			notExpected: []string{"region"},
+			expectedLabels: map[string]string{"env": "staging", "tier": "backend"},
 		},
 	}
 
 	for _, cp := range clusters {
-		err := spoke.Create(ctx, cp.spoke)
-		assert.Nil(t, err)
-		err = hub.Create(ctx, cp.hub)
-		assert.Nil(t, err)
-	}
-
-	for _, cp := range clusters {
-		_, err := labelController.Reconcile(ctx, ctrl.Request{
-			NamespacedName: types.NamespacedName{Name: cp.spoke.Name},
-		})
-		assert.Nil(t, err)
+		assert.Nil(t, spoke.Create(ctx, cp.spoke))
+		assert.Nil(t, hub.Create(ctx, cp.hub))
 	}
 
 	for _, cp := range clusters {
 		t.Run(cp.spoke.Name, func(t *testing.T) {
-			retrieved := &clusterv1.ManagedCluster{}
-			err := spoke.Get(ctx, types.NamespacedName{Name: cp.spoke.Name}, retrieved)
-			assert.Nil(t, err)
-
+			mc := reconcileAndGet(t, lc, spoke, cp.spoke.Name)
 			for key, val := range cp.expectedLabels {
-				assert.Equal(t, val, retrieved.Labels[key], "%s: label %s mismatch", cp.spoke.Name, key)
+				assert.Equal(t, val, mc.Labels[key], "%s: label %s", cp.spoke.Name, key)
 			}
-
 			for _, key := range cp.notExpected {
-				_, exists := retrieved.Labels[key]
-				assert.False(t, exists, "%s: label %s should not be present", cp.spoke.Name, key)
+				_, exists := mc.Labels[key]
+				assert.False(t, exists, "%s: label %s should not exist", cp.spoke.Name, key)
 			}
-
-			anno := retrieved.Annotations[propagatedLabelAnnotation]
-			assert.NotEmpty(t, anno, "%s: tracking annotation should be set", cp.spoke.Name)
 		})
 	}
 }
 
-func TestReconcileDisableDiscovery(t *testing.T) {
-	ctx := context.Background()
-	spoke, hub := initLabelSyncClient(t)
-	zapLog, _ := zap.NewDevelopment()
+// --- Edge cases ---
 
+func TestReconcileDisableDiscovery(t *testing.T) {
+	spoke, hub := initLabelSyncClient(t)
 	os.Setenv("DISABLE_HC_DISCOVERY", "true")
 	defer os.Unsetenv("DISABLE_HC_DISCOVERY")
 
@@ -1207,53 +772,38 @@ func TestReconcileDisableDiscovery(t *testing.T) {
 		},
 	}
 
+	ctx := context.Background()
 	assert.Nil(t, spoke.Create(ctx, spokeMC))
 	assert.Nil(t, hub.Create(ctx, hubMC))
 
-	lc := &LabelAgent{
-		hubClient:        hub,
-		spokeClient:      spoke,
-		clusterName:      "mce",
-		localClusterName: "local-cluster",
-		log:              zapr.NewLogger(zapLog),
-	}
-
+	lc := newLabelAgent(t, spoke, hub, "mce")
 	result, err := lc.Reconcile(ctx, ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "hc1"},
 	})
 	assert.Nil(t, err)
 	assert.Equal(t, ctrl.Result{}, result)
 
-	retrieved := &clusterv1.ManagedCluster{}
-	assert.Nil(t, spoke.Get(ctx, types.NamespacedName{Name: "hc1"}, retrieved))
-	_, exists := retrieved.Labels["env"]
+	mc := &clusterv1.ManagedCluster{}
+	assert.Nil(t, spoke.Get(ctx, types.NamespacedName{Name: "hc1"}, mc))
+	_, exists := mc.Labels["env"]
 	assert.False(t, exists, "labels should not propagate when discovery is disabled")
 }
 
 func TestReconcileSpokeNotFound(t *testing.T) {
-	ctx := context.Background()
 	spoke, hub := initLabelSyncClient(t)
-	zapLog, _ := zap.NewDevelopment()
 	os.Unsetenv("DISCOVERY_PREFIX")
+	lc := newLabelAgent(t, spoke, hub, "mce")
 
-	lc := &LabelAgent{
-		hubClient:        hub,
-		spokeClient:      spoke,
-		clusterName:      "mce",
-		localClusterName: "local-cluster",
-		log:              zapr.NewLogger(zapLog),
-	}
-
-	result, err := lc.Reconcile(ctx, ctrl.Request{
+	result, err := lc.Reconcile(context.Background(), ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "does-not-exist"},
 	})
 	assert.Nil(t, err)
 	assert.Equal(t, ctrl.Result{}, result)
 }
 
-func TestGetSpokeMCName(t *testing.T) {
-	zapLog, _ := zap.NewDevelopment()
+// --- Unit tests for helpers ---
 
+func TestGetSpokeMCName(t *testing.T) {
 	tests := []struct {
 		name            string
 		hubMCName       string
@@ -1261,39 +811,11 @@ func TestGetSpokeMCName(t *testing.T) {
 		discoveryPrefix *string
 		expected        string
 	}{
-		{
-			name:        "default prefix - matching hub MC",
-			hubMCName:   "cluster-mce-hc-app1",
-			clusterName: "cluster-mce",
-			expected:    "hc-app1",
-		},
-		{
-			name:        "default prefix - non-matching hub MC returns empty",
-			hubMCName:   "other-mce-hc-app1",
-			clusterName: "cluster-mce",
-			expected:    "",
-		},
-		{
-			name:            "custom prefix - matching hub MC",
-			hubMCName:       "custom-hc-web",
-			clusterName:     "cluster-mce",
-			discoveryPrefix: strPtr("custom"),
-			expected:        "hc-web",
-		},
-		{
-			name:            "custom prefix - non-matching hub MC returns empty",
-			hubMCName:       "other-hc-web",
-			clusterName:     "cluster-mce",
-			discoveryPrefix: strPtr("custom"),
-			expected:        "",
-		},
-		{
-			name:            "empty prefix - hub name equals spoke name",
-			hubMCName:       "hc-app1",
-			clusterName:     "cluster-mce",
-			discoveryPrefix: strPtr(""),
-			expected:        "hc-app1",
-		},
+		{"default prefix match", "cluster-mce-hc1", "cluster-mce", nil, "hc1"},
+		{"default prefix no match", "other-mce-hc1", "cluster-mce", nil, ""},
+		{"custom prefix match", "custom-hc-web", "cluster-mce", strPtr("custom"), "hc-web"},
+		{"custom prefix no match", "other-hc-web", "cluster-mce", strPtr("custom"), ""},
+		{"empty prefix returns name", "hc1", "cluster-mce", strPtr(""), "hc1"},
 	}
 
 	for _, tt := range tests {
@@ -1304,13 +826,9 @@ func TestGetSpokeMCName(t *testing.T) {
 			} else {
 				os.Unsetenv("DISCOVERY_PREFIX")
 			}
-
-			lc := &LabelAgent{
-				clusterName: tt.clusterName,
-				log:         zapr.NewLogger(zapLog),
-			}
-			result := lc.getSpokeMCName(tt.hubMCName)
-			assert.Equal(t, tt.expected, result)
+			zapLog, _ := zap.NewDevelopment()
+			lc := &LabelAgent{clusterName: tt.clusterName, log: zapr.NewLogger(zapLog)}
+			assert.Equal(t, tt.expected, lc.getSpokeMCName(tt.hubMCName))
 		})
 	}
 }
@@ -1318,28 +836,17 @@ func TestGetSpokeMCName(t *testing.T) {
 func TestMapHubMCToSpokeMC(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 	os.Unsetenv("DISCOVERY_PREFIX")
+	lc := &LabelAgent{clusterName: "cluster-mce", log: zapr.NewLogger(zapLog)}
 
-	lc := &LabelAgent{
-		clusterName: "cluster-mce",
-		log:         zapr.NewLogger(zapLog),
-	}
-
-	t.Run("matching hub MC returns reconcile request", func(t *testing.T) {
-		hubMC := &clusterv1.ManagedCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "cluster-mce-hc-app1"},
-		}
-		requests := lc.mapHubMCToSpokeMC(context.Background(), hubMC)
-		assert.Equal(t, []reconcile.Request{
-			{NamespacedName: types.NamespacedName{Name: "hc-app1"}},
-		}, requests)
+	t.Run("matching hub MC returns request", func(t *testing.T) {
+		mc := &clusterv1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: "cluster-mce-hc1"}}
+		reqs := lc.mapHubMCToSpokeMC(context.Background(), mc)
+		assert.Equal(t, []reconcile.Request{{NamespacedName: types.NamespacedName{Name: "hc1"}}}, reqs)
 	})
 
 	t.Run("non-matching hub MC returns nil", func(t *testing.T) {
-		hubMC := &clusterv1.ManagedCluster{
-			ObjectMeta: metav1.ObjectMeta{Name: "other-mce-hc-app1"},
-		}
-		requests := lc.mapHubMCToSpokeMC(context.Background(), hubMC)
-		assert.Nil(t, requests)
+		mc := &clusterv1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: "other-hc1"}}
+		assert.Nil(t, lc.mapHubMCToSpokeMC(context.Background(), mc))
 	})
 }
 
@@ -1347,145 +854,93 @@ func TestMapHCToSpokeMC(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 	lc := &LabelAgent{log: zapr.NewLogger(zapLog)}
 
-	t.Run("HC name maps to spoke MC name", func(t *testing.T) {
+	t.Run("HC name maps to spoke MC", func(t *testing.T) {
 		hc := &hyperv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "clusters"},
 		}
-		requests := lc.mapHCToSpokeMC(context.Background(), hc)
-		assert.Equal(t, []reconcile.Request{
-			{NamespacedName: types.NamespacedName{Name: "my-hc"}},
-		}, requests)
+		reqs := lc.mapHCToSpokeMC(context.Background(), hc)
+		assert.Equal(t, []reconcile.Request{{NamespacedName: types.NamespacedName{Name: "my-hc"}}}, reqs)
 	})
 
-	t.Run("HC with managedcluster-name annotation uses annotation value", func(t *testing.T) {
+	t.Run("HC with annotation uses annotation value", func(t *testing.T) {
 		hc := &hyperv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "my-hc", Namespace: "clusters",
-				Annotations: map[string]string{util.ManagedClusterAnnoKey: "custom-name"},
+				Annotations: map[string]string{util.ManagedClusterAnnoKey: testCustomMCName},
 			},
 		}
-		requests := lc.mapHCToSpokeMC(context.Background(), hc)
-		assert.Equal(t, []reconcile.Request{
-			{NamespacedName: types.NamespacedName{Name: "custom-name"}},
-		}, requests)
+		reqs := lc.mapHCToSpokeMC(context.Background(), hc)
+		assert.Equal(t, []reconcile.Request{{NamespacedName: types.NamespacedName{Name: testCustomMCName}}}, reqs)
 	})
 }
+
+// --- Predicate tests ---
 
 func TestLabelEventFilters(t *testing.T) {
 	pred := labelEventFilters()
 
-	hostedMC := &clusterv1.ManagedCluster{
+	hosted := &clusterv1.ManagedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "hcp-cluster",
 			Annotations: map[string]string{createdViaAnno: createdViaHypershift},
 			Labels:      map[string]string{"env": "prod"},
 		},
 	}
-
-	nonHostedMC := &clusterv1.ManagedCluster{
+	nonHosted := &clusterv1.ManagedCluster{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   "regular-cluster",
+			Name:   "regular",
 			Labels: map[string]string{"env": "prod"},
 		},
 	}
 
-	t.Run("CreateFunc accepts hosted cluster MC", func(t *testing.T) {
-		result := pred.Create(event.CreateEvent{Object: hostedMC})
-		assert.True(t, result)
+	t.Run("Create accepts hosted MC", func(t *testing.T) {
+		assert.True(t, pred.Create(event.CreateEvent{Object: hosted}))
 	})
-
-	t.Run("CreateFunc rejects non-hosted cluster MC", func(t *testing.T) {
-		result := pred.Create(event.CreateEvent{Object: nonHostedMC})
-		assert.False(t, result)
+	t.Run("Create rejects non-hosted MC", func(t *testing.T) {
+		assert.False(t, pred.Create(event.CreateEvent{Object: nonHosted}))
 	})
-
-	t.Run("UpdateFunc accepts hosted cluster MC with label change", func(t *testing.T) {
-		oldMC := hostedMC.DeepCopy()
-		oldMC.Labels = map[string]string{"env": "staging"}
-		result := pred.Update(event.UpdateEvent{
-			ObjectOld: oldMC,
-			ObjectNew: hostedMC,
-		})
-		assert.True(t, result)
+	t.Run("Update accepts label change", func(t *testing.T) {
+		old := hosted.DeepCopy()
+		old.Labels = map[string]string{"env": "staging"}
+		assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: old, ObjectNew: hosted}))
 	})
-
-	t.Run("UpdateFunc rejects hosted cluster MC with no label change", func(t *testing.T) {
-		result := pred.Update(event.UpdateEvent{
-			ObjectOld: hostedMC.DeepCopy(),
-			ObjectNew: hostedMC,
-		})
-		assert.False(t, result)
+	t.Run("Update rejects no change", func(t *testing.T) {
+		assert.False(t, pred.Update(event.UpdateEvent{ObjectOld: hosted.DeepCopy(), ObjectNew: hosted}))
 	})
-
-	t.Run("UpdateFunc rejects non-hosted cluster MC", func(t *testing.T) {
-		oldMC := nonHostedMC.DeepCopy()
-		oldMC.Labels = map[string]string{"env": "staging"}
-		result := pred.Update(event.UpdateEvent{
-			ObjectOld: oldMC,
-			ObjectNew: nonHostedMC,
-		})
-		assert.False(t, result)
+	t.Run("Update rejects non-hosted MC", func(t *testing.T) {
+		old := nonHosted.DeepCopy()
+		old.Labels = map[string]string{"env": "staging"}
+		assert.False(t, pred.Update(event.UpdateEvent{ObjectOld: old, ObjectNew: nonHosted}))
 	})
-
-	t.Run("UpdateFunc accepts when propagated-labels annotation is removed", func(t *testing.T) {
-		oldMC := hostedMC.DeepCopy()
-		oldMC.Annotations[propagatedLabelAnnotation] = "env,team"
-		result := pred.Update(event.UpdateEvent{
-			ObjectOld: oldMC,
-			ObjectNew: hostedMC,
-		})
-		assert.True(t, result)
+	t.Run("Update accepts propagated-labels annotation removed", func(t *testing.T) {
+		old := hosted.DeepCopy()
+		old.Annotations[propagatedLabelAnnotation] = "env,team"
+		assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: old, ObjectNew: hosted}))
 	})
-
-	t.Run("UpdateFunc accepts when hc-propagated-labels annotation is removed", func(t *testing.T) {
-		oldMC := hostedMC.DeepCopy()
-		oldMC.Annotations[hcPropagatedLabelAnnotation] = "env"
-		result := pred.Update(event.UpdateEvent{
-			ObjectOld: oldMC,
-			ObjectNew: hostedMC,
-		})
-		assert.True(t, result)
+	t.Run("Update accepts hc-propagated-labels annotation removed", func(t *testing.T) {
+		old := hosted.DeepCopy()
+		old.Annotations[hcPropagatedLabelAnnotation] = "env"
+		assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: old, ObjectNew: hosted}))
 	})
-
-	t.Run("UpdateFunc accepts when created-via annotation is added", func(t *testing.T) {
-		oldMC := hostedMC.DeepCopy()
-		delete(oldMC.Annotations, createdViaAnno)
-		result := pred.Update(event.UpdateEvent{
-			ObjectOld: oldMC,
-			ObjectNew: hostedMC,
-		})
-		assert.True(t, result)
+	t.Run("Update accepts created-via annotation added", func(t *testing.T) {
+		old := hosted.DeepCopy()
+		delete(old.Annotations, createdViaAnno)
+		assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: old, ObjectNew: hosted}))
 	})
-
-	t.Run("CreateFunc rejects non-ManagedCluster object", func(t *testing.T) {
-		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "some-pod"}}
-		result := pred.Create(event.CreateEvent{Object: pod})
-		assert.False(t, result)
+	t.Run("Create rejects non-MC object", func(t *testing.T) {
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "pod"}}
+		assert.False(t, pred.Create(event.CreateEvent{Object: pod}))
 	})
-
-	t.Run("UpdateFunc rejects non-ManagedCluster object", func(t *testing.T) {
-		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "some-pod"}}
-		result := pred.Update(event.UpdateEvent{
-			ObjectOld: pod,
-			ObjectNew: pod,
-		})
-		assert.False(t, result)
+	t.Run("Delete returns false", func(t *testing.T) {
+		assert.False(t, pred.Delete(event.DeleteEvent{Object: hosted}))
 	})
-
-	t.Run("DeleteFunc always returns false", func(t *testing.T) {
-		result := pred.Delete(event.DeleteEvent{Object: hostedMC})
-		assert.False(t, result)
-	})
-
-	t.Run("GenericFunc always returns false", func(t *testing.T) {
-		result := pred.Generic(event.GenericEvent{Object: hostedMC})
-		assert.False(t, result)
+	t.Run("Generic returns false", func(t *testing.T) {
+		assert.False(t, pred.Generic(event.GenericEvent{Object: hosted}))
 	})
 }
 
 func TestHCLabelEventFilters(t *testing.T) {
 	pred := hcLabelEventFilters()
-
 	hc := &hyperv1beta1.HostedCluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "my-hc", Namespace: "clusters",
@@ -1493,79 +948,45 @@ func TestHCLabelEventFilters(t *testing.T) {
 		},
 	}
 
-	t.Run("CreateFunc accepts HC", func(t *testing.T) {
-		result := pred.Create(event.CreateEvent{Object: hc})
-		assert.True(t, result)
+	t.Run("Create accepts HC", func(t *testing.T) {
+		assert.True(t, pred.Create(event.CreateEvent{Object: hc}))
 	})
-
-	t.Run("UpdateFunc accepts HC with label change", func(t *testing.T) {
-		oldHC := hc.DeepCopy()
-		oldHC.Labels = map[string]string{"env": "staging"}
-		result := pred.Update(event.UpdateEvent{
-			ObjectOld: oldHC,
-			ObjectNew: hc,
-		})
-		assert.True(t, result)
+	t.Run("Update accepts label change", func(t *testing.T) {
+		old := hc.DeepCopy()
+		old.Labels = map[string]string{"env": "staging"}
+		assert.True(t, pred.Update(event.UpdateEvent{ObjectOld: old, ObjectNew: hc}))
 	})
-
-	t.Run("UpdateFunc rejects HC with no label change", func(t *testing.T) {
-		result := pred.Update(event.UpdateEvent{
-			ObjectOld: hc.DeepCopy(),
-			ObjectNew: hc,
-		})
-		assert.False(t, result)
+	t.Run("Update rejects no change", func(t *testing.T) {
+		assert.False(t, pred.Update(event.UpdateEvent{ObjectOld: hc.DeepCopy(), ObjectNew: hc}))
 	})
-
-	t.Run("DeleteFunc accepts HC deletion", func(t *testing.T) {
-		result := pred.Delete(event.DeleteEvent{Object: hc})
-		assert.True(t, result)
+	t.Run("Delete accepts", func(t *testing.T) {
+		assert.True(t, pred.Delete(event.DeleteEvent{Object: hc}))
 	})
-
-	t.Run("GenericFunc returns false", func(t *testing.T) {
-		result := pred.Generic(event.GenericEvent{Object: hc})
-		assert.False(t, result)
+	t.Run("Generic returns false", func(t *testing.T) {
+		assert.False(t, pred.Generic(event.GenericEvent{Object: hc}))
 	})
 }
 
+// --- Utility tests ---
+
 func TestParseAnnotation(t *testing.T) {
-	t.Run("empty string returns empty map", func(t *testing.T) {
-		result := parseAnnotation("")
-		assert.Empty(t, result)
-	})
-
-	t.Run("single key", func(t *testing.T) {
-		result := parseAnnotation("env")
-		assert.Equal(t, map[string]bool{"env": true}, result)
-	})
-
-	t.Run("multiple keys", func(t *testing.T) {
-		result := parseAnnotation(testAnnotationEnvTeamTier)
-		assert.Equal(t, map[string]bool{"env": true, "team": true, "tier": true}, result)
-	})
+	assert.Empty(t, parseAnnotation(""))
+	assert.Equal(t, map[string]bool{"env": true}, parseAnnotation("env"))
+	assert.Equal(t, map[string]bool{"env": true, "team": true, "tier": true}, parseAnnotation("env,team,tier"))
 }
 
 func TestJoinSortedKeys(t *testing.T) {
-	t.Run("empty map returns empty string", func(t *testing.T) {
-		result := joinSortedKeys(map[string]bool{})
-		assert.Equal(t, "", result)
-	})
-
-	t.Run("keys are sorted alphabetically", func(t *testing.T) {
-		result := joinSortedKeys(map[string]bool{"team": true, "env": true, "tier": true})
-		assert.Equal(t, testAnnotationEnvTeamTier, result)
-	})
+	assert.Equal(t, "", joinSortedKeys(map[string]bool{}))
+	assert.Equal(t, "env,team,tier", joinSortedKeys(map[string]bool{"team": true, "env": true, "tier": true}))
 }
 
-func TestFindHostedCluster(t *testing.T) {
-	t.Run("duplicate HC names skips propagation", func(t *testing.T) {
-		spoke, _ := initLabelSyncClient(t)
-		zapLog, _ := zap.NewDevelopment()
-		ctx := context.Background()
+// --- findHostedCluster tests ---
 
-		lc := &LabelAgent{
-			spokeClient: spoke,
-			log:         zapr.NewLogger(zapLog),
-		}
+func TestFindHostedCluster(t *testing.T) {
+	t.Run("duplicate HC names returns ambiguous error", func(t *testing.T) {
+		spoke, _ := initLabelSyncClient(t)
+		ctx := context.Background()
+		lc := newLabelAgent(t, spoke, nil, "mce")
 
 		spokeMC := &clusterv1.ManagedCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1573,30 +994,22 @@ func TestFindHostedCluster(t *testing.T) {
 				Annotations: map[string]string{createdViaAnno: createdViaHypershift},
 			},
 		}
-		hc1 := &hyperv1beta1.HostedCluster{
+		assert.Nil(t, spoke.Create(ctx, &hyperv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "ns-a"},
-		}
-		hc2 := &hyperv1beta1.HostedCluster{
+		}))
+		assert.Nil(t, spoke.Create(ctx, &hyperv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "ns-b"},
-		}
-
-		assert.Nil(t, spoke.Create(ctx, hc1))
-		assert.Nil(t, spoke.Create(ctx, hc2))
+		}))
 
 		result, err := lc.findHostedCluster(ctx, spokeMC)
-		assert.Nil(t, err)
-		assert.Nil(t, result, "should return nil when multiple HCs match by name")
+		assert.ErrorIs(t, err, errAmbiguousHCMatch)
+		assert.Nil(t, result)
 	})
 
 	t.Run("infraID match takes priority over name", func(t *testing.T) {
 		spoke, _ := initLabelSyncClient(t)
-		zapLog, _ := zap.NewDevelopment()
 		ctx := context.Background()
-
-		lc := &LabelAgent{
-			spokeClient: spoke,
-			log:         zapr.NewLogger(zapLog),
-		}
+		lc := newLabelAgent(t, spoke, nil, "mce")
 
 		spokeMC := &clusterv1.ManagedCluster{
 			ObjectMeta: metav1.ObjectMeta{
@@ -1605,52 +1018,39 @@ func TestFindHostedCluster(t *testing.T) {
 				Labels:      map[string]string{testAutoCreatedForInfra: "my-hc-xyz99"},
 			},
 		}
-		hc := &hyperv1beta1.HostedCluster{
+		assert.Nil(t, spoke.Create(ctx, &hyperv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "clusters"},
 			Spec:       hyperv1beta1.HostedClusterSpec{InfraID: "my-hc-xyz99"},
-		}
-
-		assert.Nil(t, spoke.Create(ctx, hc))
+		}))
 
 		result, err := lc.findHostedCluster(ctx, spokeMC)
 		assert.Nil(t, err)
 		assert.NotNil(t, result)
 		assert.Equal(t, "my-hc", result.Name)
-		assert.Equal(t, "clusters", result.Namespace)
 	})
 
 	t.Run("annotation match takes priority over infraID", func(t *testing.T) {
 		spoke, _ := initLabelSyncClient(t)
-		zapLog, _ := zap.NewDevelopment()
 		ctx := context.Background()
-
-		lc := &LabelAgent{
-			spokeClient: spoke,
-			log:         zapr.NewLogger(zapLog),
-		}
+		lc := newLabelAgent(t, spoke, nil, "mce")
 
 		spokeMC := &clusterv1.ManagedCluster{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:        "custom-name",
+				Name:        testCustomMCName,
 				Annotations: map[string]string{createdViaAnno: createdViaHypershift},
 				Labels:      map[string]string{testAutoCreatedForInfra: "my-hc-xyz99"},
 			},
 		}
-		hcByAnno := &hyperv1beta1.HostedCluster{
+		assert.Nil(t, spoke.Create(ctx, &hyperv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{
 				Name: "my-hc", Namespace: "clusters",
-				Annotations: map[string]string{
-					util.ManagedClusterAnnoKey: "custom-name",
-				},
+				Annotations: map[string]string{util.ManagedClusterAnnoKey: testCustomMCName},
 			},
-		}
-		hcByInfra := &hyperv1beta1.HostedCluster{
+		}))
+		assert.Nil(t, spoke.Create(ctx, &hyperv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "other-hc", Namespace: "other-ns"},
 			Spec:       hyperv1beta1.HostedClusterSpec{InfraID: "my-hc-xyz99"},
-		}
-
-		assert.Nil(t, spoke.Create(ctx, hcByAnno))
-		assert.Nil(t, spoke.Create(ctx, hcByInfra))
+		}))
 
 		result, err := lc.findHostedCluster(ctx, spokeMC)
 		assert.Nil(t, err)
