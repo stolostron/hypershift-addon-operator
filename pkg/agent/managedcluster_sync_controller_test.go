@@ -563,7 +563,10 @@ func TestLabelPropagation(t *testing.T) {
 			spokeHostedCluster: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "hostedcluster",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: testAnnotationEnvTeamTier},
+					Annotations: map[string]string{
+						createdViaAnno:             createdViaHypershift,
+						propagatedLabelAnnotation:  testAnnotationEnvTeamTier,
+					},
 					Labels:      map[string]string{},
 				},
 			},
@@ -659,7 +662,7 @@ type hcLabelTestCase struct {
 	expectedHubAnnoKeysOnSpoke []string
 }
 
-func hcLabelTestCases() []hcLabelTestCase {
+func hcLabelBasicCases() []hcLabelTestCase {
 	return []hcLabelTestCase{
 		{
 			name: "HC label propagated to spoke and hub",
@@ -684,7 +687,7 @@ func hcLabelTestCases() []hcLabelTestCase {
 			expectedHCAnnoKeysOnHub:   []string{"env"},
 		},
 		{
-			name: "HC label overrides existing spoke label",
+			name: "HC skips existing untracked spoke label",
 			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "my-hc",
@@ -701,16 +704,18 @@ func hcLabelTestCases() []hcLabelTestCase {
 			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: testHubMCName},
 			},
-			expectedSpokeLabels:      map[string]string{"env": "prod"},
-			expectedHCAnnoKeysOnSpoke: []string{"env"},
+			expectedSpokeLabels: map[string]string{"env": "old-local"},
 		},
 		{
-			name: "HC label overrides hub-tracked label on spoke",
+			name: "HC skips hub-tracked label on spoke when not HC-tracked",
 			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "my-hc",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, propagatedLabelAnnotation: "env"},
-					Labels:      map[string]string{"env": "staging"},
+					Name: "my-hc",
+					Annotations: map[string]string{
+						createdViaAnno:            createdViaHypershift,
+						propagatedLabelAnnotation: "env",
+					},
+					Labels: map[string]string{"env": "staging"},
 				},
 			},
 			hc: &hyperv1beta1.HostedCluster{
@@ -725,10 +730,8 @@ func hcLabelTestCases() []hcLabelTestCase {
 					Labels: map[string]string{"env": "staging"},
 				},
 			},
-			expectedSpokeLabels:      map[string]string{"env": "prod"},
-			expectedHCAnnoKeysOnSpoke: []string{"env"},
-			expectedHubLabels:        map[string]string{"env": "prod"},
-			expectedHCAnnoKeysOnHub:   []string{"env"},
+			expectedSpokeLabels:       map[string]string{"env": "staging"},
+			expectedHubAnnoKeysOnSpoke: []string{"env"},
 		},
 		{
 			name: "HC system labels are not propagated",
@@ -742,7 +745,7 @@ func hcLabelTestCases() []hcLabelTestCase {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-hc", Namespace: "clusters",
 					Labels: map[string]string{
-						"env": "prod",
+						"env":                  "prod",
 						testAutoCreatedForInfra: "test-infra",
 					},
 				},
@@ -755,13 +758,21 @@ func hcLabelTestCases() []hcLabelTestCase {
 			expectedHCAnnoKeysOnSpoke: []string{"env"},
 			notExpectedHubLabels:      []string{testAutoCreatedForInfra},
 		},
+	}
+}
+
+func hcLabelAdvancedCases() []hcLabelTestCase {
+	return []hcLabelTestCase{
 		{
 			name: "HC label removed - cleaned from spoke and hub",
 			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
-					Name:        "my-hc",
-					Annotations: map[string]string{createdViaAnno: createdViaHypershift, hcPropagatedLabelAnnotation: "env"},
-					Labels:      map[string]string{"env": "prod", "local": "keep"},
+					Name: "my-hc",
+					Annotations: map[string]string{
+						createdViaAnno:              createdViaHypershift,
+						hcPropagatedLabelAnnotation: "env",
+					},
+					Labels: map[string]string{"env": "prod", "local": "keep"},
 				},
 			},
 			hc: &hyperv1beta1.HostedCluster{
@@ -815,8 +826,10 @@ func hcLabelTestCases() []hcLabelTestCase {
 			hc: &hyperv1beta1.HostedCluster{
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-hc", Namespace: "clusters",
-					Labels:      map[string]string{"env": "prod"},
-					Annotations: map[string]string{util.ManagedClusterAnnoKey: "custom-mc-name"},
+					Labels: map[string]string{"env": "prod"},
+					Annotations: map[string]string{
+						util.ManagedClusterAnnoKey: "custom-mc-name",
+					},
 				},
 			},
 			hubMC: &clusterv1.ManagedCluster{
@@ -825,7 +838,37 @@ func hcLabelTestCases() []hcLabelTestCase {
 			expectedSpokeLabels:      map[string]string{"env": "prod"},
 			expectedHCAnnoKeysOnSpoke: []string{"env"},
 		},
+		{
+			name: "HC matched by infraID when MC has auto-created-for-infra label",
+			spokeMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-hc",
+					Annotations: map[string]string{createdViaAnno: createdViaHypershift},
+					Labels: map[string]string{
+						testAutoCreatedForInfra: "my-hc-abc12",
+					},
+				},
+			},
+			hc: &hyperv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-hc", Namespace: "clusters",
+					Labels: map[string]string{"env": "prod"},
+				},
+				Spec: hyperv1beta1.HostedClusterSpec{
+					InfraID: "my-hc-abc12",
+				},
+			},
+			hubMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{Name: testHubMCName},
+			},
+			expectedSpokeLabels:      map[string]string{"env": "prod"},
+			expectedHCAnnoKeysOnSpoke: []string{"env"},
+		},
 	}
+}
+
+func hcLabelTestCases() []hcLabelTestCase {
+	return append(hcLabelBasicCases(), hcLabelAdvancedCases()...)
 }
 
 func runHCLabelTest(t *testing.T, tt hcLabelTestCase) {
@@ -1008,7 +1051,8 @@ func TestHubSyncSkipsHCOwnedLabels(t *testing.T) {
 	retrieved := &clusterv1.ManagedCluster{}
 	assert.Nil(t, spoke.Get(ctx, types.NamespacedName{Name: "my-hc"}, retrieved))
 
-	assert.Equal(t, "prod", retrieved.Labels["env"], "HC value should win over hub")
+	// HC env=prod is new to spoke (spoke had no env) → HC adds it and tracks it
+	assert.Equal(t, "prod", retrieved.Labels["env"], "HC env should be added since spoke had no env")
 	assert.Equal(t, "platform", retrieved.Labels["team"], "admin hub label should be propagated")
 
 	assert.Contains(t, retrieved.Annotations[hcPropagatedLabelAnnotation], "env")
@@ -1509,5 +1553,108 @@ func TestJoinSortedKeys(t *testing.T) {
 	t.Run("keys are sorted alphabetically", func(t *testing.T) {
 		result := joinSortedKeys(map[string]bool{"team": true, "env": true, "tier": true})
 		assert.Equal(t, testAnnotationEnvTeamTier, result)
+	})
+}
+
+func TestFindHostedCluster(t *testing.T) {
+	t.Run("duplicate HC names skips propagation", func(t *testing.T) {
+		spoke, _ := initLabelSyncClient(t)
+		zapLog, _ := zap.NewDevelopment()
+		ctx := context.Background()
+
+		lc := &LabelAgent{
+			spokeClient: spoke,
+			log:         zapr.NewLogger(zapLog),
+		}
+
+		spokeMC := &clusterv1.ManagedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "my-hc",
+				Annotations: map[string]string{createdViaAnno: createdViaHypershift},
+			},
+		}
+		hc1 := &hyperv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "ns-a"},
+		}
+		hc2 := &hyperv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "ns-b"},
+		}
+
+		assert.Nil(t, spoke.Create(ctx, hc1))
+		assert.Nil(t, spoke.Create(ctx, hc2))
+
+		result, err := lc.findHostedCluster(ctx, spokeMC)
+		assert.Nil(t, err)
+		assert.Nil(t, result, "should return nil when multiple HCs match by name")
+	})
+
+	t.Run("infraID match takes priority over name", func(t *testing.T) {
+		spoke, _ := initLabelSyncClient(t)
+		zapLog, _ := zap.NewDevelopment()
+		ctx := context.Background()
+
+		lc := &LabelAgent{
+			spokeClient: spoke,
+			log:         zapr.NewLogger(zapLog),
+		}
+
+		spokeMC := &clusterv1.ManagedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "my-hc",
+				Annotations: map[string]string{createdViaAnno: createdViaHypershift},
+				Labels:      map[string]string{testAutoCreatedForInfra: "my-hc-xyz99"},
+			},
+		}
+		hc := &hyperv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "clusters"},
+			Spec:       hyperv1beta1.HostedClusterSpec{InfraID: "my-hc-xyz99"},
+		}
+
+		assert.Nil(t, spoke.Create(ctx, hc))
+
+		result, err := lc.findHostedCluster(ctx, spokeMC)
+		assert.Nil(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, "my-hc", result.Name)
+		assert.Equal(t, "clusters", result.Namespace)
+	})
+
+	t.Run("annotation match takes priority over infraID", func(t *testing.T) {
+		spoke, _ := initLabelSyncClient(t)
+		zapLog, _ := zap.NewDevelopment()
+		ctx := context.Background()
+
+		lc := &LabelAgent{
+			spokeClient: spoke,
+			log:         zapr.NewLogger(zapLog),
+		}
+
+		spokeMC := &clusterv1.ManagedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "custom-name",
+				Annotations: map[string]string{createdViaAnno: createdViaHypershift},
+				Labels:      map[string]string{testAutoCreatedForInfra: "my-hc-xyz99"},
+			},
+		}
+		hcByAnno := &hyperv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "my-hc", Namespace: "clusters",
+				Annotations: map[string]string{
+					util.ManagedClusterAnnoKey: "custom-name",
+				},
+			},
+		}
+		hcByInfra := &hyperv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "other-hc", Namespace: "other-ns"},
+			Spec:       hyperv1beta1.HostedClusterSpec{InfraID: "my-hc-xyz99"},
+		}
+
+		assert.Nil(t, spoke.Create(ctx, hcByAnno))
+		assert.Nil(t, spoke.Create(ctx, hcByInfra))
+
+		result, err := lc.findHostedCluster(ctx, spokeMC)
+		assert.Nil(t, err)
+		assert.NotNil(t, result)
+		assert.Equal(t, "my-hc", result.Name, "annotation match should win")
 	})
 }

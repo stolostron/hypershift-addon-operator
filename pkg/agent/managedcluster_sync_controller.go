@@ -28,6 +28,7 @@ import (
 const (
 	propagatedLabelAnnotation   = "hypershift.open-cluster-management.io/propagated-labels"
 	hcPropagatedLabelAnnotation = "hypershift.open-cluster-management.io/hc-propagated-labels"
+	autoInfraLabelName          = "hypershift.openshift.io/auto-created-for-infra"
 )
 
 type LabelAgent struct {
@@ -88,7 +89,7 @@ func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 	}
 
 	// HC sync (highest priority -- HC labels override everything)
-	hc, err := c.findHostedCluster(ctx, spokeMC.Name)
+	hc, err := c.findHostedCluster(ctx, spokeMC)
 	if err != nil {
 		c.log.Error(err, "error finding HostedCluster", "spokeMC", spokeMC.Name)
 		return ctrl.Result{}, err
@@ -155,26 +156,56 @@ func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 }
 
 // findHostedCluster searches for the HostedCluster that corresponds to the given
-// spoke ManagedCluster name. Checks the managedcluster-name annotation first,
-// then falls back to name match.
+// spoke ManagedCluster. Match priority:
+//  1. HC has managedcluster-name annotation matching the MC name (explicit, authoritative)
+//  2. HC spec.infraID matches the MC's auto-created-for-infra label (system-generated, unique)
+//  3. HC name matches MC name (fallback, rejects ambiguous duplicates)
 func (c *LabelAgent) findHostedCluster(
-	ctx context.Context, mcName string,
+	ctx context.Context, spokeMC *clusterv1.ManagedCluster,
 ) (*hyperv1beta1.HostedCluster, error) {
 	hcList := &hyperv1beta1.HostedClusterList{}
 	if err := c.spokeClient.List(ctx, hcList); err != nil {
 		return nil, err
 	}
+
+	mcName := spokeMC.Name
+	mcInfraID := spokeMC.Labels[autoInfraLabelName]
+
+	var nameMatches []hyperv1beta1.HostedCluster
+
 	for i := range hcList.Items {
 		hc := &hcList.Items[i]
+
 		if annoName := hc.Annotations[util.ManagedClusterAnnoKey]; len(annoName) > 0 {
 			if annoName == mcName {
 				return hc, nil
 			}
-		} else if hc.Name == mcName {
+			continue
+		}
+
+		if len(mcInfraID) > 0 && hc.Spec.InfraID == mcInfraID {
 			return hc, nil
 		}
+
+		if hc.Name == mcName {
+			nameMatches = append(nameMatches, hcList.Items[i])
+		}
 	}
-	return nil, nil
+
+	switch len(nameMatches) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &nameMatches[0], nil
+	default:
+		namespaces := make([]string, len(nameMatches))
+		for i := range nameMatches {
+			namespaces[i] = nameMatches[i].Namespace
+		}
+		c.log.Info("multiple HostedClusters match by name, add the managedcluster-name annotation to disambiguate",
+			"mcName", mcName, "namespaces", namespaces)
+		return nil, nil
+	}
 }
 
 // isSystemLabel returns true if the label key is managed by OCM/system
@@ -218,7 +249,8 @@ func isSystemLabel(key string) bool {
 }
 
 // syncHCLabelsToSpoke applies non-system HostedCluster labels to the spoke MC.
-// HC is the highest-priority source and always overwrites existing values.
+// Only new keys or already-tracked keys are propagated. If a key exists on the
+// spoke but is not HC-tracked, it is skipped (matching values auto-track).
 // Tracked via the hc-propagated-labels annotation. If a key was previously
 // hub-tracked (in propagated-labels), HC takes ownership by removing it.
 func (c *LabelAgent) syncHCLabelsToSpoke(
@@ -237,12 +269,24 @@ func (c *LabelAgent) syncHCLabelsToSpoke(
 		if isSystemLabel(key) {
 			continue
 		}
-		existingValue, exists := spokeLabels[key]
-		if !exists || existingValue != value {
+		spokeValue, existsOnSpoke := spokeLabels[key]
+		managed := false
+		if !existsOnSpoke {
 			spokeLabels[key] = value
 			changed = true
+			managed = true
+		} else if spokeValue != value {
+			if previousHCTracking[key] {
+				spokeLabels[key] = value
+				changed = true
+				managed = true
+			}
+		} else {
+			managed = true
 		}
-		hcLabelsToTrack[key] = true
+		if managed {
+			hcLabelsToTrack[key] = true
+		}
 	}
 
 	// Remove labels previously HC-tracked but no longer on the HC
@@ -287,8 +331,9 @@ func (c *LabelAgent) syncHCLabelsToSpoke(
 }
 
 // syncHCLabelsToHub applies non-system HostedCluster labels to the ACM hub MC.
-// HC always overwrites existing values. Tracked via the hc-propagated-labels
-// annotation on the hub MC, which hub sync uses to skip HC-owned keys.
+// Only new keys or already-tracked keys are propagated. If a key exists on the
+// hub but is not HC-tracked, it is skipped (matching values auto-track).
+// Tracked via the hc-propagated-labels annotation on the hub MC.
 func (c *LabelAgent) syncHCLabelsToHub(
 	ctx context.Context, hubMC *clusterv1.ManagedCluster, hc *hyperv1beta1.HostedCluster,
 ) error {
@@ -305,12 +350,24 @@ func (c *LabelAgent) syncHCLabelsToHub(
 		if isSystemLabel(key) {
 			continue
 		}
-		existingValue, exists := hubLabels[key]
-		if !exists || existingValue != value {
+		hubValue, existsOnHub := hubLabels[key]
+		managed := false
+		if !existsOnHub {
 			hubLabels[key] = value
 			changed = true
+			managed = true
+		} else if hubValue != value {
+			if previousHCTracking[key] {
+				hubLabels[key] = value
+				changed = true
+				managed = true
+			}
+		} else {
+			managed = true
 		}
-		hcLabelsToTrack[key] = true
+		if managed {
+			hcLabelsToTrack[key] = true
+		}
 	}
 
 	for key := range previousHCTracking {
