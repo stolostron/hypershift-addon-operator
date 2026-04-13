@@ -2,12 +2,15 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"maps"
 	"os"
 	"sort"
 	"strings"
 
 	"github.com/go-logr/logr"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
@@ -23,7 +26,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-const propagatedLabelAnnotation = "hypershift.open-cluster-management.io/propagated-labels"
+const (
+	propagatedLabelAnnotation   = "hypershift.open-cluster-management.io/propagated-labels"
+	hcPropagatedLabelAnnotation = "hypershift.open-cluster-management.io/hc-propagated-labels"
+	autoInfraLabelName          = "hypershift.openshift.io/auto-created-for-infra"
+)
+
+var errAmbiguousHCMatch = errors.New("multiple HostedClusters match by name")
 
 type LabelAgent struct {
 	hubClient        client.Client
@@ -43,11 +52,16 @@ func (c *LabelAgent) SetupWithManager(mgr ctrl.Manager) error {
 			source.Kind(c.hubCache, &clusterv1.ManagedCluster{},
 				handler.TypedEnqueueRequestsFromMapFunc(c.mapHubMCToSpokeMC)),
 		).
+		Watches(&hyperv1beta1.HostedCluster{},
+			handler.EnqueueRequestsFromMapFunc(c.mapHCToSpokeMC),
+			builder.WithPredicates(hcLabelEventFilters()),
+		).
 		Complete(c)
 }
 
-// Reconcile syncs non-system labels from the ACM hub ManagedCluster to the
-// corresponding spoke ManagedCluster, correcting drift and tracking propagated keys.
+// Reconcile syncs labels from the HostedCluster and ACM hub ManagedCluster to the
+// corresponding spoke ManagedCluster. HC labels have the highest priority, followed
+// by admin-added hub labels.
 func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	c.log.Info("reconciling label sync", "managedcluster", req.Name)
 
@@ -77,26 +91,125 @@ func (c *LabelAgent) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Resu
 		return ctrl.Result{}, nil
 	}
 
-	// Compute the hub MC name using getHubMCName(spokeMC.Name)
-	hubMCName := c.getHubMCName(spokeMC.Name)
+	// HC sync (highest priority -- HC labels override everything)
+	hc, err := c.findHostedCluster(ctx, spokeMC)
+	if errors.Is(err, errAmbiguousHCMatch) {
+		// Multiple HCs share the same name; skip HC sync entirely to avoid
+		// propagating from the wrong HC or cleaning up labels that are still valid.
+	} else if err != nil {
+		c.log.Error(err, "error finding HostedCluster", "spokeMC", spokeMC.Name)
+		return ctrl.Result{}, err
+	} else if hc != nil {
+		if err := c.syncHCLabelsToSpoke(ctx, spokeMC, hc); err != nil {
+			c.log.Error(err, "error syncing HC labels to spoke", "hc", hc.Name, "spokeMC", spokeMC.Name)
+			return ctrl.Result{}, err
+		}
 
-	// Fetch the hub MC using c.hubClient.Get()
-	// If not found, log and requeue
+		hubMCName := c.getHubMCName(spokeMC.Name)
+		hubMC := &clusterv1.ManagedCluster{}
+		if err := c.hubClient.Get(ctx, types.NamespacedName{Name: hubMCName}, hubMC); err == nil {
+			if err := c.syncHCLabelsToHub(ctx, hubMC, hc); err != nil {
+				c.log.Error(err, "error syncing HC labels to hub", "hc", hc.Name, "hubMC", hubMCName)
+				return ctrl.Result{}, err
+			}
+		} else if !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+	} else {
+		if err := c.removeHCPropagatedLabels(ctx, spokeMC); err != nil {
+			c.log.Error(err, "error removing HC propagated labels from spoke", "spokeMC", spokeMC.Name)
+			return ctrl.Result{}, err
+		}
+		hubMCName := c.getHubMCName(spokeMC.Name)
+		hubMC := &clusterv1.ManagedCluster{}
+		if err := c.hubClient.Get(ctx, types.NamespacedName{Name: hubMCName}, hubMC); err == nil {
+			if err := c.removeHCPropagatedLabelsFromHub(ctx, hubMC); err != nil {
+				c.log.Error(err, "error removing HC propagated labels from hub", "hubMC", hubMCName)
+				return ctrl.Result{}, err
+			}
+		} else if !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+	}
+
+	// Re-fetch spoke MC to get latest state after HC sync may have modified it
+	if err := c.spokeClient.Get(ctx, req.NamespacedName, spokeMC); err != nil {
+		if apierrors.IsNotFound(err) {
+			return ctrl.Result{}, nil
+		}
+		return ctrl.Result{}, err
+	}
+
+	// Hub sync (only admin-added labels, skip HC-owned keys on hub)
+	hubMCName := c.getHubMCName(spokeMC.Name)
 	hubMC := &clusterv1.ManagedCluster{}
 	if err := c.hubClient.Get(ctx, types.NamespacedName{Name: hubMCName}, hubMC); err != nil {
 		if apierrors.IsNotFound(err) {
-			c.log.Info("hub ManagedCluster not found, removing propagated labels", "name", hubMCName)
-			return ctrl.Result{}, c.removePropagatedLabels(ctx, spokeMC)
+			c.log.Info("hub ManagedCluster not found, removing hub propagated labels", "name", hubMCName)
+			return ctrl.Result{}, c.removeHubPropagatedLabels(ctx, spokeMC)
 		}
 		c.log.Error(err, "error getting ManagedCluster from ACM hub", "name", hubMCName)
 		return ctrl.Result{}, err
 	}
 
-	if err := c.syncLabelsFromHub(ctx, spokeMC, hubMC); err != nil {
-		c.log.Error(err, "error syncing labels", "hubMC", hubMCName, "spokeMC", spokeMC.Name)
+	if err := c.syncHubLabelsToSpoke(ctx, spokeMC, hubMC); err != nil {
+		c.log.Error(err, "error syncing hub labels to spoke", "hubMC", hubMCName, "spokeMC", spokeMC.Name)
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+// findHostedCluster searches for the HostedCluster that corresponds to the given
+// spoke ManagedCluster. Match priority:
+//  1. HC has managedcluster-name annotation matching the MC name (explicit, authoritative)
+//  2. HC spec.infraID matches the MC's auto-created-for-infra label (system-generated, unique)
+//  3. HC name matches MC name (fallback, rejects ambiguous duplicates)
+func (c *LabelAgent) findHostedCluster(
+	ctx context.Context, spokeMC *clusterv1.ManagedCluster,
+) (*hyperv1beta1.HostedCluster, error) {
+	hcList := &hyperv1beta1.HostedClusterList{}
+	if err := c.spokeClient.List(ctx, hcList); err != nil {
+		return nil, err
+	}
+
+	mcName := spokeMC.Name
+	mcInfraID := spokeMC.Labels[autoInfraLabelName]
+
+	var nameMatches []hyperv1beta1.HostedCluster
+
+	for i := range hcList.Items {
+		hc := &hcList.Items[i]
+
+		if annoName := hc.Annotations[util.ManagedClusterAnnoKey]; len(annoName) > 0 {
+			if annoName == mcName {
+				return hc, nil
+			}
+			continue
+		}
+
+		if len(mcInfraID) > 0 && hc.Spec.InfraID == mcInfraID {
+			return hc, nil
+		}
+
+		if hc.Name == mcName {
+			nameMatches = append(nameMatches, hcList.Items[i])
+		}
+	}
+
+	switch len(nameMatches) {
+	case 0:
+		return nil, nil
+	case 1:
+		return &nameMatches[0], nil
+	default:
+		namespaces := make([]string, len(nameMatches))
+		for i := range nameMatches {
+			namespaces[i] = nameMatches[i].Namespace
+		}
+		c.log.Info("multiple HostedClusters match by name, add the managedcluster-name annotation to disambiguate",
+			"mcName", mcName, "namespaces", namespaces)
+		return nil, errAmbiguousHCMatch
+	}
 }
 
 // isSystemLabel returns true if the label key is managed by OCM/system
@@ -139,22 +252,160 @@ func isSystemLabel(key string) bool {
 	return false
 }
 
-// syncLabelsFromHub applies non-system labels from the hub MC to the spoke MC,
-// using the tracking annotation to manage additions, updates, and removals.
-func (c *LabelAgent) syncLabelsFromHub(
-	ctx context.Context, spokeMC, hubMC *clusterv1.ManagedCluster,
+// syncHCLabelsToSpoke applies non-system HostedCluster labels to the spoke MC.
+// Only new keys or already-tracked keys are propagated. If a key exists on the
+// spoke but is not HC-tracked, it is skipped (matching values auto-track).
+// Tracked via the hc-propagated-labels annotation. If a key was previously
+// hub-tracked (in propagated-labels), HC takes ownership by removing it.
+func (c *LabelAgent) syncHCLabelsToSpoke(
+	ctx context.Context, spokeMC *clusterv1.ManagedCluster, hc *hyperv1beta1.HostedCluster,
 ) error {
-	// Read the current tracking annotation (propagatedLabelsAnno) from spokeMC
-	// Parse the comma-separated list of previously propagated label keys
-	previousAnnotationTracking := map[string]bool{}
-	if annotations := spokeMC.Annotations[propagatedLabelAnnotation]; annotations != "" {
-		for _, key := range strings.Split(annotations, ",") {
-			previousAnnotationTracking[key] = true
+	previousHCTracking := parseAnnotation(spokeMC.Annotations[hcPropagatedLabelAnnotation])
+
+	hcLabelsToTrack := map[string]bool{}
+	spokeLabels := spokeMC.DeepCopy().Labels
+	if spokeLabels == nil {
+		spokeLabels = map[string]string{}
+	}
+	changed := false
+
+	for key, value := range hc.Labels {
+		if isSystemLabel(key) {
+			continue
+		}
+		spokeValue, existsOnSpoke := spokeLabels[key]
+		managed := false
+		if !existsOnSpoke {
+			spokeLabels[key] = value
+			changed = true
+			managed = true
+		} else if spokeValue != value {
+			if previousHCTracking[key] {
+				spokeLabels[key] = value
+				changed = true
+				managed = true
+			}
+		} else {
+			managed = true
+		}
+		if managed {
+			hcLabelsToTrack[key] = true
 		}
 	}
 
-	// Build the set of labels to propagate from hubMC
-	// For each hub label, skip if isSystemLabel(key)
+	// Remove labels previously HC-tracked but no longer on the HC
+	for key := range previousHCTracking {
+		if !hcLabelsToTrack[key] {
+			delete(spokeLabels, key)
+			changed = true
+		}
+	}
+
+	// If HC is taking over any hub-tracked keys, remove them from hub tracking
+	previousHubTracking := parseAnnotation(spokeMC.Annotations[propagatedLabelAnnotation])
+	updatedHubTracking := map[string]bool{}
+	hubTrackingModified := false
+	for key := range previousHubTracking {
+		if hcLabelsToTrack[key] {
+			hubTrackingModified = true
+		} else {
+			updatedHubTracking[key] = true
+		}
+	}
+
+	hcTrackingChanged := !maps.Equal(hcLabelsToTrack, previousHCTracking)
+
+	if !changed && !hcTrackingChanged && !hubTrackingModified {
+		return nil
+	}
+
+	patch := client.MergeFrom(spokeMC.DeepCopy())
+	spokeMC.Labels = spokeLabels
+	if spokeMC.Annotations == nil {
+		spokeMC.Annotations = map[string]string{}
+	}
+
+	setOrDeleteAnnotation(spokeMC, hcPropagatedLabelAnnotation, joinSortedKeys(hcLabelsToTrack))
+
+	if hubTrackingModified {
+		setOrDeleteAnnotation(spokeMC, propagatedLabelAnnotation, joinSortedKeys(updatedHubTracking))
+	}
+
+	return c.spokeClient.Patch(ctx, spokeMC, patch)
+}
+
+// syncHCLabelsToHub applies non-system HostedCluster labels to the ACM hub MC.
+// Only new keys or already-tracked keys are propagated. If a key exists on the
+// hub but is not HC-tracked, it is skipped (matching values auto-track).
+// Tracked via the hc-propagated-labels annotation on the hub MC.
+func (c *LabelAgent) syncHCLabelsToHub(
+	ctx context.Context, hubMC *clusterv1.ManagedCluster, hc *hyperv1beta1.HostedCluster,
+) error {
+	previousHCTracking := parseAnnotation(hubMC.Annotations[hcPropagatedLabelAnnotation])
+
+	hcLabelsToTrack := map[string]bool{}
+	hubLabels := hubMC.DeepCopy().Labels
+	if hubLabels == nil {
+		hubLabels = map[string]string{}
+	}
+	changed := false
+
+	for key, value := range hc.Labels {
+		if isSystemLabel(key) {
+			continue
+		}
+		hubValue, existsOnHub := hubLabels[key]
+		managed := false
+		if !existsOnHub {
+			hubLabels[key] = value
+			changed = true
+			managed = true
+		} else if hubValue != value {
+			if previousHCTracking[key] {
+				hubLabels[key] = value
+				changed = true
+				managed = true
+			}
+		} else {
+			managed = true
+		}
+		if managed {
+			hcLabelsToTrack[key] = true
+		}
+	}
+
+	for key := range previousHCTracking {
+		if !hcLabelsToTrack[key] {
+			delete(hubLabels, key)
+			changed = true
+		}
+	}
+
+	hcTrackingChanged := !maps.Equal(hcLabelsToTrack, previousHCTracking)
+
+	if !changed && !hcTrackingChanged {
+		return nil
+	}
+
+	patch := client.MergeFrom(hubMC.DeepCopy())
+	hubMC.Labels = hubLabels
+	if hubMC.Annotations == nil {
+		hubMC.Annotations = map[string]string{}
+	}
+
+	setOrDeleteAnnotation(hubMC, hcPropagatedLabelAnnotation, joinSortedKeys(hcLabelsToTrack))
+
+	return c.hubClient.Patch(ctx, hubMC, patch)
+}
+
+// syncHubLabelsToSpoke applies non-system labels from the hub MC to the spoke MC,
+// using the tracking annotation to manage additions, updates, and removals.
+// Labels owned by HC (in hc-propagated-labels on the hub MC) are skipped.
+func (c *LabelAgent) syncHubLabelsToSpoke(
+	ctx context.Context, spokeMC, hubMC *clusterv1.ManagedCluster,
+) error {
+	previousAnnotationTracking := parseAnnotation(spokeMC.Annotations[propagatedLabelAnnotation])
+	hcOwnedOnHub := parseAnnotation(hubMC.Annotations[hcPropagatedLabelAnnotation])
 
 	// Apply sync rules:
 	// - Hub has label, Spoke does not -> add to spoke, record in tracking
@@ -169,6 +420,9 @@ func (c *LabelAgent) syncLabelsFromHub(
 	changed := false
 	for hubKey, hubValue := range hubMC.Labels {
 		if isSystemLabel(hubKey) {
+			continue
+		}
+		if hcOwnedOnHub[hubKey] {
 			continue
 		}
 
@@ -201,45 +455,23 @@ func (c *LabelAgent) syncLabelsFromHub(
 		}
 	}
 
-	// Check if the tracking annotation needs updating in case labels match on hub and spoke but isnt tracked
-	if !changed && len(labelsToPropagate) == len(previousAnnotationTracking) {
-		allMatch := true
-		for key := range labelsToPropagate {
-			if !previousAnnotationTracking[key] {
-				allMatch = false
-				break
-			}
-		}
-		if allMatch {
-			return nil
-		}
+	if !changed && maps.Equal(labelsToPropagate, previousAnnotationTracking) {
+		return nil
 	}
 
-	// If changes were made, patch the spoke MC using client.MergeFrom()
-	// Update both labels and the tracking annotation
-	keys := make([]string, 0, len(labelsToPropagate))
-	for key := range labelsToPropagate {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	// create a patch
 	patch := client.MergeFrom(spokeMC.DeepCopy())
-	// set the labels calculated to the spoke
 	spokeMC.Labels = spokeLabels
 	if spokeMC.Annotations == nil {
 		spokeMC.Annotations = map[string]string{}
 	}
-	// add labels propagated in the annotations
-	spokeMC.Annotations[propagatedLabelAnnotation] = strings.Join(keys, ",")
+	spokeMC.Annotations[propagatedLabelAnnotation] = joinSortedKeys(labelsToPropagate)
 
-	// patch the spoke with labels and annotations
 	return c.spokeClient.Patch(ctx, spokeMC, patch)
 }
 
-// removePropagatedLabels removes all previously propagated labels from the spoke
+// removeHubPropagatedLabels removes all hub-propagated labels from the spoke
 // ManagedCluster and clears the tracking annotation. Called when the hub MC is deleted.
-func (c *LabelAgent) removePropagatedLabels(ctx context.Context, spokeMC *clusterv1.ManagedCluster) error {
+func (c *LabelAgent) removeHubPropagatedLabels(ctx context.Context, spokeMC *clusterv1.ManagedCluster) error {
 	anno := spokeMC.Annotations[propagatedLabelAnnotation]
 	if anno == "" {
 		return nil
@@ -251,8 +483,44 @@ func (c *LabelAgent) removePropagatedLabels(ctx context.Context, spokeMC *cluste
 	}
 	delete(spokeMC.Annotations, propagatedLabelAnnotation)
 
-	c.log.Info("removing propagated labels from spoke", "spokeMC", spokeMC.Name, "labels", anno)
+	c.log.Info("removing hub propagated labels from spoke", "spokeMC", spokeMC.Name, "labels", anno)
 	return c.spokeClient.Patch(ctx, spokeMC, patch)
+}
+
+// removeHCPropagatedLabels removes all HC-propagated labels from the spoke
+// ManagedCluster and clears the hc-propagated-labels annotation.
+func (c *LabelAgent) removeHCPropagatedLabels(ctx context.Context, spokeMC *clusterv1.ManagedCluster) error {
+	anno := spokeMC.Annotations[hcPropagatedLabelAnnotation]
+	if anno == "" {
+		return nil
+	}
+
+	patch := client.MergeFrom(spokeMC.DeepCopy())
+	for _, key := range strings.Split(anno, ",") {
+		delete(spokeMC.Labels, key)
+	}
+	delete(spokeMC.Annotations, hcPropagatedLabelAnnotation)
+
+	c.log.Info("removing HC propagated labels from spoke", "spokeMC", spokeMC.Name, "labels", anno)
+	return c.spokeClient.Patch(ctx, spokeMC, patch)
+}
+
+// removeHCPropagatedLabelsFromHub removes all HC-propagated labels from the hub
+// ManagedCluster and clears the hc-propagated-labels annotation.
+func (c *LabelAgent) removeHCPropagatedLabelsFromHub(ctx context.Context, hubMC *clusterv1.ManagedCluster) error {
+	anno := hubMC.Annotations[hcPropagatedLabelAnnotation]
+	if anno == "" {
+		return nil
+	}
+
+	patch := client.MergeFrom(hubMC.DeepCopy())
+	for _, key := range strings.Split(anno, ",") {
+		delete(hubMC.Labels, key)
+	}
+	delete(hubMC.Annotations, hcPropagatedLabelAnnotation)
+
+	c.log.Info("removing HC propagated labels from hub", "hubMC", hubMC.Name, "labels", anno)
+	return c.hubClient.Patch(ctx, hubMC, patch)
 }
 
 // mapHubMCToSpokeMC translates a hub ManagedCluster event into a reconcile
@@ -264,6 +532,20 @@ func (c *LabelAgent) mapHubMCToSpokeMC(ctx context.Context, hubMC *clusterv1.Man
 	}
 	return []reconcile.Request{
 		{NamespacedName: types.NamespacedName{Name: spokeMCName}},
+	}
+}
+
+// mapHCToSpokeMC translates a HostedCluster event into a reconcile request
+// for the corresponding spoke ManagedCluster. Checks the managedcluster-name
+// annotation first, then falls back to HC name.
+func (c *LabelAgent) mapHCToSpokeMC(ctx context.Context, obj client.Object) []reconcile.Request {
+	if annoName := obj.GetAnnotations()[util.ManagedClusterAnnoKey]; len(annoName) > 0 {
+		return []reconcile.Request{
+			{NamespacedName: types.NamespacedName{Name: annoName}},
+		}
+	}
+	return []reconcile.Request{
+		{NamespacedName: types.NamespacedName{Name: obj.GetName()}},
 	}
 }
 
@@ -297,16 +579,14 @@ func (c *LabelAgent) getHubMCName(spokeMCName string) string {
 }
 
 // labelEventFilters filters spoke ManagedCluster events to only process hosted clusters.
-// Both create and update events are handled to correct spoke-side label drift.
+// Triggers on label changes, tracking annotation changes, or created-via annotation changes.
 func labelEventFilters() predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
 			mc, ok := e.Object.(*clusterv1.ManagedCluster)
-
 			if !ok {
 				return false
 			}
-
 			return mc.Annotations[createdViaAnno] == createdViaHypershift
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
@@ -314,10 +594,17 @@ func labelEventFilters() predicate.Predicate {
 			if !ok {
 				return false
 			}
-			if maps.Equal(e.ObjectOld.GetLabels(), e.ObjectNew.GetLabels()) {
+			if mc.Annotations[createdViaAnno] != createdViaHypershift {
 				return false
 			}
-			return mc.Annotations[createdViaAnno] == createdViaHypershift
+			if !maps.Equal(e.ObjectOld.GetLabels(), e.ObjectNew.GetLabels()) {
+				return true
+			}
+			oldAnno := e.ObjectOld.GetAnnotations()
+			newAnno := e.ObjectNew.GetAnnotations()
+			return oldAnno[propagatedLabelAnnotation] != newAnno[propagatedLabelAnnotation] ||
+				oldAnno[hcPropagatedLabelAnnotation] != newAnno[hcPropagatedLabelAnnotation] ||
+				oldAnno[createdViaAnno] != newAnno[createdViaAnno]
 		},
 		DeleteFunc: func(e event.DeleteEvent) bool {
 			return false
@@ -325,5 +612,51 @@ func labelEventFilters() predicate.Predicate {
 		GenericFunc: func(e event.GenericEvent) bool {
 			return false
 		},
+	}
+}
+
+// hcLabelEventFilters filters HostedCluster events to trigger on label changes
+// and deletions (for cleanup of HC-propagated labels).
+func hcLabelEventFilters() predicate.Predicate {
+	return predicate.Funcs{
+		CreateFunc: func(e event.CreateEvent) bool {
+			return true
+		},
+		UpdateFunc: func(e event.UpdateEvent) bool {
+			return !maps.Equal(e.ObjectOld.GetLabels(), e.ObjectNew.GetLabels())
+		},
+		DeleteFunc: func(e event.DeleteEvent) bool {
+			return true
+		},
+		GenericFunc: func(e event.GenericEvent) bool {
+			return false
+		},
+	}
+}
+
+func parseAnnotation(anno string) map[string]bool {
+	result := map[string]bool{}
+	if anno != "" {
+		for _, key := range strings.Split(anno, ",") {
+			result[key] = true
+		}
+	}
+	return result
+}
+
+func joinSortedKeys(m map[string]bool) string {
+	keys := make([]string, 0, len(m))
+	for key := range m {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ",")
+}
+
+func setOrDeleteAnnotation(mc *clusterv1.ManagedCluster, key, value string) {
+	if value != "" {
+		mc.Annotations[key] = value
+	} else {
+		delete(mc.Annotations, key)
 	}
 }
