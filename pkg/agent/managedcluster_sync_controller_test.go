@@ -456,6 +456,34 @@ func hcLabelSyncCases() []hcLabelTestCase {
 			expectedHubAnnoKeysOnSpoke: []string{"env"},
 		},
 		{
+			name: "HC takes ownership from hub tracking",
+			spokeMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-hc",
+					Annotations: map[string]string{
+						createdViaAnno:            createdViaHypershift,
+						propagatedLabelAnnotation: "env",
+					},
+					Labels: map[string]string{"env": "prod"},
+				},
+			},
+			hc: &hyperv1beta1.HostedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "my-hc", Namespace: "clusters",
+					Labels: map[string]string{"env": "prod"},
+				},
+			},
+			hubMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   testHubMCName,
+					Labels: map[string]string{"env": "prod"},
+				},
+			},
+			expectedSpokeLabels:       map[string]string{"env": "prod"},
+			expectedHCAnnoKeysOnSpoke: []string{"env"},
+			expectedHubAnnoKeysOnSpoke: []string{},
+		},
+		{
 			name: "HC system labels not propagated",
 			spokeMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -578,6 +606,11 @@ func hcLabelCleanupCases() []hcLabelTestCase {
 			expectedSpokeLabels:      map[string]string{"env": "prod"},
 			expectedHCAnnoKeysOnSpoke: []string{"env"},
 		},
+	}
+}
+
+func hcLabelInteractionCases() []hcLabelTestCase {
+	return []hcLabelTestCase{
 		{
 			name: "HC deleted cleans up tracked labels",
 			spokeMC: &clusterv1.ManagedCluster{
@@ -631,7 +664,9 @@ func hcLabelCleanupCases() []hcLabelTestCase {
 }
 
 func hcLabelTestCases() []hcLabelTestCase {
-	return append(hcLabelSyncCases(), hcLabelCleanupCases()...)
+	cases := hcLabelSyncCases()
+	cases = append(cases, hcLabelCleanupCases()...)
+	return append(cases, hcLabelInteractionCases()...)
 }
 
 func runHCLabelTest(t *testing.T, tt hcLabelTestCase) {
