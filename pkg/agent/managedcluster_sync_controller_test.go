@@ -69,18 +69,20 @@ func reconcileAndGet(
 
 // --- Hub-to-spoke label propagation ---
 
-func TestLabelPropagation(t *testing.T) {
-	tests := []struct {
-		name               string
-		spokeMC            *clusterv1.ManagedCluster
-		hubMC              *clusterv1.ManagedCluster
-		clusterName        string
-		localClusterName   string
-		discoveryPrefix    *string
-		expectedLabels     map[string]string
-		notExpectedLabels  []string
-		expectedAnnoKeys   []string
-	}{
+type hubLabelTestCase struct {
+	name             string
+	spokeMC          *clusterv1.ManagedCluster
+	hubMC            *clusterv1.ManagedCluster
+	clusterName      string
+	localClusterName string
+	discoveryPrefix  *string
+	expectedLabels   map[string]string
+	notExpectedLabels []string
+	expectedAnnoKeys []string
+}
+
+func hubLabelSyncCases() []hubLabelTestCase {
+	return []hubLabelTestCase{
 		{
 			name: "hub labels propagated to spoke",
 			spokeMC: &clusterv1.ManagedCluster{
@@ -95,8 +97,8 @@ func TestLabelPropagation(t *testing.T) {
 					Labels: map[string]string{"env": "prod", "team": "backend"},
 				},
 			},
-			clusterName:    "mce",
-			expectedLabels: map[string]string{"env": "prod", "team": "backend"},
+			clusterName:      "mce",
+			expectedLabels:   map[string]string{"env": "prod", "team": "backend"},
 			expectedAnnoKeys: []string{"env", "team"},
 		},
 		{
@@ -160,6 +162,11 @@ func TestLabelPropagation(t *testing.T) {
 			expectedLabels:    map[string]string{"env": "prod"},
 			notExpectedLabels: []string{"vendor", "cloud", "region", "feature.open-cluster-management.io/addon-search"},
 		},
+	}
+}
+
+func hubLabelCleanupCases() []hubLabelTestCase {
+	return []hubLabelTestCase{
 		{
 			name: "hub label removed from spoke",
 			spokeMC: &clusterv1.ManagedCluster{
@@ -199,6 +206,37 @@ func TestLabelPropagation(t *testing.T) {
 			expectedLabels:    map[string]string{"local": "keep"},
 			notExpectedLabels: []string{"env", "team"},
 		},
+		{
+			name: "multiple labels with partial removal",
+			spokeMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "hc1",
+					Annotations: map[string]string{
+						createdViaAnno:            createdViaHypershift,
+						propagatedLabelAnnotation: "env,team,old,deprecated",
+					},
+					Labels: map[string]string{
+						"env": "prod", "team": "backend",
+						"old": "rm", "deprecated": "rm", "local": "keep",
+					},
+				},
+			},
+			hubMC: &clusterv1.ManagedCluster{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:   testHubMCNameDefault,
+					Labels: map[string]string{"env": "staging", "team": "backend"},
+				},
+			},
+			clusterName:       "mce",
+			expectedLabels:    map[string]string{"env": "staging", "team": "backend", "local": "keep"},
+			notExpectedLabels: []string{"old", "deprecated"},
+			expectedAnnoKeys:  []string{"env", "team"},
+		},
+	}
+}
+
+func hubLabelEdgeCases() []hubLabelTestCase {
+	return []hubLabelTestCase{
 		{
 			name: "custom discovery prefix",
 			spokeMC: &clusterv1.ManagedCluster{
@@ -295,33 +333,14 @@ func TestLabelPropagation(t *testing.T) {
 			expectedLabels:   map[string]string{"env": "prod"},
 			expectedAnnoKeys: []string{"env"},
 		},
-		{
-			name: "multiple labels with partial removal",
-			spokeMC: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: "hc1",
-					Annotations: map[string]string{
-						createdViaAnno:            createdViaHypershift,
-						propagatedLabelAnnotation: "env,team,old,deprecated",
-					},
-					Labels: map[string]string{
-						"env": "prod", "team": "backend",
-						"old": "rm", "deprecated": "rm", "local": "keep",
-					},
-				},
-			},
-			hubMC: &clusterv1.ManagedCluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:   testHubMCNameDefault,
-					Labels: map[string]string{"env": "staging", "team": "backend"},
-				},
-			},
-			clusterName:       "mce",
-			expectedLabels:    map[string]string{"env": "staging", "team": "backend", "local": "keep"},
-			notExpectedLabels: []string{"old", "deprecated"},
-			expectedAnnoKeys:  []string{"env", "team"},
-		},
 	}
+}
+
+func TestLabelPropagation(t *testing.T) {
+	var tests []hubLabelTestCase
+	tests = append(tests, hubLabelSyncCases()...)
+	tests = append(tests, hubLabelCleanupCases()...)
+	tests = append(tests, hubLabelEdgeCases()...)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -455,6 +474,11 @@ func hcLabelSyncCases() []hcLabelTestCase {
 			expectedSpokeLabels:       map[string]string{"env": "staging"},
 			expectedHubAnnoKeysOnSpoke: []string{"env"},
 		},
+	}
+}
+
+func hcLabelFilterAndMatchCases() []hcLabelTestCase {
+	return []hcLabelTestCase{
 		{
 			name: "HC takes ownership from hub tracking",
 			spokeMC: &clusterv1.ManagedCluster{
@@ -480,7 +504,7 @@ func hcLabelSyncCases() []hcLabelTestCase {
 				},
 			},
 			expectedSpokeLabels:       map[string]string{"env": "prod"},
-			expectedHCAnnoKeysOnSpoke: []string{"env"},
+			expectedHCAnnoKeysOnSpoke:  []string{"env"},
 			expectedHubAnnoKeysOnSpoke: []string{},
 		},
 		{
@@ -665,6 +689,7 @@ func hcLabelInteractionCases() []hcLabelTestCase {
 
 func hcLabelTestCases() []hcLabelTestCase {
 	cases := hcLabelSyncCases()
+	cases = append(cases, hcLabelFilterAndMatchCases()...)
 	cases = append(cases, hcLabelCleanupCases()...)
 	return append(cases, hcLabelInteractionCases()...)
 }
