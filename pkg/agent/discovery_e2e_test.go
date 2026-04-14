@@ -281,6 +281,29 @@ var _ = Describe("Simulated E2E: Hosted cluster discovery and import", Ordered, 
 				return apierrors.IsNotFound(err)
 			}, "30s", "1s").Should(BeTrue())
 		})
+
+		AfterAll(func() {
+			hc := &hyperv1beta1.HostedCluster{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: e2eHCNamespace, Name: e2eHC1Name,
+			}, hc); err == nil {
+				_ = k8sClient.Delete(ctx, hc)
+			}
+
+			mc := &clusterv1.ManagedCluster{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Name: managedMCEClusterName + "-" + e2eHC1Name,
+			}, mc); err == nil {
+				_ = k8sClient.Delete(ctx, mc)
+			}
+
+			dc := &discoveryv1.DiscoveredCluster{}
+			if err := k8sClient.Get(ctx, types.NamespacedName{
+				Namespace: managedMCEClusterName, Name: e2eClusterID1,
+			}, dc); err == nil {
+				_ = k8sClient.Delete(ctx, dc)
+			}
+		})
 	})
 
 	// ---------------------------------------------------------------------------
