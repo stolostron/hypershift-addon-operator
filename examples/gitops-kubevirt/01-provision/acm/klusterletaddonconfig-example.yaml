@@ -1,0 +1,43 @@
+# Example KlusterletAddonConfig created automatically by ACM
+# Configures which ACM add-ons are enabled for the managed cluster
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: example-hcp
+  namespace: example-hcp
+spec:
+  # Cluster identification
+  clusterName: example-hcp
+  clusterNamespace: example-hcp
+
+  # Cluster labels (copied from ManagedCluster)
+  clusterLabels:
+    cloud: auto
+    vendor: auto
+    hypershift.openshift.io/hosted-cluster: "true"
+
+  # Application deployment add-on
+  # Enables deploying applications to this cluster via ACM
+  applicationManager:
+    enabled: true
+    argocdCluster: false  # Don't register with ArgoCD (GitOps handles this)
+
+  # Policy enforcement add-on
+  # Enables applying configuration policies to this cluster
+  policyController:
+    enabled: true
+
+  # Search/discovery add-on
+  # Makes cluster resources searchable in ACM console
+  searchCollector:
+    enabled: true
+
+  # Certificate policy add-on
+  # Enforces certificate compliance policies
+  certPolicyController:
+    enabled: true
+
+  # IAM policy add-on
+  # Enforces RBAC and IAM compliance policies
+  iamPolicyController:
+    enabled: true

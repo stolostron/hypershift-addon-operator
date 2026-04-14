@@ -1,0 +1,67 @@
+# Operation 2: Enable Autoscaling
+# Replaces static replicas with min/max replicas for autoscaling
+#
+# This patch converts the NodePool from static 2 replicas to autoscaling
+# between 2 and 8 nodes. The Cluster Autoscaler (deployed in the hosted
+# cluster) will manage scaling based on resource pressure.
+#
+# Key concepts:
+# - spec.replicas removed: static count no longer enforced
+# - spec.autoScaling.minReplicas: minimum nodes (2)
+# - spec.autoScaling.maxReplicas: maximum nodes (8)
+# - Autoscaler adds nodes when resource requests can't be satisfied
+# - Autoscaler removes nodes when underutilized (after 10 minutes)
+#
+# Prerequisites:
+# - Cluster Autoscaler should be deployed in the hosted cluster
+# - See: https://github.com/kubernetes/autoscaler
+#
+# Expected behavior:
+# - NodePool will immediately adjust from current replicas to minReplicas if needed
+# - Nodes scale automatically based on workload demand
+# - Cluster Autoscaler respects these boundaries
+#
+# Usage:
+#   oc apply -f operations/02-add-autoscaling.yaml
+#
+# Or via Git:
+#   1. Edit base/nodepool.yaml
+#   2. Remove: spec.replicas: 2
+#   3. Add: spec.autoScaling.minReplicas: 2
+#           spec.autoScaling.maxReplicas: 8
+#   4. Commit and push
+#   5. Watch: oc get nodepool -n clusters example-hcp-workers -w
+#
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-hcp-workers
+  namespace: clusters
+spec:
+  clusterName: example-hcp
+
+  # Removed: replicas: 2 (static count from base/nodepool.yaml)
+  # Added: autoScaling configuration
+
+  autoScaling:
+    minReplicas: 2
+    maxReplicas: 8
+
+  management:
+    autoRepair: true
+    upgradeType: Replace
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      compute:
+        cores: 4
+        memory: 16Gi
+      rootVolume:
+        persistent:
+          size: 120Gi
+        type: Persistent
+
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.21.0-multi

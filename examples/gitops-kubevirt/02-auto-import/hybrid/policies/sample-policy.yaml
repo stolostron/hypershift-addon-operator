@@ -1,0 +1,43 @@
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: require-openshift-namespace
+  namespace: clusters
+spec:
+  remediationAction: inform
+  disabled: false
+
+  policy-templates:
+  - objectDefinition:
+      apiVersion: policy.open-cluster-management.io/v1
+      kind: ConfigurationPolicy
+      metadata:
+        name: require-openshift-namespace
+      spec:
+        remediationAction: inform
+        severity: low
+        object-templates:
+        - complianceType: musthave
+          objectDefinition:
+            apiVersion: v1
+            kind: Namespace
+            metadata:
+              name: openshift-custom-compliance
+              labels:
+                compliance: required
+
+---
+apiVersion: policy.open-cluster-management.io/v1beta1
+kind: PlacementBinding
+metadata:
+  name: require-openshift-namespace-placement
+  namespace: clusters
+spec:
+  placementRef:
+    name: hostedclusters
+    kind: Placement
+    apiGroup: cluster.open-cluster-management.io
+  subjects:
+  - name: require-openshift-namespace
+    kind: Policy
+    apiGroup: policy.open-cluster-management.io

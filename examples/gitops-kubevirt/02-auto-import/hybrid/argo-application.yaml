@@ -1,0 +1,36 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: example-hcp-hybrid
+  namespace: openshift-gitops
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/YOUR_ORG/hypershift-addon-operator.git
+    targetRevision: main
+    path: examples/gitops-kubevirt/02-auto-import/hybrid
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: clusters
+
+  syncPolicy:
+    # Manual sync for first deployment
+    # Change to 'automated: {}' after first successful sync
+    syncOptions:
+    - CreateNamespace=true
+    - PruneLast=true
+
+    # Enable after first successful sync:
+    # automated:
+    #   prune: true
+    #   selfHeal: false
+
+  # Ignore differences in ACM auto-created resources
+  ignoreDifferences:
+  - group: cluster.open-cluster-management.io
+    kind: ManagedCluster
+    jsonPointers:
+    - /metadata
+    - /spec

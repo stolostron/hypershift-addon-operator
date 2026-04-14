@@ -1,0 +1,93 @@
+# Example ManagedClusterInfo populated by klusterlet
+# Contains detailed information about the managed cluster
+apiVersion: internal.open-cluster-management.io/v1beta1
+kind: ManagedClusterInfo
+metadata:
+  name: example-hcp
+  namespace: example-hcp
+spec:
+  # Logging CA certificate (base64-encoded)
+  loggingCA: LS0tLS1CRUdJTi...
+
+  # Master API endpoint
+  masterEndpoint: https://api.example-hcp.example.com:6443
+
+status:
+  # Sync status
+  conditions:
+    - type: ManagedClusterInfoSynced
+      status: "True"
+      reason: ManagedClusterInfoSynced
+      message: "Managed cluster info synced"
+      lastTransitionTime: "2026-04-10T00:15:00Z"
+
+  # Cluster version information
+  version: "4.21.0"
+  kubeVendor: OpenShift
+  cloudVendor: KubeVirt
+
+  # Distribution details
+  distributionInfo:
+    type: OCP
+    ocp:
+      version: "4.21.0"
+      channel: stable-4.21
+      desired:
+        version: "4.21.0"
+        image: "quay.io/openshift-release-dev/ocp-release:4.21.0-multi"
+      upgradeFailed: false
+      versionAvailableUpdates:
+        - version: "4.21.1"
+          image: "quay.io/openshift-release-dev/ocp-release:4.21.1-multi"
+
+  # Node inventory with detailed status
+  nodeList:
+    - name: worker-0
+      capacity:
+        cpu: "2"
+        memory: "8Gi"
+        socket: "1"
+        storage: "120Gi"
+      allocatable:
+        cpu: "1800m"
+        memory: "7Gi"
+      labels:
+        node-role.kubernetes.io/worker: ""
+        node.kubernetes.io/instance-type: "kubevirt"
+      conditions:
+        - type: Ready
+          status: "True"
+        - type: MemoryPressure
+          status: "False"
+        - type: DiskPressure
+          status: "False"
+        - type: PIDPressure
+          status: "False"
+
+    - name: worker-1
+      capacity:
+        cpu: "2"
+        memory: "8Gi"
+        socket: "1"
+        storage: "120Gi"
+      allocatable:
+        cpu: "1800m"
+        memory: "7Gi"
+      labels:
+        node-role.kubernetes.io/worker: ""
+        node.kubernetes.io/instance-type: "kubevirt"
+      conditions:
+        - type: Ready
+          status: "True"
+        - type: MemoryPressure
+          status: "False"
+        - type: DiskPressure
+          status: "False"
+        - type: PIDPressure
+          status: "False"
+
+  # Cluster console URL
+  consoleURL: https://console-openshift-console.apps.example-hcp.example.com
+
+  # API server URL
+  apiServerURL: https://api.example-hcp.example.com:6443

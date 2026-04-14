@@ -33,6 +33,12 @@ Tools and guides for managing HyperShift hosted clusters after deployment.
 - **[HyperShift Addon Status](./management/hypershift_addon_status.md)** - Monitor addon health and status
 - **[Cluster Capacity Metrics](./management/cluster_capacity_metrics_hcp.md)** - Understanding capacity planning and metrics
 
+### 🔄 [GitOps](./gitops/)
+ACM-centric guides for managing **HyperShift hosted clusters** with **Git** (typically Argo CD): secrets and hub responsibilities, discovery and auto-import, `ManagedCluster` / hosted-mode klusterlet, and hub-side troubleshooting.
+
+- **[GitOps HCP implementation guide](./gitops/README.md)** - Start here: overview (**00**), ACM integration and auto-import (**01**), troubleshooting (**02**)
+- **Examples:** [`examples/gitops-kubevirt/`](../examples/gitops-kubevirt/) - Provision, auto-import patterns, scaling, and upgrades as declarative manifests
+
 ### 🔧 [Optional Topics](./optional/)
 Optional configuration and operational topics.
 
@@ -68,6 +74,7 @@ Screenshots and diagrams used throughout the documentation.
 3. **Plan**: Review [hosting topologies](./planning/hosting_cluster_topologies.md) and [provisioning guide](./planning/provision_hosted_cluster_on_mce_local_cluster.md)
 4. **Configure**: Set up [cloud provider credentials](./configuration/cloud_provider_secret_aws.md) and [operator configuration](./configuration/hypershift_operator_configuration.md)
 5. **Manage**: Learn about [cluster discovery](./management/discovering_hostedclusters.md) and [monitoring](./management/cluster_capacity_metrics_hcp.md)
+6. **GitOps + ACM** (optional): If you drive `HostedCluster` / `NodePool` from Git, read the [GitOps guide](./gitops/README.md) and walk through [`examples/gitops-kubevirt/`](../examples/gitops-kubevirt/)
 
 ## Support and Community
 

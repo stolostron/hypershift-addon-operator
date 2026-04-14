@@ -1,0 +1,74 @@
+# Example ManagedCluster created automatically by ACM for a hosted cluster
+# This is what hypershift-addon-agent creates when it detects an Available HostedCluster
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: example-hcp
+  annotations:
+    # CRITICAL: Tells cluster-import-controller to deploy klusterlet on Hub (not hosted cluster)
+    import.open-cluster-management.io/klusterlet-deploy-mode: "Hosted"
+
+    # Managed cluster that hosts this control plane (local-cluster on hub-hosted topologies)
+    import.open-cluster-management.io/hosting-cluster-name: local-cluster
+
+    # Indicates this cluster was created via HyperShift (matches hypershift-addon auto-import controller)
+    open-cluster-management/created-via: hypershift
+
+  labels:
+    # Auto-imported cluster (vs manual import)
+    vendor: auto-detect
+
+    # Cloud provider auto-detected
+    cloud: auto-detect
+
+    # HyperShift-specific label
+    hypershift.openshift.io/hosted-cluster: "true"
+
+    # ClusterSet membership (for multi-cluster operations)
+    cluster.open-cluster-management.io/clusterset: default
+
+spec:
+  # Hub accepts this cluster for management
+  hubAcceptsClient: true
+
+  # Heartbeat interval (seconds)
+  leaseDurationSeconds: 60
+
+status:
+  # Populated by ACM controllers during import
+  conditions:
+    - type: HubAcceptedManagedCluster
+      status: "True"
+      reason: HubClusterAdminAccepted
+      message: "Accepted by hub cluster admin"
+      lastTransitionTime: "2026-04-10T00:00:00Z"
+
+    - type: ManagedClusterJoined
+      status: "True"
+      reason: ManagedClusterJoined
+      message: "Managed cluster joined"
+      lastTransitionTime: "2026-04-10T00:05:00Z"
+
+    - type: ManagedClusterConditionAvailable
+      status: "True"
+      reason: ManagedClusterAvailable
+      message: "Managed cluster is available"
+      lastTransitionTime: "2026-04-10T00:10:00Z"
+
+  # Cluster version info (populated by klusterlet)
+  version:
+    kubernetes: "v1.27.0"
+
+  # Cluster capacity (populated by klusterlet)
+  capacity:
+    cpu: "4"
+    memory: "16Gi"
+
+  # Cluster claims (metadata about the cluster)
+  clusterClaims:
+    - name: id.k8s.io
+      value: example-hcp
+    - name: kubeversion.open-cluster-management.io
+      value: "v1.27.0"
+    - name: platform.open-cluster-management.io
+      value: "KubeVirt"

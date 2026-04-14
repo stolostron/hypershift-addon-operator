@@ -1,0 +1,50 @@
+# Operation 1: Scale Up NodePool
+# Increases replicas from 2 to 5 nodes
+#
+# This patch demonstrates a simple horizontal scaling operation.
+# The HyperShift operator will create 3 new KubeVirt VirtualMachines.
+#
+# Expected timeline:
+# - Apply patch: immediate
+# - VMs boot: 2-3 minutes
+# - Nodes join cluster: 3-5 minutes
+# - Ready for workloads: 5-10 minutes total
+#
+# Usage:
+#   oc patch nodepool -n clusters example-hcp-workers --type merge -p '{"spec":{"replicas":5}}'
+#
+# Or via Git:
+#   1. Edit base/nodepool.yaml, change replicas: 2 to replicas: 5
+#   2. Commit and push
+#   3. Argo CD auto-syncs (if enabled)
+#   4. Watch: oc get nodepool -n clusters example-hcp-workers -w
+#
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: example-hcp-workers
+  namespace: clusters
+spec:
+  clusterName: example-hcp
+
+  # Changed from 2 to 5
+  replicas: 5
+
+  management:
+    autoRepair: true
+    upgradeType: Replace
+
+  platform:
+    type: KubeVirt
+    kubevirt:
+      compute:
+        cores: 4
+        memory: 16Gi
+      rootVolume:
+        persistent:
+          size: 120Gi
+        type: Persistent
+
+  release:
+    image: quay.io/openshift-release-dev/ocp-release:4.21.0-multi

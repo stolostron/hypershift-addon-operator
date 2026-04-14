@@ -1,0 +1,31 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: example-hcp-disabled
+  namespace: openshift-gitops
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/YOUR_ORG/hypershift-addon-operator.git
+    targetRevision: main
+    path: examples/gitops-kubevirt/02-auto-import/disabled
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: clusters
+
+  syncPolicy:
+    # Manual sync for first deployment
+    # Change to 'automated: {}' after first successful sync
+    syncOptions:
+    - CreateNamespace=true
+    - PruneLast=true
+
+    # Enable after first successful sync:
+    # automated:
+    #   prune: true
+    #   selfHeal: false
+
+  # Note: We don't ignore differences here because everything is in Git
+  # and we want to maintain exact desired state
