@@ -238,8 +238,6 @@ replace (
 	// CVE-2025-30204, GHSA-mh63-6h87-95cp: golang-jwt DoS vulnerability
 	github.com/golang-jwt/jwt/v4 => github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.18.0
-	// CVE-2025-55198, GHSA-f9f8-9pmf-xv68: Helm panic on incorrect YAML in Chart.yaml/index.yaml
-	helm.sh/helm/v3 => helm.sh/helm/v3 v3.18.5
 	// Fix K8s API v0.34+ fuzzer compatibility issue in cluster-api (from hypershift)
 	sigs.k8s.io/cluster-api => github.com/csrwng/cluster-api v1.10.3-0.20251126211330-81cd715cb87e
 	// Pin controller-runtime for discovery/backplane webhook.Defaulter/Validator (removed in 0.20+)

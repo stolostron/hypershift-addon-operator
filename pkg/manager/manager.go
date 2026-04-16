@@ -71,6 +71,10 @@ const (
 	hypershiftOperatorImageName = "HYPERSHIFT_OPERATOR_IMAGE_NAME"
 	kubeRbacProxyImageName      = "KUBE_RBAC_PROXY_IMAGE_NAME"
 	templatePath                = "manifests/templates"
+
+	addonAPIGroup     = "addon.open-cluster-management.io"
+	clusterAPIGroup   = "cluster.open-cluster-management.io"
+	discoveryAPIGroup = "discovery.open-cluster-management.io"
 )
 
 //go:embed manifests
@@ -192,13 +196,19 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 
 	// add disable leader election flag
 	flags := cmd.Flags()
-	flags.BoolVar(&cmdConfig.DisableLeaderElection, "disable-leader-election", true, "Disable leader election for the agent.")
+	flags.BoolVar(&cmdConfig.DisableLeaderElection,
+		"disable-leader-election", true,
+		"Disable leader election for the agent.")
 	flags.BoolVar(&withOverride, "with-image-override", false, "Use image from override configmap")
 
 	return cmd
 }
 
-func getAgentAddon(componentName string, o *override, controllerContext *controllercmd.ControllerContext, addonClient addonv1alpha1client.Interface) (frameworkagent.AgentAddon, error) {
+func getAgentAddon(
+	componentName string, o *override,
+	controllerContext *controllercmd.ControllerContext,
+	addonClient addonv1alpha1client.Interface,
+) (frameworkagent.AgentAddon, error) {
 	registrationOption, err := newRegistrationOption(
 		controllerContext.KubeConfig,
 		componentName,
@@ -210,9 +220,10 @@ func getAgentAddon(componentName string, o *override, controllerContext *control
 	}
 
 	return addonfactory.NewAgentAddonFactory(componentName, fs, templatePath).
-		WithConfigGVRs(
-			schema.GroupVersionResource{Group: "addon.open-cluster-management.io", Version: "v1alpha1", Resource: "addondeploymentconfigs"},
-		).
+		WithConfigGVRs(schema.GroupVersionResource{
+			Group: addonAPIGroup, Version: "v1alpha1",
+			Resource: "addondeploymentconfigs",
+		}).
 		WithGetValuesFuncs(
 			o.getValueForAgentTemplate,
 			addonfactory.GetValuesFromAddonAnnotation,
@@ -229,47 +240,86 @@ func getAgentAddon(componentName string, o *override, controllerContext *control
 }
 
 func newRegistrationOption(kubeConfig *rest.Config, addonName, agentName string) (*agent.RegistrationOption, error) {
-    if kubeConfig == nil {
-        return nil, fmt.Errorf("kubeConfig must not be nil")
-    }
-    kubeclient, err := kubernetes.NewForConfig(kubeConfig)
-    if err != nil {
-        return nil, err
-    }
+	if kubeConfig == nil {
+		return nil, fmt.Errorf("kubeConfig must not be nil")
+	}
+	kubeclient, err := kubernetes.NewForConfig(kubeConfig)
+	if err != nil {
+		return nil, err
+	}
 
-    return &agent.RegistrationOption{
-        CSRConfigurations: agent.KubeClientSignerConfigurations(addonName, agentName),
-        // CSRApproveCheck is only needed for CSR authentication
-        CSRApproveCheck:   utils.DefaultCSRApprover(agentName),
-        // Use BindKubeClientRole - works with both CSR and token authentication
-        PermissionConfig: utils.NewRBACPermissionConfigBuilder(kubeclient).
-            BindKubeClientRole(&rbacv1.Role{
-                ObjectMeta: metav1.ObjectMeta{
-                    Name: fmt.Sprintf("open-cluster-management:%s:agent", addonName),
-                },
-                Rules: []rbacv1.PolicyRule{
-                    {APIGroups: []string{""}, Resources: []string{"secrets", "configmaps"},
-                        Verbs: []string{"get", "list", "watch", "create", "delete", "update"}},
-                    {APIGroups: []string{"addon.open-cluster-management.io"}, Resources: []string{"managedclusteraddons"},
-                        Verbs: []string{"get", "list", "watch", "update", "patch"}},
-                    {APIGroups: []string{"addon.open-cluster-management.io"}, Resources: []string{"managedclusteraddons/status"},
-                        Verbs: []string{"patch", "update"}},
-                    {APIGroups: []string{"cluster.open-cluster-management.io"}, Resources: []string{"addonplacementscores", "addonplacementscores/status"},
-                        Verbs: []string{"get", "list", "watch", "create", "delete", "update", "patch"}},
-                    {APIGroups: []string{"discovery.open-cluster-management.io"}, Resources: []string{"discoveredclusters"},
-                        Verbs: []string{"get", "list", "watch", "create", "update", "delete", "deletecollection", "patch"}},
-                },
-            }).
-			BindKubeClientClusterRole(&rbacv1.ClusterRole{
-				ObjectMeta: metav1.ObjectMeta{
-					Name: fmt.Sprintf("open-cluster-management:%s:agent", addonName),
-				},
+	roleName := fmt.Sprintf(
+		"open-cluster-management:%s:agent", addonName)
+
+	allVerbs := []string{
+		"get", "list", "watch", "create",
+		"update", "delete", "deletecollection", "patch",
+	}
+
+	return &agent.RegistrationOption{
+		CSRConfigurations: agent.KubeClientSignerConfigurations(
+			addonName, agentName),
+		CSRApproveCheck: utils.DefaultCSRApprover(agentName),
+		PermissionConfig: utils.NewRBACPermissionConfigBuilder(
+			kubeclient).
+			BindKubeClientRole(&rbacv1.Role{
+				ObjectMeta: metav1.ObjectMeta{Name: roleName},
 				Rules: []rbacv1.PolicyRule{
-					{Verbs: []string{"get", "list", "watch", "patch", "delete"}, Resources: []string{"managedclusters"}, APIGroups: []string{"cluster.open-cluster-management.io"}},
+					{
+						APIGroups: []string{""},
+						Resources: []string{"secrets", "configmaps"},
+						Verbs: []string{
+							"get", "list", "watch",
+							"create", "delete", "update",
+						},
+					},
+					{
+						APIGroups: []string{addonAPIGroup},
+						Resources: []string{"managedclusteraddons"},
+						Verbs: []string{
+							"get", "list", "watch",
+							"update", "patch",
+						},
+					},
+					{
+						APIGroups: []string{addonAPIGroup},
+						Resources: []string{
+							"managedclusteraddons/status",
+						},
+						Verbs: []string{"patch", "update"},
+					},
+					{
+						APIGroups: []string{clusterAPIGroup},
+						Resources: []string{
+							"addonplacementscores",
+							"addonplacementscores/status",
+						},
+						Verbs: allVerbs,
+					},
+					{
+						APIGroups: []string{discoveryAPIGroup},
+						Resources: []string{
+							"discoveredclusters",
+						},
+						Verbs: allVerbs,
+					},
 				},
 			}).
-            Build(),
-    }, nil
+			BindKubeClientClusterRole(&rbacv1.ClusterRole{
+				ObjectMeta: metav1.ObjectMeta{Name: roleName},
+				Rules: []rbacv1.PolicyRule{
+					{
+						APIGroups: []string{clusterAPIGroup},
+						Resources: []string{"managedclusters"},
+						Verbs: []string{
+							"get", "list", "watch",
+							"patch", "delete",
+						},
+					},
+				},
+			}).
+			Build(),
+	}, nil
 }
 
 // getValues prepare values for templates at manifests/templates
