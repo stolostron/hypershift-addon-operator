@@ -38,8 +38,6 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
 	"open-cluster-management.io/addon-framework/pkg/agent"
-	frameworkagent "open-cluster-management.io/addon-framework/pkg/agent"
-	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonutil "open-cluster-management.io/addon-framework/pkg/utils"
 	addonapiv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	addonv1alpha1client "open-cluster-management.io/api/client/addon/clientset/versioned"
@@ -208,7 +206,7 @@ func getAgentAddon(
 	componentName string, o *override,
 	controllerContext *controllercmd.ControllerContext,
 	addonClient addonv1alpha1client.Interface,
-) (frameworkagent.AgentAddon, error) {
+) (agent.AgentAddon, error) {
 	registrationOption, err := newRegistrationOption(
 		controllerContext.KubeConfig,
 		componentName,
@@ -259,8 +257,8 @@ func newRegistrationOption(kubeConfig *rest.Config, addonName, agentName string)
 	return &agent.RegistrationOption{
 		CSRConfigurations: agent.KubeClientSignerConfigurations(
 			addonName, agentName),
-		CSRApproveCheck: utils.DefaultCSRApprover(agentName),
-		PermissionConfig: utils.NewRBACPermissionConfigBuilder(
+		CSRApproveCheck: addonutil.DefaultCSRApprover(agentName),
+		PermissionConfig: addonutil.NewRBACPermissionConfigBuilder(
 			kubeclient).
 			BindKubeClientRole(&rbacv1.Role{
 				ObjectMeta: metav1.ObjectMeta{Name: roleName},
