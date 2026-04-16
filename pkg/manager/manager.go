@@ -8,12 +8,10 @@ import (
 	"os"
 
 	"github.com/go-logr/logr"
-	"github.com/openshift/library-go/pkg/assets"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
-	"github.com/openshift/library-go/pkg/operator/events"
-	"github.com/openshift/library-go/pkg/operator/resource/resourceapply"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -39,6 +37,7 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"open-cluster-management.io/addon-framework/pkg/addonfactory"
 	"open-cluster-management.io/addon-framework/pkg/addonmanager"
+	"open-cluster-management.io/addon-framework/pkg/agent"
 	frameworkagent "open-cluster-management.io/addon-framework/pkg/agent"
 	"open-cluster-management.io/addon-framework/pkg/utils"
 	addonutil "open-cluster-management.io/addon-framework/pkg/utils"
@@ -77,17 +76,6 @@ const (
 //go:embed manifests
 //go:embed manifests/templates
 var fs embed.FS
-
-var agentPermissionFiles = []string{
-	// role with RBAC rules to access resources on hub
-	"manifests/permission/role.yaml",
-	// rolebinding to bind the above role to a certain user group
-	"manifests/permission/rolebinding.yaml",
-	// clusterrole with RBAC rules to access resources on hub
-	"manifests/permission/clusterrole.yaml",
-	// clusterrolebinding to bind the above role to a certain user group
-	"manifests/permission/clusterrolebinding.yaml",
-}
 
 type override struct {
 	client.Client
@@ -211,12 +199,15 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 }
 
 func getAgentAddon(componentName string, o *override, controllerContext *controllercmd.ControllerContext, addonClient addonv1alpha1client.Interface) (frameworkagent.AgentAddon, error) {
-	registrationOption := newRegistrationOption(
+	registrationOption, err := newRegistrationOption(
 		controllerContext.KubeConfig,
-		controllerContext.EventRecorder,
 		componentName,
 		utilrand.String(5),
 	)
+
+	if err != nil {
+		return nil, err
+	}
 
 	return addonfactory.NewAgentAddonFactory(componentName, fs, templatePath).
 		WithConfigGVRs(
@@ -237,67 +228,48 @@ func getAgentAddon(componentName string, o *override, controllerContext *control
 		BuildTemplateAgentAddon()
 }
 
-func newRegistrationOption(kubeConfig *rest.Config, recorder events.Recorder, componentName, agentName string) *frameworkagent.RegistrationOption {
-	return &frameworkagent.RegistrationOption{
-		CSRConfigurations: frameworkagent.KubeClientSignerConfigurations(componentName, agentName),
-		CSRApproveCheck:   utils.DefaultCSRApprover(agentName),
-		PermissionConfig: func(cluster *clusterv1.ManagedCluster, addon *addonapiv1alpha1.ManagedClusterAddOn) error {
-			kubeclient, err := kubernetes.NewForConfig(kubeConfig)
-			if err != nil {
-				return err
-			}
+func newRegistrationOption(kubeConfig *rest.Config, addonName, agentName string) (*agent.RegistrationOption, error) {
+    if kubeConfig == nil {
+        return nil, fmt.Errorf("kubeConfig must not be nil")
+    }
+    kubeclient, err := kubernetes.NewForConfig(kubeConfig)
+    if err != nil {
+        return nil, err
+    }
 
-			for _, file := range agentPermissionFiles {
-				if err := applyAgentPermissionManifestFromFile(file, cluster.Name, addon.Name, kubeclient, recorder); err != nil {
-					return err
-				}
-			}
-
-			return nil
-		},
-	}
-}
-
-func applyAgentPermissionManifestFromFile(file, clusterName, componentName string, kubeclient *kubernetes.Clientset, recorder events.Recorder) error {
-	groups := frameworkagent.DefaultGroups(clusterName, componentName)
-	config := struct {
-		ClusterName            string
-		Group                  string
-		RoleAndRolebindingName string
-		ClusterRolebindingName string
-	}{
-		ClusterName: clusterName,
-
-		Group:                  groups[0],
-		RoleAndRolebindingName: fmt.Sprintf("open-cluster-management:%s:agent", componentName),
-		ClusterRolebindingName: fmt.Sprintf("open-cluster-management:%s:%s:agent", componentName, clusterName),
-	}
-
-	results := resourceapply.ApplyDirectly(
-		context.Background(),
-		resourceapply.NewKubeClientHolder(kubeclient),
-		recorder,
-		resourceapply.NewResourceCache(),
-		func(name string) ([]byte, error) {
-			template, err := fs.ReadFile(file)
-			if err != nil {
-				return nil, err
-			}
-
-			data := assets.MustCreateAssetFromTemplate(name, template, config).Data
-
-			return data, nil
-		},
-		file,
-	)
-
-	for _, result := range results {
-		if result.Error != nil {
-			return result.Error
-		}
-	}
-
-	return nil
+    return &agent.RegistrationOption{
+        CSRConfigurations: agent.KubeClientSignerConfigurations(addonName, agentName),
+        // CSRApproveCheck is only needed for CSR authentication
+        CSRApproveCheck:   utils.DefaultCSRApprover(agentName),
+        // Use BindKubeClientRole - works with both CSR and token authentication
+        PermissionConfig: utils.NewRBACPermissionConfigBuilder(kubeclient).
+            BindKubeClientRole(&rbacv1.Role{
+                ObjectMeta: metav1.ObjectMeta{
+                    Name: fmt.Sprintf("open-cluster-management:%s:agent", addonName),
+                },
+                Rules: []rbacv1.PolicyRule{
+                    {APIGroups: []string{""}, Resources: []string{"secrets", "configmaps"},
+                        Verbs: []string{"get", "list", "watch", "create", "delete", "update"}},
+                    {APIGroups: []string{"addon.open-cluster-management.io"}, Resources: []string{"managedclusteraddons"},
+                        Verbs: []string{"get", "list", "watch", "update", "patch"}},
+                    {APIGroups: []string{"addon.open-cluster-management.io"}, Resources: []string{"managedclusteraddons/status"},
+                        Verbs: []string{"patch", "update"}},
+                    {APIGroups: []string{"cluster.open-cluster-management.io"}, Resources: []string{"addonplacementscores", "addonplacementscores/status"},
+                        Verbs: []string{"get", "list", "watch", "create", "delete", "update", "patch"}},
+                    {APIGroups: []string{"discovery.open-cluster-management.io"}, Resources: []string{"discoveredclusters"},
+                        Verbs: []string{"get", "list", "watch", "create", "update", "delete", "deletecollection", "patch"}},
+                },
+            }).
+			BindKubeClientClusterRole(&rbacv1.ClusterRole{
+				ObjectMeta: metav1.ObjectMeta{
+					Name: fmt.Sprintf("open-cluster-management:%s:agent", addonName),
+				},
+				Rules: []rbacv1.PolicyRule{
+					{Verbs: []string{"get", "list", "watch", "patch", "delete"}, Resources: []string{"managedclusters"}, APIGroups: []string{"cluster.open-cluster-management.io"}},
+				},
+			}).
+            Build(),
+    }, nil
 }
 
 // getValues prepare values for templates at manifests/templates

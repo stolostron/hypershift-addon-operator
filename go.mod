@@ -32,8 +32,8 @@ require (
 	k8s.io/client-go v0.35.0-alpha.0
 	k8s.io/component-base v0.35.0-alpha.0
 	k8s.io/utils v0.0.0-20260108192941-914a6e750570
-	open-cluster-management.io/addon-framework v0.12.0
-	open-cluster-management.io/api v0.16.2
+	open-cluster-management.io/addon-framework v1.2.0
+	open-cluster-management.io/api v1.2.0
 	sigs.k8s.io/controller-runtime v0.22.4
 )
 
@@ -72,14 +72,13 @@ require (
 	github.com/coreos/go-systemd/v22 v22.6.0 // indirect
 	github.com/coreos/ignition/v2 v2.25.1 // indirect
 	github.com/coreos/vcontext v0.0.0-20231102161604-685dc7299dc5 // indirect
-	github.com/cyphar/filepath-securejoin v0.6.0 // indirect
+	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/distribution v2.8.3+incompatible // indirect
 	github.com/docker/go-metrics v0.0.1 // indirect
 	github.com/docker/libtrust v0.0.0-20160708172513-aabc10ec26b7 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
-	github.com/evanphx/json-patch v5.9.11+incompatible // indirect
 	github.com/evanphx/json-patch/v5 v5.9.11 // indirect
 	github.com/fatih/structs v1.1.0 // indirect
 	github.com/felixge/fgprof v0.9.4 // indirect
@@ -201,7 +200,7 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	helm.sh/helm/v3 v3.17.4 // indirect
+	helm.sh/helm/v3 v3.19.4 // indirect
 	k8s.io/apiextensions-apiserver v0.35.0-alpha.0 // indirect
 	k8s.io/apiserver v0.35.0-alpha.0 // indirect
 	k8s.io/autoscaler/vertical-pod-autoscaler v1.3.0 // indirect
@@ -216,7 +215,7 @@ require (
 	kubevirt.io/api v1.7.0 // indirect
 	kubevirt.io/containerized-data-importer-api v1.63.1 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
-	open-cluster-management.io/sdk-go v0.16.0 // indirect
+	open-cluster-management.io/sdk-go v1.2.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.0 // indirect
 	sigs.k8s.io/cluster-api v1.10.4 // indirect
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.8.2-0.20250820205306-645f38e4c152 // indirect
@@ -227,7 +226,6 @@ require (
 	sigs.k8s.io/cluster-api-provider-openstack v0.12.1 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/karpenter v1.8.2 // indirect
-	sigs.k8s.io/kube-storage-version-migrator v0.0.6-0.20230721195810-5c8923c5ff96 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/secrets-store-csi-driver v1.4.8 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
