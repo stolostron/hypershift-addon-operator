@@ -16,6 +16,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/client-go/rest"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -32,7 +33,9 @@ var (
 )
 
 func Test_getAgentAddon(t *testing.T) {
-	controllerContext := &controllercmd.ControllerContext{}
+	controllerContext := &controllercmd.ControllerContext{
+		KubeConfig: &rest.Config{},
+	}
 	componentName := "manager"
 
 	configs := []runtime.Object{}
@@ -110,6 +113,20 @@ func Test_getAgentAddon(t *testing.T) {
 	_, err = o.getValueForAgentTemplate(cluster, addon)
 	assert.Nil(t, err, "err nil because the override configmap exists now and can generate the addon chart values")
 
+}
+
+func Test_newRegistrationOption(t *testing.T) {
+	regOpt, err := newRegistrationOption(&rest.Config{}, "hypershift-addon", "abc12")
+	assert.Nil(t, err)
+	assert.NotNil(t, regOpt)
+	assert.NotNil(t, regOpt.CSRConfigurations)
+	assert.NotNil(t, regOpt.CSRApproveCheck)
+	assert.NotNil(t, regOpt.PermissionConfig)
+}
+
+func Test_newRegistrationOption_nilConfig(t *testing.T) {
+	_, err := newRegistrationOption(nil, "hypershift-addon", "abc12")
+	assert.NotNil(t, err)
 }
 
 func initClient() client.Client {
