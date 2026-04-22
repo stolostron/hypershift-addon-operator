@@ -449,7 +449,7 @@ func (c *LabelAgent) syncHubLabelsToSpoke(
 	// go through the previous tracking labels and if they dont exist on the current hub labels
 	// then remove the previously tracked labels
 	for key := range previousAnnotationTracking {
-		if _, exists := hubMC.Labels[key]; !exists {
+		if _, exists := hubMC.Labels[key]; !exists || hcOwnedOnHub[key] {
 			delete(spokeLabels, key)
 			changed = true
 		}
