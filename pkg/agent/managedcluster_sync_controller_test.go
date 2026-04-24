@@ -761,6 +761,55 @@ func TestHCLabelPropagation(t *testing.T) {
 	}
 }
 
+// Regression test for ACM-33069: hub-tracked label removed while HC has the
+// same key. Requires two reconciles — the first removes the orphaned hub value,
+// the second lets HC sync propagate its value.
+func TestHubLabelRemovedWhileHCHasSameKey(t *testing.T) {
+	ctx := context.Background()
+	spoke, hub := initLabelSyncClient(t)
+	os.Unsetenv("DISCOVERY_PREFIX")
+	lc := newLabelAgent(t, spoke, hub, "mce")
+
+	spokeMC := &clusterv1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-hc",
+			Annotations: map[string]string{
+				createdViaAnno:            createdViaHypershift,
+				propagatedLabelAnnotation: "env",
+			},
+			Labels: map[string]string{"env": "staging"},
+		},
+	}
+	hc := &hyperv1beta1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "my-hc", Namespace: "clusters",
+			Labels: map[string]string{"env": "prod"},
+		},
+	}
+	hubMC := &clusterv1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: testHubMCName},
+	}
+
+	assert.Nil(t, spoke.Create(ctx, spokeMC))
+	assert.Nil(t, spoke.Create(ctx, hc))
+	assert.Nil(t, hub.Create(ctx, hubMC))
+
+	// Reconcile 1: hub sync removes the orphaned env=staging from spoke
+	mc := reconcileAndGet(t, lc, spoke, "my-hc")
+	_, envExists := mc.Labels["env"]
+	assert.False(t, envExists,
+		"env should be removed from spoke after hub label deleted")
+	hubTracked := parseAnnotation(mc.Annotations[propagatedLabelAnnotation])
+	assert.Empty(t, hubTracked, "propagated-labels should be empty")
+
+	// Reconcile 2: HC sync adds env=prod now that the key is free
+	mc = reconcileAndGet(t, lc, spoke, "my-hc")
+	assert.Equal(t, "prod", mc.Labels["env"],
+		"HC should propagate env=prod on second reconcile")
+	hcTracked := parseAnnotation(mc.Annotations[hcPropagatedLabelAnnotation])
+	assert.True(t, hcTracked["env"], "env should be HC-tracked")
+}
+
 // --- Multi-cluster propagation ---
 
 func TestMultiClusterLabelPropagation(t *testing.T) {
