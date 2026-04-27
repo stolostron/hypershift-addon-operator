@@ -57,9 +57,18 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+# Use toolchain from go.mod so Go uses a complete install (with covdata); avoids
+# "no such tool covdata" when auto-downloaded minimal toolchain is used (golang/go#75031).
+GOTOOLCHAIN ?= $(shell (grep '^toolchain ' go.mod | cut -d' ' -f2) || echo "go$$(grep '^go ' go.mod | cut -d' ' -f2)")
+export GOTOOLCHAIN
+
 .PHONY: test
-test: fmt vet envtest ## Run tests.
+test: fmt vet envtest ## Run tests (with coverage).
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test $(shell go list ./... | grep -v /test/e2e) -coverprofile cover.out
+
+.PHONY: test-no-cover
+test-no-cover: fmt vet envtest ## Run tests without coverage (use if covdata tool is missing).
+	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test $(shell go list ./... | grep -v /test/e2e)
 
 ##@ Build
 .PHONY: vendor
@@ -94,7 +103,11 @@ ifndef ignore-not-found
 endif
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
-ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+# Keep setup-envtest aligned with controller-runtime to avoid
+# requiring a newer Go toolchain than this repo uses in CI.
+# Use Replace.Version when go.mod replaces controller-runtime (see require vs replace).
+ENVTEST_VERSION ?= $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
+ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
 .PHONY: envtest
 envtest: ## Download envtest-setup locally if necessary.
 	$(call go-get-tool,$(ENVTEST),$(ENVTEST_PACKAGE))
