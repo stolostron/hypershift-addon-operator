@@ -1,161 +1,265 @@
-# Configuring Azure Private Hosted Clusters with hypershift-addon
+# Azure Private Hosted Cluster Setup (Addon + HCP)
 
-This document explains how to configure `hypershift-addon` so the addon agent installs the HyperShift operator with Azure private platform settings.
+This document is the single end-to-end guide for creating Azure private hosted clusters with `hypershift-addon`.
 
-The goal is to make operator installation include:
+It combines:
+
+- addon-driven HyperShift operator configuration on `local-cluster`
+- Azure Private Link prerequisites
+- `hcp` cluster creation flow for private endpoint access
+
+## Overview
+
+For Azure private hosted clusters, the HyperShift operator must run with private platform flags:
 
 - `--private-platform Azure`
 - `--azure-pls-resource-group <resource-group>`
-- `--azure-private-secret hypershift-operator-azure-credentials` (injected automatically by the addon)
+- `--azure-private-secret hypershift-operator-azure-credentials`
 
-## What this enables
+With `hypershift-addon`, this is handled through hub resources in `local-cluster`:
 
-With this configuration:
+- `ConfigMap/hypershift-operator-install-flags`
+- `Secret/hypershift-operator-azure-credentials` (copied by addon to `hypershift` namespace)
 
-- The addon agent reads Azure private install flags from `hypershift-operator-install-flags` in `local-cluster`.
-- The addon agent detects `hypershift-operator-azure-credentials` on hub (`local-cluster` namespace), copies it to `hypershift` namespace on spoke, and re-installs the operator when this secret changes.
-- The HyperShift operator is installed in Azure private mode and can be used to create private Azure hosted clusters.
+When either resource changes, the addon triggers HyperShift operator reinstall.
 
 ## Prerequisites
 
-- ACM/MCE with `hypershift-addon` enabled on `local-cluster`.
-- `oc` CLI access to the hub cluster.
-- Azure private connectivity prerequisites for your environment (networking, DNS, permissions, and resource group for Private Link Service components).
-- HyperShift CLI (`hcp`) available for creating hosted clusters.
+- Management cluster (Azure, OCP 4.22+ recommended) with MCE/ACM and `hypershift-addon` enabled on `local-cluster`
+- `oc` logged into the management hub cluster
+- Azure CLI (`az`) authenticated
+- `hcp` CLI available
+- Pull secret and OIDC issuer already prepared
 
-## 1) Prepare Azure private credentials file
+## Permission Requirements
 
-Create the credentials file that will be stored in the secret as key `credentials`.
+Your Azure service principal should have:
 
-If you already have an Azure credentials file used by `hcp create cluster azure`, you can reuse it and skip to step 2.
+- **Subscription level**
+  - `Contributor`
+  - `User Access Administrator`
+- **Microsoft Graph API**
+  - `Application.ReadWrite.OwnedBy` (often requires DPTP request in managed environments)
 
-Example flow to create a service principal and file:
+## 1) Create Azure service principal and credentials files
+
+Create a service principal:
 
 ```bash
-AZ_SUBSCRIPTION_ID="<subscription-id>"
-AZ_TENANT_ID="<tenant-id>"
-AZ_LOCATION="eastus"
-AZ_RG="<resource-group>"
+SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
 
-az login
-az account set --subscription "${AZ_SUBSCRIPTION_ID}"
-
-SP_JSON=$(az ad sp create-for-rbac \
-  --name "hypershift-private-sp" \
+az ad sp create-for-rbac \
+  --name "hcp-azure-sp" \
   --role Contributor \
-  --scopes "/subscriptions/${AZ_SUBSCRIPTION_ID}" \
-  --sdk-auth)
+  --scopes "/subscriptions/${SUBSCRIPTION_ID}"
 ```
 
-Extract values and write a credentials env file:
+Optionally add User Access Administrator role:
 
 ```bash
-AZ_APP_ID=$(echo "${SP_JSON}" | jq -r '.clientId')
-AZ_PASSWORD=$(echo "${SP_JSON}" | jq -r '.clientSecret')
+SP_OBJECT_ID="$(az ad sp list --display-name hcp-azure-sp --query '[0].id' -o tsv)"
+az role assignment create \
+  --assignee-object-id "${SP_OBJECT_ID}" \
+  --role "User Access Administrator" \
+  --scope "/subscriptions/${SUBSCRIPTION_ID}"
+```
 
-cat > azure-private-credentials.json <<EOF
-AZURE_CLIENT_ID=${AZ_APP_ID}
-AZURE_CLIENT_SECRET=${AZ_PASSWORD}
-AZURE_TENANT_ID=${AZ_TENANT_ID}
-AZURE_SUBSCRIPTION_ID=${AZ_SUBSCRIPTION_ID}
-AZURE_RESOURCE_GROUP=${AZ_RG}
-AZURE_LOCATION=${AZ_LOCATION}
+Create one credentials file with the required JSON fields:
+
+```bash
+cat > azure-creds.json <<EOF
+{
+  "subscriptionId": "${SUBSCRIPTION_ID}",
+  "tenantId": "<TENANT_ID>",
+  "clientId": "<APP_ID>",
+  "clientSecret": "<CLIENT_SECRET>"
+}
 EOF
 ```
 
-Validate file content before creating the secret:
+Use this same `azure-creds.json` for both:
+
+- `hcp` commands (`--azure-creds ./azure-creds.json`)
+- the addon-managed secret payload (`credentials` key)
+
+Quick validation:
 
 ```bash
-cat azure-private-credentials.json
+jq -r '.subscriptionId,.tenantId,.clientId' azure-creds.json
+cat azure-creds.json
 ```
 
-## 2) Create Azure private credentials secret on hub
+## 2) Create Azure private secret on hub (`local-cluster`)
 
-Create the secret in `local-cluster` namespace with key `credentials`:
+Create/update the secret that addon watches and syncs:
 
 ```bash
 oc create secret generic hypershift-operator-azure-credentials \
   -n local-cluster \
-  --from-file=credentials=./azure-private-credentials.json
+  --from-file=credentials=./azure-creds.json \
+  --dry-run=client -o yaml | oc apply -f -
 ```
 
 ## 3) Configure HyperShift operator install flags
 
-Create or update `hypershift-operator-install-flags` in `local-cluster` namespace:
+Apply `hypershift-operator-install-flags` in `local-cluster`:
 
-```yaml
+```bash
+oc apply -f - <<'EOF'
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: hypershift-operator-install-flags
   namespace: local-cluster
 data:
-  installFlagsToAdd: "--private-platform Azure --azure-pls-resource-group abcd-rg"
+  installFlagsToAdd: >-
+    --private-platform Azure
+    --azure-pls-resource-group=<MC_INFRA_RESOURCE_GROUP>
+    --azure-private-secret=hypershift-operator-azure-credentials
   installFlagsToRemove: ""
+EOF
 ```
 
-Apply it:
+Optional:
 
-```bash
-oc apply -f hypershift-operator-install-flags.yaml
-```
+- add `--limit-crd-install=Azure` when your environment requires it
 
-## 4) Verify addon-driven operator installation
-
-Check addon status:
+## 4) Verify addon-driven HyperShift operator reinstall
 
 ```bash
 oc get managedclusteraddons -n local-cluster hypershift-addon
-```
-
-Check install jobs:
-
-```bash
 oc get jobs -n open-cluster-management-agent-addon
-```
-
-Inspect latest install job args and logs:
-
-```bash
-oc get job -n open-cluster-management-agent-addon -o yaml
 oc logs -n open-cluster-management-agent-addon job/<hypershift-install-job-name>
-```
-
-Confirm Azure secret was copied to HyperShift namespace:
-
-```bash
 oc get secret hypershift-operator-azure-credentials -n hypershift
+oc rollout status deployment/operator -n hypershift
 ```
 
-Confirm operator deployment includes private Azure flags:
+Expected:
+
+- secret exists in `hypershift` namespace
+- operator rollout completes
+- operator args include Azure private flags
+
+## 5) Create NAT subnet for private endpoint access
+
+Azure Private Link Service needs a dedicated subnet with network policies disabled.
 
 ```bash
-oc get deploy operator -n hypershift -o yaml
+MC_RG=$(oc get infrastructure cluster -o jsonpath='{.status.platformStatus.azure.resourceGroupName}')
+INFRA_ID=$(oc get infrastructures cluster -o jsonpath='{.status.infrastructureName}')
+MC_VNET="${INFRA_ID}-vnet"
+
+az network vnet subnet create \
+  --resource-group "${MC_RG}" \
+  --vnet-name "${MC_VNET}" \
+  --name pls-nat-subnet \
+  --address-prefixes 10.1.0.0/24 \
+  --disable-private-link-service-network-policies true
+
+NAT_SUBNET_ID=$(az network vnet subnet show \
+  --resource-group "${MC_RG}" \
+  --vnet-name "${MC_VNET}" \
+  --name pls-nat-subnet \
+  --query id -o tsv)
 ```
 
-## 5) Create Azure hosted cluster
-
-After operator installation is healthy, create a hosted cluster using HyperShift CLI:
+## 6) Create workload identities
 
 ```bash
-hcp create cluster azure --help
+hcp create iam azure \
+  --name <HC_NAME> \
+  --infra-id <INFRA_ID> \
+  --azure-creds ./azure-creds.json \
+  --location <LOCATION> \
+  --resource-group-name <RESOURCE_GROUP_NAME> \
+  --oidc-issuer-url <OIDC_ISSUER_URL> \
+  --output-file workload-identities.json
 ```
 
-Then run your `hcp create cluster azure ...` command with your Azure-specific values.
+## 7) Create hosted cluster infrastructure
+
+```bash
+hcp create infra azure \
+  --name <HC_NAME> \
+  --infra-id <INFRA_ID> \
+  --azure-creds ./azure-creds.json \
+  --base-domain <BASE_DOMAIN> \
+  --location <LOCATION> \
+  --workload-identities-file workload-identities.json \
+  --assign-identity-roles \
+  --dns-zone-rg-name <DNS_ZONE_RG> \
+  --output-file infra-output.json
+```
+
+## 8) Create the private Azure hosted cluster
+
+Required private flags:
+
+- `--endpoint-access Private`
+- `--endpoint-access-private-nat-subnet-id "${NAT_SUBNET_ID}"`
+
+```bash
+hcp create cluster azure \
+  --name <HC_NAME> \
+  --namespace clusters \
+  --azure-creds ./azure-creds.json \
+  --location <LOCATION> \
+  --node-pool-replicas 2 \
+  --base-domain <BASE_DOMAIN> \
+  --pull-secret ./pull-secret.json \
+  --generate-ssh \
+  --infra-json infra-output.json \
+  --release-image <RELEASE_IMAGE> \
+  --external-dns-domain <EXTERNAL_DNS_DOMAIN> \
+  --sa-token-issuer-private-key-path ./serviceaccount-signer.private \
+  --oidc-issuer-url <OIDC_ISSUER_URL> \
+  --dns-zone-rg-name <DNS_ZONE_RG> \
+  --auto-assign-roles \
+  --workload-identities-file workload-identities.json \
+  --diagnostics-storage-account-type Managed \
+  --endpoint-access Private \
+  --endpoint-access-private-nat-subnet-id "${NAT_SUBNET_ID}"
+```
+
+Do not set `--external-dns-domain` to `<HC_NAME>.<BASE_DOMAIN>`; use a separate domain (for example, `external-dns.<BASE_DOMAIN>`) to avoid DNS shadowing with Azure private DNS zones.
+
+## 9) Optional local console access verification (no VPN)
+
+Use port-forward and local SNI routing if direct private network access is unavailable.
+
+```bash
+oc -n clusters get secret <HC_NAME>-admin-kubeconfig \
+  -o jsonpath='{.data.kubeconfig}' | base64 -d > /tmp/<HC_NAME>.kubeconfig
+
+oc -n clusters-<HC_NAME> port-forward svc/private-router 16443:443
+```
+
+In another terminal:
+
+```bash
+oc --kubeconfig /tmp/<HC_NAME>.kubeconfig \
+  --server=https://127.0.0.1:16443 \
+  --insecure-skip-tls-verify=true whoami
+```
 
 ## Behavior notes
 
-- The addon checks watched resources every 2 minutes. If the Azure secret or install flags configmap changes, the addon re-installs HyperShift operator.
-- The managed Azure private secret name must be:
-  - `hypershift-operator-azure-credentials`
-- If `--private-platform Azure` is set but `--azure-pls-resource-group` or the Azure credentials secret is missing, operator installation fails with a validation error.
+- Addon checks watched resources on a periodic interval (around 2 minutes) and reinstalls the operator when needed.
+- Managed secret name must remain `hypershift-operator-azure-credentials`.
+- If private Azure flags are set but required secret/resource-group data is missing, installation fails validation.
 
 ## Troubleshooting
 
-- If install job fails, inspect:
+- Install job debugging:
   - `oc describe job <job-name> -n open-cluster-management-agent-addon`
   - `oc logs job/<job-name> -n open-cluster-management-agent-addon`
-- Ensure:
-  - secret exists in `local-cluster` and has `credentials` key
-  - configmap flags are syntactically correct and include required Azure private options
-  - resource group in `--azure-pls-resource-group` exists and is correct
+- Confirm prerequisites:
+  - secret exists in `local-cluster` with `credentials` key
+  - secret is copied to `hypershift`
+  - configmap flags are valid
+  - `--azure-pls-resource-group` exists and is correct
+  - NAT subnet ID points to subnet with private link policies disabled
+
+## Legacy environments (optional)
+
+If your environment does not yet include bundled Azure private-link support in shipped MCE/HyperShift components, you may need custom HyperShift operator image and custom `hcp` binary. Prefer default bundled components unless you specifically hit a version gap.
