@@ -70,15 +70,15 @@ func reconcileAndGet(
 // --- Hub-to-spoke label propagation ---
 
 type hubLabelTestCase struct {
-	name             string
-	spokeMC          *clusterv1.ManagedCluster
-	hubMC            *clusterv1.ManagedCluster
-	clusterName      string
-	localClusterName string
-	discoveryPrefix  *string
-	expectedLabels   map[string]string
+	name              string
+	spokeMC           *clusterv1.ManagedCluster
+	hubMC             *clusterv1.ManagedCluster
+	clusterName       string
+	localClusterName  string
+	discoveryPrefix   *string
+	expectedLabels    map[string]string
 	notExpectedLabels []string
-	expectedAnnoKeys []string
+	expectedAnnoKeys  []string
 }
 
 func hubLabelSyncCases() []hubLabelTestCase {
@@ -422,8 +422,8 @@ func hcLabelSyncCases() []hcLabelTestCase {
 			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: testHubMCName},
 			},
-			expectedSpokeLabels:      map[string]string{"env": "prod"},
-			expectedHubLabels:        map[string]string{"env": "prod"},
+			expectedSpokeLabels:       map[string]string{"env": "prod"},
+			expectedHubLabels:         map[string]string{"env": "prod"},
 			expectedHCAnnoKeysOnSpoke: []string{"env"},
 			expectedHCAnnoKeysOnHub:   []string{"env"},
 		},
@@ -471,7 +471,7 @@ func hcLabelSyncCases() []hcLabelTestCase {
 					Labels: map[string]string{"env": "staging"},
 				},
 			},
-			expectedSpokeLabels:       map[string]string{"env": "staging"},
+			expectedSpokeLabels:        map[string]string{"env": "staging"},
 			expectedHubAnnoKeysOnSpoke: []string{"env"},
 		},
 	}
@@ -503,7 +503,7 @@ func hcLabelFilterAndMatchCases() []hcLabelTestCase {
 					Labels: map[string]string{"env": "prod"},
 				},
 			},
-			expectedSpokeLabels:       map[string]string{"env": "prod"},
+			expectedSpokeLabels:        map[string]string{"env": "prod"},
 			expectedHCAnnoKeysOnSpoke:  []string{"env"},
 			expectedHubAnnoKeysOnSpoke: []string{},
 		},
@@ -519,7 +519,7 @@ func hcLabelFilterAndMatchCases() []hcLabelTestCase {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: "my-hc", Namespace: "clusters",
 					Labels: map[string]string{
-						"env":                  "prod",
+						"env":                   "prod",
 						testAutoCreatedForInfra: "test-infra",
 					},
 				},
@@ -527,7 +527,7 @@ func hcLabelFilterAndMatchCases() []hcLabelTestCase {
 			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: testHubMCName},
 			},
-			expectedSpokeLabels:      map[string]string{"env": "prod"},
+			expectedSpokeLabels:       map[string]string{"env": "prod"},
 			notExpectedSpokeLabels:    []string{testAutoCreatedForInfra},
 			expectedHCAnnoKeysOnSpoke: []string{"env"},
 			notExpectedHubLabels:      []string{testAutoCreatedForInfra},
@@ -550,7 +550,7 @@ func hcLabelFilterAndMatchCases() []hcLabelTestCase {
 			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: "mce-custom-mc-name"},
 			},
-			expectedSpokeLabels:      map[string]string{"env": "prod"},
+			expectedSpokeLabels:       map[string]string{"env": "prod"},
 			expectedHCAnnoKeysOnSpoke: []string{"env"},
 		},
 	}
@@ -604,7 +604,7 @@ func hcLabelCleanupCases() []hcLabelTestCase {
 					Labels: map[string]string{"team": "platform"},
 				},
 			},
-			expectedSpokeLabels:       map[string]string{"env": "prod", "team": "platform"},
+			expectedSpokeLabels:        map[string]string{"env": "prod", "team": "platform"},
 			expectedHCAnnoKeysOnSpoke:  []string{"env"},
 			expectedHubAnnoKeysOnSpoke: []string{"team"},
 		},
@@ -627,7 +627,7 @@ func hcLabelCleanupCases() []hcLabelTestCase {
 			hubMC: &clusterv1.ManagedCluster{
 				ObjectMeta: metav1.ObjectMeta{Name: testHubMCName},
 			},
-			expectedSpokeLabels:      map[string]string{"env": "prod"},
+			expectedSpokeLabels:       map[string]string{"env": "prod"},
 			expectedHCAnnoKeysOnSpoke: []string{"env"},
 		},
 	}
@@ -680,7 +680,7 @@ func hcLabelInteractionCases() []hcLabelTestCase {
 					Labels: map[string]string{"env": "staging", "team": "platform"},
 				},
 			},
-			expectedSpokeLabels:       map[string]string{"env": "prod", "team": "platform"},
+			expectedSpokeLabels:        map[string]string{"env": "prod", "team": "platform"},
 			expectedHCAnnoKeysOnSpoke:  []string{"env"},
 			expectedHubAnnoKeysOnSpoke: []string{"team"},
 		},
