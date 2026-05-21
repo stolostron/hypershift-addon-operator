@@ -40,6 +40,14 @@ func (c *UpgradeController) runHyperShiftInstallJob(ctx context.Context, image, 
 		ImagePullSecrets:   []corev1.LocalObjectReference{{Name: c.pullSecret}},
 	}
 
+	tolerations, nodeSelector := c.getAgentPodPlacement()
+	if tolerations != nil {
+		jobPodSpec.Tolerations = tolerations
+	}
+	if nodeSelector != nil {
+		jobPodSpec.NodeSelector = nodeSelector
+	}
+
 	// Enable RHOBS
 	if strings.EqualFold(os.Getenv("RHOBS_MONITORING"), "true") {
 		jobPodSpec.Containers[0].Env = []corev1.EnvVar{
