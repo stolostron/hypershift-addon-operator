@@ -397,6 +397,14 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 				c.secretDataUpdated(util.HypershiftExternalDNSSecretName, *sExtDNS) ||
 				c.configmapDataUpdated(util.HypershiftInstallFlagsCM, installFlagsCM)) {
 			c.log.Info("no image/secret/install-flag change, skip hypershift operator installation")
+
+			if err := c.updateHyperShiftDeployment(ctx); err != nil {
+				c.log.Error(err, "failed to update the hypershift operator deployment")
+			}
+			if err := c.updateExtDnsDeployment(ctx); err != nil {
+				c.log.Error(err, "failed to update the external DNS operator deployment")
+			}
+
 			return nil
 		}
 	} else {
@@ -817,12 +825,8 @@ func (c *UpgradeController) updateHyperShiftDeployment(ctx context.Context) erro
 	}
 
 	tolerations, nodeSelector := c.getAgentPodPlacement()
-	if tolerations != nil {
-		obj.Spec.Template.Spec.Tolerations = tolerations
-	}
-	if nodeSelector != nil {
-		obj.Spec.Template.Spec.NodeSelector = nodeSelector
-	}
+	obj.Spec.Template.Spec.Tolerations = tolerations
+	obj.Spec.Template.Spec.NodeSelector = nodeSelector
 
 	// Update pull image
 	if c.pullSecret != "" {
@@ -863,12 +867,8 @@ func (c *UpgradeController) updateExtDnsDeployment(ctx context.Context) error {
 	}
 
 	tolerations, nodeSelector := c.getAgentPodPlacement()
-	if tolerations != nil {
-		obj.Spec.Template.Spec.Tolerations = tolerations
-	}
-	if nodeSelector != nil {
-		obj.Spec.Template.Spec.NodeSelector = nodeSelector
-	}
+	obj.Spec.Template.Spec.Tolerations = tolerations
+	obj.Spec.Template.Spec.NodeSelector = nodeSelector
 
 	// Update pull image
 	if c.pullSecret != "" {
