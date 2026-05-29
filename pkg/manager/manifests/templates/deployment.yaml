@@ -123,6 +123,14 @@ spec:
           - "--multicluster-pull-secret={{ .MulticlusterEnginePullSecret }}"
           - --metrics-bind-address=0.0.0.0:8383
         env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
 {{- if .hcMaxNumber }}
         - name: HC_MAX_NUMBER
           value: "{{ .hcMaxNumber }}"

@@ -264,6 +264,193 @@ func TestDeploymentExistsWithNoImage(t *testing.T) {
 	}
 }
 
+func TestGetAgentPodPlacement(t *testing.T) {
+	ctx := context.Background()
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		spokeUncachedClient: 	initClient(),
+		log:				 	zapr.NewLogger(zapLog),
+		addonNamespace: 		"addon",
+		pullSecret: 			"pullsecret",
+	}
+
+	agentPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hypershift-addon-agent",
+			Namespace: "addon-namespace",
+		},
+		Spec: corev1.PodSpec{
+			NodeSelector: map[string]string{
+				"node-role.kubernetes.io/infra": "",
+			},
+			Tolerations: []corev1.Toleration{
+				{
+					Key:      "node-role.kubernetes.io/infra",
+					Operator: corev1.TolerationOpExists,
+					Effect:   corev1.TaintEffectNoSchedule,
+				},
+			},
+		},
+	}
+
+	// Call the function under test
+	tolerations, nodeSelector := aCtrl.getAgentPodPlacement()
+	assert.Nil(t, nodeSelector)
+	assert.Nil(t, tolerations)
+
+	os.Setenv("POD_NAME", "hypershift-addon-agent")
+	os.Setenv("POD_NAMESPACE", "addon-namespace")
+	defer os.Unsetenv("POD_NAME")
+	defer os.Unsetenv("POD_NAMESPACE")
+
+	aCtrl.spokeUncachedClient.Create(ctx, agentPod)
+
+	// Call the function under test
+	tolerations, nodeSelector = aCtrl.getAgentPodPlacement()
+
+	// Assert
+	assert.Equal(t, map[string]string{"node-role.kubernetes.io/infra": ""}, nodeSelector)
+	assert.Equal(t, []corev1.Toleration{
+		{
+			Key:      "node-role.kubernetes.io/infra",
+			Operator: corev1.TolerationOpExists,
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+	}, tolerations)
+}
+
+func TestUpdateHyperShiftDeployment(t *testing.T) {
+	ctx := context.Background()
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		spokeUncachedClient: 	initClient(),
+		log:				 	zapr.NewLogger(zapLog),
+		addonNamespace: 		"addon",
+		pullSecret: 			"",
+	}
+
+	// Create the agent pod with placement
+	agentPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hypershift-addon-agent",
+			Namespace: "addon",
+		},
+		Spec: corev1.PodSpec{
+			NodeSelector: map[string]string{
+				"node-role.kubernetes.io/infra": "",
+			},
+			Tolerations: []corev1.Toleration{
+				{
+					Key:      "node-role.kubernetes.io/infra",
+					Operator: corev1.TolerationOpExists,
+					Effect:   corev1.TaintEffectNoSchedule,
+				},
+			},
+		},
+	}
+	assert.Nil(t, aCtrl.spokeUncachedClient.Create(ctx, agentPod))
+
+	// Create the operator Deployment (no placement yet)
+	operatorDeploy := initDeployObj()
+	operatorDeploy.Spec.Template.Spec.Containers = []corev1.Container{
+		{Name: "operator", Image: "test-image"},
+	}
+	assert.Nil(t, aCtrl.spokeUncachedClient.Create(ctx, operatorDeploy))
+
+	// Set env vars so getAgentPodPlacement can find the pod
+	os.Setenv("POD_NAME", "hypershift-addon-agent")
+	os.Setenv("POD_NAMESPACE", "addon")
+	defer os.Unsetenv("POD_NAME")
+	defer os.Unsetenv("POD_NAMESPACE")
+
+	// Call the function under test
+	err := aCtrl.updateHyperShiftDeployment(ctx)
+	assert.Nil(t, err)
+
+	// Re-fetch and assert placement was applied
+	updated := &appsv1.Deployment{}
+	err = aCtrl.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, updated)
+	assert.Nil(t, err)
+	assert.Equal(t, map[string]string{"node-role.kubernetes.io/infra": ""}, updated.Spec.Template.Spec.NodeSelector)
+	assert.Equal(t, []corev1.Toleration{
+		{
+			Key:      "node-role.kubernetes.io/infra",
+			Operator: corev1.TolerationOpExists,
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+	}, updated.Spec.Template.Spec.Tolerations)
+}
+
+func TestUpdateExtDnsDeploymentNodePlacement(t *testing.T) {
+	ctx := context.Background()
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		spokeUncachedClient: initClient(),
+		log:                 zapr.NewLogger(zapLog),
+		addonNamespace:      "addon",
+		pullSecret:          "",
+	}
+	agentPod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hypershift-addon-agent",
+			Namespace: "addon",
+		},
+		Spec: corev1.PodSpec{
+			NodeSelector: map[string]string{
+				"node-role.kubernetes.io/infra": "",
+			},
+			Tolerations: []corev1.Toleration{
+				{
+					Key:      "node-role.kubernetes.io/infra",
+					Operator: corev1.TolerationOpExists,
+					Effect:   corev1.TaintEffectNoSchedule,
+				},
+			},
+		},
+	}
+	assert.Nil(t, aCtrl.spokeUncachedClient.Create(ctx, agentPod))
+	// Create the ExternalDNS Deployment
+	extDnsDeploy := &appsv1.Deployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftOperatorExternalDNSName,
+			Namespace: util.HypershiftOperatorNamespace,
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{
+						{Name: "external-dns", Image: "test-image"},
+					},
+				},
+			},
+		},
+	}
+
+	assert.Nil(t, aCtrl.spokeUncachedClient.Create(ctx, extDnsDeploy))
+
+	os.Setenv("POD_NAME", "hypershift-addon-agent")
+	os.Setenv("POD_NAMESPACE", "addon")
+	defer os.Unsetenv("POD_NAME")
+	defer os.Unsetenv("POD_NAMESPACE")
+
+	err := aCtrl.updateExtDnsDeployment(ctx)
+
+	assert.Nil(t, err)
+
+	updated := &appsv1.Deployment{}
+	err = aCtrl.spokeUncachedClient.Get(ctx, externalDNSOperatorKey, updated)
+
+	assert.Nil(t, err)
+	assert.Equal(t, map[string]string{"node-role.kubernetes.io/infra": ""}, updated.Spec.Template.Spec.NodeSelector)
+	assert.Equal(t, []corev1.Toleration{
+		{
+			Key:      "node-role.kubernetes.io/infra",
+			Operator: corev1.TolerationOpExists,
+			Effect:   corev1.TaintEffectNoSchedule,
+		},
+	}, updated.Spec.Template.Spec.Tolerations)
+}
+
 func TestRunHypershiftRender(t *testing.T) {
 	ctx := context.Background()
 	args := []string{
