@@ -84,3 +84,7 @@ rules:
   - apiGroups: [ "discovery.open-cluster-management.io" ]
     resources: [ "discoveredclusters" ]
     verbs: [ "*" ]
+  # Coordinate CAPI CRD ownership with Cluster CAPI Operator (openshift/hypershift#7996)
+  - apiGroups: ["operator.openshift.io"]
+    resources: ["clusterapis"]
+    verbs: ["get", "list", "watch", "patch"]
