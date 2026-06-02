@@ -6,7 +6,7 @@ metadata:
 rules:
   # Allow addon agent run with openshift library-go
   - apiGroups: [""]
-    resources: ["pod", "namespaces"]
+    resources: ["pods", "namespaces"]
     verbs: ["get", "list", "patch", "update", "create", "watch"]  
   - apiGroups: ["apps"]
     resources: ["deployments"]
