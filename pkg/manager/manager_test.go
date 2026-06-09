@@ -1,8 +1,10 @@
 package manager
 
 import (
+	"bytes"
 	"context"
 	"testing"
+	"text/template"
 
 	"github.com/go-logr/zapr"
 	consolev1 "github.com/openshift/api/console/v1"
@@ -20,6 +22,7 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/yaml"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	fakeaddon "open-cluster-management.io/api/client/addon/clientset/versioned/fake"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
@@ -145,4 +148,48 @@ func initClient() client.Client {
 	ncb.WithScheme(scheme)
 	return ncb.Build()
 
+}
+
+func Test_ClusterRoleContainsClusterAPIPermissions(t *testing.T) {
+	tmplData, err := fs.ReadFile("manifests/templates/clusterrole.yaml")
+	assert.Nil(t, err, "should read embedded clusterrole template")
+
+	tmpl, err := template.New("clusterrole").Parse(string(tmplData))
+	assert.Nil(t, err, "should parse template")
+
+	var rendered bytes.Buffer
+	err = tmpl.Execute(&rendered, map[string]string{
+		"SpokeRolebindingName":  "test-cluster-hypershift-addon",
+		"AddonInstallNamespace": "open-cluster-management-agent-addon",
+	})
+	assert.Nil(t, err, "should render template")
+
+	clusterRole := &rbacv1.ClusterRole{}
+	err = yaml.NewYAMLOrJSONDecoder(&rendered, 4096).Decode(clusterRole)
+	assert.Nil(t, err, "should decode rendered ClusterRole")
+
+	found := false
+	for _, rule := range clusterRole.Rules {
+		for _, apiGroup := range rule.APIGroups {
+			if apiGroup != "operator.openshift.io" {
+				continue
+			}
+			for _, resource := range rule.Resources {
+				if resource == "clusterapis" {
+					found = true
+					verbSet := make(map[string]bool)
+					for _, v := range rule.Verbs {
+						verbSet[v] = true
+					}
+					for _, required := range []string{"get", "list", "watch", "patch"} {
+						assert.True(t, verbSet[required],
+							"operator.openshift.io/clusterapis must include verb %q", required)
+					}
+				}
+			}
+		}
+	}
+	assert.True(t, found,
+		"ClusterRole must include operator.openshift.io/clusterapis rule "+
+			"(required by hypershift CAPI coordination, see openshift/hypershift#7996)")
 }
