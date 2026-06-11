@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
+	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	"github.com/openshift/library-go/pkg/operator/events"
 	"github.com/spf13/cobra"
 	agent "github.com/stolostron/klusterlet-addon-controller/pkg/apis"
@@ -399,9 +400,6 @@ func (c *agentController) serveHealthProbes(healthProbeBindAddress string, confi
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		Addr:              healthProbeBindAddress,
-		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-		},
 	}
 	c.log.Info("heath probes server is running...")
 	return server.ListenAndServe()
@@ -447,11 +445,11 @@ func newPrometheusClient(ctx context.Context, spokeclient client.Client) (promet
 	return createClient(ctx, spokeclient, host, bearerToken)
 }
 
-func createClient(ctx context.Context, client client.Client, host, bearerToken string) (prometheusv1.API, error) {
+func createClient(ctx context.Context, spokeClient client.Client, host, bearerToken string) (prometheusv1.API, error) {
 	// retrieve router CA
 	routerCAConfigMap := &corev1.ConfigMap{}
 	routerCAConfigMapNN := types.NamespacedName{Namespace: "openshift-config-managed", Name: "default-ingress-cert"}
-	err := client.Get(context.TODO(), routerCAConfigMapNN, routerCAConfigMap)
+	err := spokeClient.Get(ctx, routerCAConfigMapNN, routerCAConfigMap)
 	if err != nil {
 		return prometheusv1.NewAPI(nil), err
 	}
@@ -461,6 +459,18 @@ func createClient(ctx context.Context, client client.Client, host, bearerToken s
 	// make a client connection configured with the provided bundle.
 	roots := x509.NewCertPool()
 	roots.AppendCertsFromPEM(bundlePEM)
+
+	tlsConf := &tls.Config{
+		RootCAs:    roots,
+		ServerName: host,
+	}
+
+	// Apply the cluster's TLS profile (MinVersion, CipherSuites) dynamically.
+	// Falls back to Intermediate (TLS 1.2+) if the APIServer cannot be read.
+	tlsOpts := getSpokeTLSOpts(ctx, spokeClient)
+	if tlsOpts != nil {
+		tlsOpts(tlsConf)
+	}
 
 	// prometheus API client, configured for route host and bearer token auth
 	promclient, err := prometheusapi.NewClient(prometheusapi.Config{
@@ -474,11 +484,7 @@ func createClient(ctx context.Context, client client.Client, host, bearerToken s
 					KeepAlive: 30 * time.Second,
 				}).DialContext,
 				TLSHandshakeTimeout: 10 * time.Second,
-				TLSClientConfig: &tls.Config{
-					RootCAs:    roots,
-					ServerName: host,
-					MinVersion: tls.VersionTLS12,
-				},
+				TLSClientConfig:     tlsConf,
 			},
 		),
 	})
@@ -486,6 +492,18 @@ func createClient(ctx context.Context, client client.Client, host, bearerToken s
 		return nil, err
 	}
 	return prometheusv1.NewAPI(promclient), nil
+}
+
+// getSpokeTLSOpts reads the spoke cluster's APIServer TLS profile and returns
+// a func(*tls.Config) that applies the profile's MinVersion and CipherSuites.
+// Falls back to Intermediate defaults if the APIServer cannot be read.
+func getSpokeTLSOpts(ctx context.Context, spokeClient client.Client) func(*tls.Config) {
+	profileSpec, err := tlspkg.FetchAPIServerTLSProfile(ctx, spokeClient)
+	if err != nil {
+		profileSpec, _ = tlspkg.GetTLSProfileSpec(nil)
+	}
+	tlsOpts, _ := tlspkg.NewTLSConfigFromProfile(profileSpec)
+	return tlsOpts
 }
 
 type agentController struct {

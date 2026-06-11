@@ -63,7 +63,10 @@ spec:
         - --secure-listen-address=:8443
         - "--tls-cert-file=/var/run/metrics-cert/tls.crt"
         - "--tls-private-key-file=/var/run/metrics-cert/tls.key"
-        - "--tls-min-version=VersionTLS13"
+        - "--tls-min-version={{ .TLSMinVersion }}"
+{{- if .TLSCipherSuites }}
+        - "--tls-cipher-suites={{ .TLSCipherSuites }}"
+{{- end }}
         ports:
         - name: https
           protocol: TCP
