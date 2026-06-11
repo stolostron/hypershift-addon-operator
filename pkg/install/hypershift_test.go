@@ -268,10 +268,10 @@ func TestGetAgentPodPlacement(t *testing.T) {
 	ctx := context.Background()
 	zapLog, _ := zap.NewDevelopment()
 	aCtrl := &UpgradeController{
-		spokeUncachedClient: 	initClient(),
-		log:				 	zapr.NewLogger(zapLog),
-		addonNamespace: 		"addon",
-		pullSecret: 			"pullsecret",
+		spokeUncachedClient: initClient(),
+		log:                 zapr.NewLogger(zapLog),
+		addonNamespace:      "addon",
+		pullSecret:          "pullsecret",
 	}
 
 	agentPod := &corev1.Pod{
@@ -323,10 +323,10 @@ func TestUpdateHyperShiftDeployment(t *testing.T) {
 	ctx := context.Background()
 	zapLog, _ := zap.NewDevelopment()
 	aCtrl := &UpgradeController{
-		spokeUncachedClient: 	initClient(),
-		log:				 	zapr.NewLogger(zapLog),
-		addonNamespace: 		"addon",
-		pullSecret: 			"",
+		spokeUncachedClient: initClient(),
+		log:                 zapr.NewLogger(zapLog),
+		addonNamespace:      "addon",
+		pullSecret:          "",
 	}
 
 	// Create the agent pod with placement
