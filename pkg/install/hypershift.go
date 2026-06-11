@@ -813,7 +813,7 @@ func (c *UpgradeController) getAgentPodPlacement() ([]corev1.Toleration, map[str
 		c.log.Error(err, "failed getting addon agent pod for nodeSelector or tolerations")
 		return nil, nil
 	}
-	
+
 	return pod.Spec.Tolerations, pod.Spec.NodeSelector
 }
 
