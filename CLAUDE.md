@@ -1,28 +1,113 @@
-# HyperShift Addon Operator — Claude Context
+# CLAUDE.md
 
-## Project
+## Project overview
 
-Go module: `github.com/stolostron/hypershift-addon-operator`
+Kubernetes operator for the **HyperShift addon** — deploys and manages the HyperShift operator on managed clusters as an OCM addon for ACM / multicluster-engine (MCE). Built with controller-runtime in Go.
 
-Deploys the HyperShift operator onto managed clusters as an OCM addon for ACM / multicluster-engine.
+- **Go module:** `github.com/stolostron/hypershift-addon-operator`
+- **Runtime modes:** Hub manager (`pkg/manager/`) and spoke agent (`pkg/agent/`)
+- **Upstream:** Part of [stolostron](https://github.com/stolostron) / Red Hat Advanced Cluster Management (ACM)
 
-- Hub manager: `pkg/manager/`
-- Spoke agent: `pkg/agent/`
-- Install lifecycle: `pkg/install/`
-
-## Key Commands
+## Build / test / lint commands
 
 ```bash
-make build          # vendor + fmt + vet
-make test           # fmt + vet + envtest (excludes e2e)
-make vendor         # go mod tidy + go mod vendor
-make docker-build   # build container image
+# Build
+make build              # vendor + fmt + vet, outputs bin/hypershift-addon
+
+# Unit tests (requires envtest binaries — downloaded automatically)
+make test               # fmt + vet + envtest (excludes e2e), generates coverage
+
+# Lint / format
+make fmt                # go fmt ./...
+make vet                # go vet ./...
+
+# Dependencies
+make vendor             # go mod tidy + go mod vendor
+
+# Container image
+make docker-build       # Build container image
+
+# E2E tests (built separately)
+make build-e2e          # Compile e2e test binary
 ```
 
-## CVE / Vulnerability Workflow
+### Running a single test
 
-See `.cursor/rules/cve-workflow.mdc` for the full step-by-step process.
+```bash
+# Single package
+go test ./pkg/manager/ -run TestSpecificName -v
 
-Once a CVE fix lands on main: verify the PR, find the Jira ticket, add a handoff comment (PR links + affected versions + backport notes), reassign to `ocp-sustaining-admins`, transition to `In Progress`.
+# Single test in agent (uses envtest — may take ~2 min)
+go test ./pkg/agent/ -run TestSpecificName -v -timeout 300s
+```
 
-Parent initiative: [ACM-27405](https://redhat.atlassian.net/browse/ACM-27405)
+## Key directories
+
+| Path | Purpose |
+|------|---------|
+| `cmd/main.go` | Single binary — Cobra subcommands: `manager`, `agent`, `cleanup` |
+| `pkg/manager/` | Hub-side addon manager using OCM addon-framework; template rendering, custom controllers |
+| `pkg/agent/` | Spoke-side controllers: HyperShift install, addon status, auto-import, discovery, external secrets, HCP kubeconfig, capacity, label sync |
+| `pkg/install/` | HyperShift operator install/upgrade lifecycle on spoke |
+| `pkg/metrics/` | Prometheus metrics collectors |
+| `pkg/util/` | Shared constants (names, namespaces, labels, images) |
+| `hack/crds/` | Static CRD YAML for envtest |
+| `test/e2e/` | Ginkgo e2e tests |
+| `docs/` | User-facing documentation |
+
+For system architecture, data flows, and module layout, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Coding conventions
+
+- **Dependencies are vendored** — run `make vendor` after changing `go.mod`
+- **No golangci-lint** — `go fmt` and `go vet` are the enforced gates
+- **Logging:** `github.com/go-logr/logr` (zapr adapter); structured logging with meaningful context
+- **Constants:** shared names, namespaces, labels, and image defaults in `pkg/util/constant.go`
+- **Scheme registration:** no project-owned CRDs — consumes types from OCM, HyperShift, OpenShift, MCE, discovery, OLM
+
+## CI systems
+
+- **Prow:** OpenShift CI for release branches (config in `openshift/release` repo)
+- **Konflux/Tekton:** RHTAP pipeline (`.tekton/`)
+- **SonarQube:** Code quality gate (≥70% coverage on new code)
+
+## Release branches
+
+Release branches follow `backplane-X.YY` (e.g., `backplane-2.11`). The main development branch is `main`. Cherry-picks use `/cherry-pick backplane-X.YY` Prow command.
+
+## Dockerfile variants
+
+- `Dockerfile` — CI build using `registry.ci.openshift.org/stolostron/builder:go1.26-linux`
+- `Dockerfile.rhtap` — Red Hat productization build using `brew.registry.redhat.io/rh-osbs/openshift-golang-builder`
+- `Dockerfile.canary` — Canary test image
+
+## Personal configuration
+
+Read `.claude/user.local.md` at the start of any task that needs an assignee, email, or project key.
+If the file does not exist, fall back to Claude memory (`user-config`), then placeholders.
+
+## Fleet Engineering Skills
+
+Fetch and apply the relevant skill when the task matches its domain. These are hosted in the private `OpenShift-Fleet/agentic-sdlc` repository — use authenticated access (`gh api`) to fetch content.
+
+| Skill | When to use |
+|---|---|
+| [bug-specialist](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/bug-specialist/SKILL.md) | Bug triage, reproduction steps, fix planning |
+| [epic-specialist](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/epic-specialist/SKILL.md) | Multi-sprint epics with outcomes |
+| [feature-specialist](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/feature-specialist/SKILL.md) | Large customer-facing capabilities |
+| [initiative-specialist](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/initiative-specialist/SKILL.md) | Multi-team strategic programs |
+| [jira-create](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/jira-create/SKILL.md) | Interactive issue creation with specialist delegation |
+| [jira-specialist](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/jira-specialist/SKILL.md) | General triage, search, linking, transitions |
+| [outcome-specialist](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/outcome-specialist/SKILL.md) | Strategic outcomes tied to OKRs |
+| [spike-specialist](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/spike-specialist/SKILL.md) | Time-boxed research and PoC |
+| [story-specialist](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/story-specialist/SKILL.md) | User stories with acceptance criteria |
+| [task-specialist](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/task-specialist/SKILL.md) | Internal technical tasks |
+| [agent-memory-setup](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/agent-memory-setup/SKILL.md) | Initialize or update CLAUDE.md / AGENTS.md for a repo |
+| [finish-work](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/finish-work/SKILL.md) | Commit, push, open PR, update Jira |
+| [pr-fix](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/pr-fix/SKILL.md) | Fix blocked PRs: merge conflicts, CI failures, review comments |
+| [pr-review](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/pr-review/SKILL.md) | GitHub PR review with worktree isolation and inline comments |
+| [repo-content-audit](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/repo-content-audit/SKILL.md) | Scan for unlinked or orphaned content — catalog gaps, dead links |
+| [start-work](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/start-work/SKILL.md) | Create a Jira sub-task |
+| [f2f-daily-summary](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/meetings/f2f-daily-summary/SKILL.md) | Capture daily F2F meeting notes as Jira sub-tasks |
+| [f2f-epic-specialist](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/meetings/f2f-epic-specialist/SKILL.md) | Create and manage F2F meeting Epics |
+| [presentation-task](https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/meetings/presentation-task/SKILL.md) | Log a delivered presentation as a closed Jira sub-task |

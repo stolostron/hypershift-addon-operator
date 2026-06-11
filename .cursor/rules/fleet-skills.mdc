@@ -1,0 +1,42 @@
+---
+description: Fleet Engineering skills catalog — fetch and apply when a task matches a skill domain
+alwaysApply: false
+---
+
+# Fleet Engineering Skills
+
+Fetch and apply the relevant skill when the task matches its domain. These are hosted in the private `OpenShift-Fleet/agentic-sdlc` repository — use authenticated access (`gh api`) to fetch content.
+
+## Jira skills
+
+| Skill | When to use | URL |
+|---|---|---|
+| bug-specialist | Bug triage, reproduction steps, fix planning | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/bug-specialist/SKILL.md |
+| epic-specialist | Multi-sprint epics with outcomes | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/epic-specialist/SKILL.md |
+| feature-specialist | Large customer-facing capabilities | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/feature-specialist/SKILL.md |
+| initiative-specialist | Multi-team strategic programs | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/initiative-specialist/SKILL.md |
+| jira-create | Interactive issue creation with specialist delegation | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/jira-create/SKILL.md |
+| jira-specialist | General triage, search, linking, transitions | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/jira-specialist/SKILL.md |
+| outcome-specialist | Strategic outcomes tied to OKRs | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/outcome-specialist/SKILL.md |
+| spike-specialist | Time-boxed research and PoC | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/spike-specialist/SKILL.md |
+| story-specialist | User stories with acceptance criteria | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/story-specialist/SKILL.md |
+| task-specialist | Internal technical tasks | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/jira/task-specialist/SKILL.md |
+
+## SDLC skills
+
+| Skill | When to use | URL |
+|---|---|---|
+| agent-memory-setup | Initialize or update CLAUDE.md / AGENTS.md for a repo | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/agent-memory-setup/SKILL.md |
+| finish-work | Commit, push, open PR, update Jira | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/finish-work/SKILL.md |
+| pr-fix | Fix blocked PRs: merge conflicts, CI failures, review comments | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/pr-fix/SKILL.md |
+| pr-review | GitHub PR review with worktree isolation and inline comments | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/pr-review/SKILL.md |
+| repo-content-audit | Scan for unlinked or orphaned content — catalog gaps, dead links | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/repo-content-audit/SKILL.md |
+| start-work | Create a Jira sub-task | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/sdlc/start-work/SKILL.md |
+
+## Meeting skills
+
+| Skill | When to use | URL |
+|---|---|---|
+| f2f-daily-summary | Capture daily F2F meeting notes as Jira sub-tasks | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/meetings/f2f-daily-summary/SKILL.md |
+| f2f-epic-specialist | Create and manage F2F meeting Epics | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/meetings/f2f-epic-specialist/SKILL.md |
+| presentation-task | Log a delivered presentation as a closed Jira sub-task | https://raw.githubusercontent.com/OpenShift-Fleet/agentic-sdlc/main/skills/meetings/presentation-task/SKILL.md |

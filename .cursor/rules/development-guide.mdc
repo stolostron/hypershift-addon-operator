@@ -1,0 +1,61 @@
+---
+description: Build commands, testing, CI, and repo-specific development guidance
+alwaysApply: false
+---
+
+# Development Guide
+
+## Build / test / lint commands
+
+```bash
+make build              # vendor + fmt + vet, outputs bin/hypershift-addon
+make test               # Unit tests (envtest, all packages except e2e)
+make test-no-cover      # Same without coverage
+make fmt                # go fmt ./...
+make vet                # go vet ./...
+make vendor             # go mod tidy + go mod vendor
+make docker-build       # Build container image
+make build-e2e          # Compile e2e test binary
+```
+
+### Running a single test
+
+```bash
+go test ./pkg/manager/ -run TestSpecificName -v
+go test ./pkg/agent/ -run TestSpecificName -v -timeout 300s
+go test ./pkg/install/ -run TestSpecificName -v -timeout 300s
+```
+
+## Dependencies
+
+Dependencies are vendored. After changing `go.mod`, always run `make vendor`. The `make build` target runs `go mod tidy` and `go mod vendor` automatically.
+
+Key dependency: `github.com/openshift/hypershift/api` transitively pulls in `sigs.k8s.io/karpenter` which constrains the minimum Go version.
+
+## CI systems
+
+- **Prow:** OpenShift CI for release branches (config in `openshift/release` repo). Tests: `unit`, `sonar`, `pr-image-mirror`.
+- **Konflux/Tekton:** RHTAP pipeline for productization builds (`.tekton/`)
+- **SonarQube:** Code quality gate requires ≥70% coverage on new code
+
+## Release branches
+
+Release branches follow `backplane-X.YY` (e.g., `backplane-2.11`). The main development branch is `main`. Cherry-picks use `/cherry-pick backplane-X.YY` Prow command.
+
+## Dockerfile variants
+
+- `Dockerfile` — CI build using `registry.ci.openshift.org/stolostron/builder:go1.26-linux`
+- `Dockerfile.rhtap` — Red Hat productization build using `brew.registry.redhat.io/rh-osbs/openshift-golang-builder`
+- `Dockerfile.canary` — Canary test image
+
+## Testing on a live cluster
+
+1. Build for amd64: `docker buildx build --platform linux/amd64 -t quay.io/<user>/hypershift-addon-operator:<tag> --push -f Dockerfile .`
+2. Scale down MCE operator: `oc scale deployment multicluster-engine-operator -n multicluster-engine --replicas=0`
+3. Patch manager image: `oc set image deployment/hypershift-addon-manager -n multicluster-engine hypershift-addon-manager=<image>`
+4. Patch agent image env: `oc set env deployment/hypershift-addon-manager -n multicluster-engine HYPERSHIFT_ADDON_IMAGE_NAME=<image>`
+5. Scale MCE operator back up when done
+
+## Personal configuration
+
+Read `.claude/user.local.md` at the start of any task that needs an assignee, email, or project key. If the file does not exist, ask the user.

@@ -1,0 +1,6 @@
+---
+description: System architecture, data flows, and module layout for the HyperShift addon operator
+alwaysApply: false
+---
+
+@docs/ARCHITECTURE.md
