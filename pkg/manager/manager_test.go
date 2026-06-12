@@ -3,13 +3,18 @@ package manager
 import (
 	"bytes"
 	"context"
+	"regexp"
+	"strings"
 	"testing"
 	"text/template"
 
 	"github.com/go-logr/zapr"
+	configv1 "github.com/openshift/api/config/v1"
 	consolev1 "github.com/openshift/api/console/v1"
 	routev1 "github.com/openshift/api/route/v1"
+	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
+	"github.com/openshift/library-go/pkg/crypto"
 	operatorsv1alpha1 "github.com/operator-framework/api/pkg/operators/v1alpha1"
 	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
@@ -132,9 +137,227 @@ func Test_newRegistrationOption_nilConfig(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
+func Test_getTLSProfileSpec(t *testing.T) {
+	tests := []struct {
+		name               string
+		profile            *configv1.TLSSecurityProfile
+		expectedMinVersion string
+		expectCiphers      bool
+	}{
+		{
+			name:               "nil profile defaults to Intermediate",
+			profile:            nil,
+			expectedMinVersion: "VersionTLS12",
+			expectCiphers:      true,
+		},
+		{
+			name: "Intermediate profile",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+			expectedMinVersion: "VersionTLS12",
+			expectCiphers:      true,
+		},
+		{
+			name: "Modern profile uses TLS 1.3",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+			expectedMinVersion: "VersionTLS13",
+			expectCiphers:      false,
+		},
+		{
+			name: "Old profile uses TLS 1.0",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileOldType,
+			},
+			expectedMinVersion: "VersionTLS10",
+			expectCiphers:      true,
+		},
+		{
+			name: "Custom profile",
+			profile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS13,
+						Ciphers:       []string{},
+					},
+				},
+			},
+			expectedMinVersion: "VersionTLS13",
+			expectCiphers:      false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			profileSpec, err := tlspkg.GetTLSProfileSpec(tt.profile)
+			assert.Nil(t, err)
+			minVersion := string(profileSpec.MinTLSVersion)
+			cipherSuites := strings.Join(crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers), ",")
+			assert.Equal(t, tt.expectedMinVersion, minVersion)
+			if tt.expectCiphers {
+				assert.NotEmpty(t, cipherSuites, "expected cipher suites for profile")
+			}
+		})
+	}
+}
+
+func Test_getTLSProfileValues_noAPIServer(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	o := &override{
+		Client: initClient(),
+		log:    zapr.NewLogger(zapLog),
+	}
+
+	minVersion, cipherSuites := o.getTLSProfileValues()
+	assert.Equal(t, "VersionTLS12", minVersion)
+	assert.NotEmpty(t, cipherSuites)
+}
+
+func Test_getTLSProfileValues_withAPIServer(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	c := initClient()
+
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileModernType,
+			},
+		},
+	}
+	err := c.Create(context.TODO(), apiServer)
+	assert.Nil(t, err)
+
+	o := &override{
+		Client: c,
+		log:    zapr.NewLogger(zapLog),
+	}
+
+	minVersion, _ := o.getTLSProfileValues()
+	assert.Equal(t, "VersionTLS13", minVersion)
+}
+
+func Test_getTLSProfileValues_OldProfile(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	c := initClient()
+
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileOldType,
+			},
+		},
+	}
+	err := c.Create(context.TODO(), apiServer)
+	assert.Nil(t, err)
+
+	o := &override{
+		Client: c,
+		log:    zapr.NewLogger(zapLog),
+	}
+
+	minVersion, cipherSuites := o.getTLSProfileValues()
+	assert.Equal(t, "VersionTLS10", minVersion)
+	assert.NotEmpty(t, cipherSuites, "Old profile should produce cipher suites")
+}
+
+func Test_getTLSProfileValues_CustomProfile(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	c := initClient()
+
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileCustomType,
+				Custom: &configv1.CustomTLSProfile{
+					TLSProfileSpec: configv1.TLSProfileSpec{
+						MinTLSVersion: configv1.VersionTLS12,
+						Ciphers:       []string{"ECDHE-RSA-AES128-GCM-SHA256"},
+					},
+				},
+			},
+		},
+	}
+	err := c.Create(context.TODO(), apiServer)
+	assert.Nil(t, err)
+
+	o := &override{
+		Client: c,
+		log:    zapr.NewLogger(zapLog),
+	}
+
+	minVersion, cipherSuites := o.getTLSProfileValues()
+	assert.Equal(t, "VersionTLS12", minVersion)
+	assert.Contains(t, cipherSuites, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		"Custom profile cipher should be converted from OpenSSL to IANA name")
+}
+
+func Test_getTLSProfileValues_IntermediateProfile(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	c := initClient()
+
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: configv1.APIServerSpec{
+			TLSSecurityProfile: &configv1.TLSSecurityProfile{
+				Type: configv1.TLSProfileIntermediateType,
+			},
+		},
+	}
+	err := c.Create(context.TODO(), apiServer)
+	assert.Nil(t, err)
+
+	o := &override{
+		Client: c,
+		log:    zapr.NewLogger(zapLog),
+	}
+
+	minVersion, cipherSuites := o.getTLSProfileValues()
+	assert.Equal(t, "VersionTLS12", minVersion)
+	assert.NotEmpty(t, cipherSuites, "Intermediate profile should produce cipher suites")
+}
+
+func Test_getTLSProfileValues_NilTLSSecurityProfile(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	c := initClient()
+
+	apiServer := &configv1.APIServer{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "cluster",
+		},
+		Spec: configv1.APIServerSpec{},
+	}
+	err := c.Create(context.TODO(), apiServer)
+	assert.Nil(t, err)
+
+	o := &override{
+		Client: c,
+		log:    zapr.NewLogger(zapLog),
+	}
+
+	minVersion, cipherSuites := o.getTLSProfileValues()
+	assert.Equal(t, "VersionTLS12", minVersion,
+		"nil TLSSecurityProfile on APIServer should default to Intermediate (TLS 1.2)")
+	assert.NotEmpty(t, cipherSuites)
+}
+
 func initClient() client.Client {
 	scheme := runtime.NewScheme()
 	corev1.AddToScheme(scheme)
+	configv1.Install(scheme)
 	operatorsv1alpha1.AddToScheme(scheme)
 	routev1.AddToScheme(scheme)
 	consolev1.AddToScheme(scheme)
@@ -148,6 +371,101 @@ func initClient() client.Client {
 	ncb.WithScheme(scheme)
 	return ncb.Build()
 
+}
+
+func findRBACRule(rules []rbacv1.PolicyRule, apiGroup, resource string) *rbacv1.PolicyRule {
+	for i := range rules {
+		for _, ag := range rules[i].APIGroups {
+			if ag != apiGroup {
+				continue
+			}
+			for _, res := range rules[i].Resources {
+				if res == resource {
+					return &rules[i]
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func Test_DeploymentTemplateRendersTLSFlags(t *testing.T) {
+	tmplData, err := fs.ReadFile("manifests/templates/deployment.yaml")
+	assert.Nil(t, err, "should read embedded deployment template")
+
+	funcMap := template.FuncMap{
+		"regexMatch": func(pattern, input string) bool {
+			matched, _ := regexp.MatchString(pattern, input)
+			return matched
+		},
+	}
+
+	tmpl, err := template.New("deployment").Funcs(funcMap).Parse(string(tmplData))
+	assert.Nil(t, err, "should parse deployment template")
+
+	tests := []struct {
+		name            string
+		tlsMinVersion   string
+		tlsCipherSuites string
+		expectMinVer    string
+		expectCiphers   bool
+	}{
+		{
+			name:            "Intermediate profile renders min version and ciphers",
+			tlsMinVersion:   "VersionTLS12",
+			tlsCipherSuites: "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+			expectMinVer:    "--tls-min-version=VersionTLS12",
+			expectCiphers:   true,
+		},
+		{
+			name:            "Modern profile renders min version without ciphers",
+			tlsMinVersion:   "VersionTLS13",
+			tlsCipherSuites: "",
+			expectMinVer:    "--tls-min-version=VersionTLS13",
+			expectCiphers:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var rendered bytes.Buffer
+			err = tmpl.Execute(&rendered, map[string]interface{}{
+				"TLSMinVersion":                       tt.tlsMinVersion,
+				"TLSCipherSuites":                     tt.tlsCipherSuites,
+				"AddonName":                           "hypershift-addon",
+				"SpokeRolebindingName":                "test-cluster-hypershift-addon",
+				"AddonInstallNamespace":               "open-cluster-management-agent-addon",
+				"Image":                               "quay.io/test/image:latest",
+				"SpokeClusterName":                    "test-cluster",
+				"PullSecret":                          "pull-secret",
+				"MetricsServiceCert":                  "metrics-cert",
+				"RBACProxyImage":                      "quay.io/test/kube-rbac-proxy:latest",
+				"EnableKubeRBACProxy":                 true,
+				"EnableMCEDiscovery":                  false,
+				"ConfigureMCEImport":                  false,
+				"ClusterAPIServerIP":                  "10.0.0.1",
+				"HypershiftDownstreamImage":           "",
+				"PullSecretData":                      "",
+				"MulticlusterEnginePullSecret":        "",
+				"HypershiftDownstreamOverride":        "",
+				"HypershiftDownstreamOverrideContent": "",
+				"ImageOverrides":                      []interface{}{},
+			})
+			assert.Nil(t, err, "should render deployment template")
+
+			output := rendered.String()
+			assert.Contains(t, output, tt.expectMinVer,
+				"rendered deployment should contain --tls-min-version flag")
+
+			if tt.expectCiphers {
+				assert.Contains(t, output, "--tls-cipher-suites="+tt.tlsCipherSuites,
+					"rendered deployment should contain --tls-cipher-suites flag")
+			} else {
+				assert.NotContains(t, output, "--tls-cipher-suites",
+					"rendered deployment should NOT contain --tls-cipher-suites when empty")
+			}
+		})
+	}
 }
 
 func Test_ClusterRoleContainsClusterAPIPermissions(t *testing.T) {
@@ -168,28 +486,54 @@ func Test_ClusterRoleContainsClusterAPIPermissions(t *testing.T) {
 	err = yaml.NewYAMLOrJSONDecoder(&rendered, 4096).Decode(clusterRole)
 	assert.Nil(t, err, "should decode rendered ClusterRole")
 
-	found := false
-	for _, rule := range clusterRole.Rules {
-		for _, apiGroup := range rule.APIGroups {
-			if apiGroup != "operator.openshift.io" {
-				continue
-			}
-			for _, resource := range rule.Resources {
-				if resource == "clusterapis" {
-					found = true
-					verbSet := make(map[string]bool)
-					for _, v := range rule.Verbs {
-						verbSet[v] = true
-					}
-					for _, required := range []string{"get", "list", "watch", "patch"} {
-						assert.True(t, verbSet[required],
-							"operator.openshift.io/clusterapis must include verb %q", required)
-					}
-				}
-			}
-		}
-	}
-	assert.True(t, found,
+	rule := findRBACRule(clusterRole.Rules, "operator.openshift.io", "clusterapis")
+	assert.NotNil(t, rule,
 		"ClusterRole must include operator.openshift.io/clusterapis rule "+
 			"(required by hypershift CAPI coordination, see openshift/hypershift#7996)")
+
+	if rule != nil {
+		verbSet := make(map[string]bool)
+		for _, v := range rule.Verbs {
+			verbSet[v] = true
+		}
+		for _, required := range []string{"get", "list", "watch", "patch"} {
+			assert.True(t, verbSet[required],
+				"operator.openshift.io/clusterapis must include verb %q", required)
+		}
+	}
+}
+
+func Test_ClusterRoleContainsAPIServerTLSPermissions(t *testing.T) {
+	tmplData, err := fs.ReadFile("manifests/templates/clusterrole.yaml")
+	assert.Nil(t, err, "should read embedded clusterrole template")
+
+	tmpl, err := template.New("clusterrole").Parse(string(tmplData))
+	assert.Nil(t, err, "should parse template")
+
+	var rendered bytes.Buffer
+	err = tmpl.Execute(&rendered, map[string]string{
+		"SpokeRolebindingName":  "test-cluster-hypershift-addon",
+		"AddonInstallNamespace": "open-cluster-management-agent-addon",
+	})
+	assert.Nil(t, err, "should render template")
+
+	clusterRole := &rbacv1.ClusterRole{}
+	err = yaml.NewYAMLOrJSONDecoder(&rendered, 4096).Decode(clusterRole)
+	assert.Nil(t, err, "should decode rendered ClusterRole")
+
+	rule := findRBACRule(clusterRole.Rules, "config.openshift.io", "apiservers")
+	assert.NotNil(t, rule,
+		"ClusterRole must include config.openshift.io/apiservers rule "+
+			"(required for dynamic TLS profile configuration, ACM-30178)")
+
+	if rule != nil {
+		verbSet := make(map[string]bool)
+		for _, v := range rule.Verbs {
+			verbSet[v] = true
+		}
+		for _, required := range []string{"get", "list", "watch"} {
+			assert.True(t, verbSet[required],
+				"config.openshift.io/apiservers must include verb %q", required)
+		}
+	}
 }

@@ -6,9 +6,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-logr/logr"
+	configv1 "github.com/openshift/api/config/v1"
+	"github.com/openshift/controller-runtime-common/pkg/tls"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
+	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -52,6 +56,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(genericScheme))
+	utilruntime.Must(configv1.AddToScheme(genericScheme))
 	utilruntime.Must(operatorsv1alpha1.AddToScheme(genericScheme))
 	utilruntime.Must(routev1.AddToScheme(genericScheme))
 	utilruntime.Must(consolev1.AddToScheme(genericScheme))
@@ -356,6 +361,8 @@ func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		content = base64.StdEncoding.EncodeToString([]byte(c))
 	}
 
+	tlsMinVersion, tlsCipherSuites := o.getTLSProfileValues()
+
 	manifestConfig := struct {
 		KubeConfigSecret                    string
 		ClusterName                         string
@@ -371,6 +378,8 @@ func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		HypershiftDownstreamOverrideContent string
 		HyeprshiftImageOverride             bool
 		MulticlusterEnginePullSecret        string
+		TLSMinVersion                       string
+		TLSCipherSuites                     string
 	}{
 		KubeConfigSecret:                    fmt.Sprintf("%s-hub-kubeconfig", addon.Name),
 		AddonInstallNamespace:               installNamespace,
@@ -386,7 +395,26 @@ func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 		HypershiftDownstreamOverride:        util.HypershiftDownstreamOverride,
 		HypershiftDownstreamOverrideContent: content,
 		MulticlusterEnginePullSecret:        util.MulticlusterEnginePullSecret,
+		TLSMinVersion:                       tlsMinVersion,
+		TLSCipherSuites:                     tlsCipherSuites,
 	}
 
 	return addonfactory.StructToValues(manifestConfig), nil
+}
+
+// getTLSProfileValues reads the cluster APIServer's TLS security profile and
+// returns the min TLS version and comma-separated IANA cipher suite names suitable
+// for kube-rbac-proxy flags. Falls back to Intermediate profile on error.
+func (o *override) getTLSProfileValues() (string, string) {
+	ctx := context.Background()
+	profileSpec, err := tls.FetchAPIServerTLSProfile(ctx, o.Client)
+	if err != nil {
+		o.log.Info("unable to read APIServer TLS profile, using Intermediate defaults", "error", err)
+		profileSpec, _ = tls.GetTLSProfileSpec(nil)
+	}
+
+	minVersion := string(profileSpec.MinTLSVersion)
+	cipherSuites := strings.Join(crypto.OpenSSLToIANACipherSuites(profileSpec.Ciphers), ",")
+
+	return minVersion, cipherSuites
 }
