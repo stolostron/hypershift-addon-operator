@@ -123,6 +123,8 @@ spec:
           - "--multicluster-pull-secret={{ .MulticlusterEnginePullSecret }}"
           - --metrics-bind-address=0.0.0.0:8383
         env:
+        - name: KUBE_FEATURE_WatchListClient
+          value: "false"
 {{- if .hcMaxNumber }}
         - name: HC_MAX_NUMBER
           value: "{{ .hcMaxNumber }}"
