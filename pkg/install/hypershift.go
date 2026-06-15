@@ -1059,8 +1059,9 @@ func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
 // contains all three required OIDC S3 storage provider arguments (bucket-name, region,
 // and credentials/secret). Checking all three guards against partial stripping where
 // only some flags are removed while the bucket-name remains, which would still result
-// in an incomplete OIDC configuration. Uses HasPrefix to match both the space-separated
-// form (--flag value) and the equals form (--flag=value) produced by hypershift install.
+// in an incomplete OIDC configuration. Each flag is matched exactly (--flag value form)
+// or as a prefix of "--flag=" (--flag=value form) to avoid false-positive matches on
+// flags that share a common prefix (e.g. --oidc-storage-provider-s3-regionX).
 // Used to detect when MCE reconciliation has overwritten the deployment without OIDC
 // args so the addon agent forces a reinstall to restore them (ACM-35409).
 func (c *UpgradeController) deploymentHasOIDCArgs(operatorDeployment appsv1.Deployment) bool {
@@ -1072,19 +1073,25 @@ func (c *UpgradeController) deploymentHasOIDCArgs(operatorDeployment appsv1.Depl
 	hasSecret := false
 	for _, arg := range operatorDeployment.Spec.Template.Spec.Containers[0].Args {
 		switch {
-		case strings.HasPrefix(arg, "--oidc-storage-provider-s3-bucket-name"):
+		case oidcFlagMatch(arg, "--oidc-storage-provider-s3-bucket-name"):
 			hasBucket = true
-		case strings.HasPrefix(arg, "--oidc-storage-provider-s3-region"):
+		case oidcFlagMatch(arg, "--oidc-storage-provider-s3-region"):
 			hasRegion = true
 		// hypershift install may render the secret arg as either
 		// --oidc-storage-provider-s3-secret (secret name) or
 		// --oidc-storage-provider-s3-credentials (file path).
-		case strings.HasPrefix(arg, "--oidc-storage-provider-s3-secret"),
-			strings.HasPrefix(arg, "--oidc-storage-provider-s3-credentials"):
+		case oidcFlagMatch(arg, "--oidc-storage-provider-s3-secret"),
+			oidcFlagMatch(arg, "--oidc-storage-provider-s3-credentials"):
 			hasSecret = true
 		}
 	}
 	return hasBucket && hasRegion && hasSecret
+}
+
+// oidcFlagMatch returns true when arg matches flag exactly (space-separated form:
+// --flag value) or as a "--flag=..." prefix (equals form: --flag=value).
+func oidcFlagMatch(arg, flag string) bool {
+	return arg == flag || strings.HasPrefix(arg, flag+"=")
 }
 
 func (c *UpgradeController) secretDataUpdated(secretName string, secret corev1.Secret) bool {
