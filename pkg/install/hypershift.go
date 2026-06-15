@@ -1056,19 +1056,35 @@ func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
 }
 
 // deploymentHasOIDCArgs returns true if the HyperShift operator deployment already
-// contains the OIDC S3 storage provider bucket-name argument. It is used to detect
-// cases where MCE reconciliation has overwritten the deployment and stripped the OIDC
-// args, so that the addon agent forces a reinstall to restore them (ACM-35409).
+// contains all three required OIDC S3 storage provider arguments (bucket-name, region,
+// and credentials/secret). Checking all three guards against partial stripping where
+// only some flags are removed while the bucket-name remains, which would still result
+// in an incomplete OIDC configuration. Uses HasPrefix to match both the space-separated
+// form (--flag value) and the equals form (--flag=value) produced by hypershift install.
+// Used to detect when MCE reconciliation has overwritten the deployment without OIDC
+// args so the addon agent forces a reinstall to restore them (ACM-35409).
 func (c *UpgradeController) deploymentHasOIDCArgs(operatorDeployment appsv1.Deployment) bool {
 	if len(operatorDeployment.Spec.Template.Spec.Containers) == 0 {
 		return false
 	}
+	hasBucket := false
+	hasRegion := false
+	hasSecret := false
 	for _, arg := range operatorDeployment.Spec.Template.Spec.Containers[0].Args {
-		if arg == "--oidc-storage-provider-s3-bucket-name" {
-			return true
+		switch {
+		case strings.HasPrefix(arg, "--oidc-storage-provider-s3-bucket-name"):
+			hasBucket = true
+		case strings.HasPrefix(arg, "--oidc-storage-provider-s3-region"):
+			hasRegion = true
+		// hypershift install may render the secret arg as either
+		// --oidc-storage-provider-s3-secret (secret name) or
+		// --oidc-storage-provider-s3-credentials (file path).
+		case strings.HasPrefix(arg, "--oidc-storage-provider-s3-secret"),
+			strings.HasPrefix(arg, "--oidc-storage-provider-s3-credentials"):
+			hasSecret = true
 		}
 	}
-	return false
+	return hasBucket && hasRegion && hasSecret
 }
 
 func (c *UpgradeController) secretDataUpdated(secretName string, secret corev1.Secret) bool {

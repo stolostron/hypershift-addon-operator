@@ -17,6 +17,7 @@ import (
 	"github.com/stolostron/hypershift-addon-operator/pkg/metrics"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -1788,7 +1789,7 @@ func TestReinstallWhenOIDCArgsStripped(t *testing.T) {
 	addonNs := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: aCtrl.addonNamespace},
 	}
-	aCtrl.hubClient.Create(ctx, addonNs)
+	require.NoError(t, aCtrl.hubClient.Create(ctx, addonNs), "failed to create addon namespace")
 	defer aCtrl.hubClient.Delete(ctx, addonNs)
 
 	// Bucket secret exists on the hub — OIDC is configured
@@ -1804,7 +1805,7 @@ func TestReinstallWhenOIDCArgsStripped(t *testing.T) {
 			"aws-access-key-id":     []byte(`aws_s3_key_id`),
 		},
 	}
-	aCtrl.hubClient.Create(ctx, bucketSecret)
+	require.NoError(t, aCtrl.hubClient.Create(ctx, bucketSecret), "failed to create hub bucket secret")
 	defer aCtrl.hubClient.Delete(ctx, bucketSecret)
 
 	// Locally-saved secret matches hub — no secret change detected
@@ -1820,7 +1821,7 @@ func TestReinstallWhenOIDCArgsStripped(t *testing.T) {
 			"aws-access-key-id":     []byte(`aws_s3_key_id`),
 		},
 	}
-	aCtrl.spokeUncachedClient.Create(ctx, bucketSecretLocal)
+	require.NoError(t, aCtrl.spokeUncachedClient.Create(ctx, bucketSecretLocal), "failed to create local bucket secret")
 	defer aCtrl.spokeUncachedClient.Delete(ctx, bucketSecretLocal)
 
 	// Image stream with same images as the running deployment — no image change detected
@@ -1836,7 +1837,7 @@ func TestReinstallWhenOIDCArgsStripped(t *testing.T) {
 	ims := &imageapi.ImageStream{}
 	ims.Spec.Tags = tr
 	imb, err := yaml.Marshal(ims)
-	assert.Nil(t, err, "expected Marshal to succeed: %s", err)
+	require.NoError(t, err, "expected Marshal to succeed")
 
 	overrideCM := &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1845,13 +1846,13 @@ func TestReinstallWhenOIDCArgsStripped(t *testing.T) {
 		},
 		Data: map[string]string{util.HypershiftOverrideKey: base64.StdEncoding.EncodeToString(imb)},
 	}
-	aCtrl.spokeUncachedClient.Create(ctx, overrideCM)
+	require.NoError(t, aCtrl.spokeUncachedClient.Create(ctx, overrideCM), "failed to create image override configmap")
 	defer aCtrl.spokeUncachedClient.Delete(ctx, overrideCM)
 
 	hypershiftNs := &corev1.Namespace{
 		ObjectMeta: metav1.ObjectMeta{Name: "hypershift"},
 	}
-	aCtrl.spokeUncachedClient.Create(ctx, hypershiftNs)
+	require.NoError(t, aCtrl.spokeUncachedClient.Create(ctx, hypershiftNs), "failed to create hypershift namespace")
 	defer aCtrl.spokeUncachedClient.Delete(ctx, hypershiftNs)
 
 	// Simulate MCE reconciliation stripping OIDC args: deployment has correct images
@@ -1888,7 +1889,7 @@ func TestReinstallWhenOIDCArgsStripped(t *testing.T) {
 			},
 		},
 	}
-	aCtrl.spokeUncachedClient.Create(ctx, dp)
+	require.NoError(t, aCtrl.spokeUncachedClient.Create(ctx, dp), "failed to create hypershift operator deployment")
 	defer aCtrl.spokeUncachedClient.Delete(ctx, dp)
 
 	assert.Eventually(t, func() bool {
