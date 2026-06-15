@@ -1721,6 +1721,14 @@ func TestSkipHypershiftInstallWithNoChange(t *testing.T) {
 						Name:  "nginx",
 						Image: "hypershift-operator@sha256:aaa",
 						Ports: []corev1.ContainerPort{{ContainerPort: 80}},
+						// OIDC args must be present so the skip-reinstall check passes
+						// (bucket secret is configured on the hub, so deploymentHasOIDCArgs
+						// must return true to allow skipping reinstall — ACM-35409).
+						Args: []string{
+							"--oidc-storage-provider-s3-bucket-name", "my-bucket",
+							"--oidc-storage-provider-s3-region", "us-east-1",
+							"--oidc-storage-provider-s3-secret", util.HypershiftBucketSecretName,
+						},
 						Env: []corev1.EnvVar{
 							{Name: "hypershift-operator", Value: "hypershift-operator@sha256:aaa"},
 							{Name: util.HypershiftEnvVarImageAwsCapiProvider, Value: "cluster-api-aws-controller@sha256:aaa"},
@@ -1750,10 +1758,159 @@ func TestSkipHypershiftInstallWithNoChange(t *testing.T) {
 	assert.Nil(t, err, "there was no error in calling HyperShift installation")
 	// All images in the hypershift operator deployment are the same as what is in the image override configmap
 	// All secrets data from the hub is the same as those saved locally on the agent side
-	// expect no install job
+	// OIDC args are present in the deployment — expect no install job
 	noInstallJob, err := noInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
 	assert.Nil(t, err, "there should be no error in RunHypershiftOperatorInstallOnAgentStartup")
 	assert.True(t, noInstallJob, "there should be no hypershift installation job")
+}
+
+// TestReinstallWhenOIDCArgsStripped verifies that when the OIDC S3 bucket secret is
+// configured on the hub but the running deployment is missing the OIDC args (e.g. because
+// MCE reconciliation overwrote the deployment), the addon agent forces a reinstall
+// instead of silently skipping it (ACM-35409).
+func TestReinstallWhenOIDCArgsStripped(t *testing.T) {
+	ctx := context.Background()
+
+	zapLog, _ := zap.NewDevelopment()
+	client := initClient()
+	aCtrl := &UpgradeController{
+		spokeUncachedClient:       client,
+		hubClient:                 client,
+		log:                       zapr.NewLogger(zapLog),
+		addonNamespace:            "addon",
+		operatorImage:             "my-test-image",
+		clusterName:               "cluster1",
+		pullSecret:                "pull-secret",
+		withOverride:              true,
+		hypershiftInstallExecutor: &HypershiftTestCliExecutor{},
+	}
+
+	addonNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: aCtrl.addonNamespace},
+	}
+	aCtrl.hubClient.Create(ctx, addonNs)
+	defer aCtrl.hubClient.Delete(ctx, addonNs)
+
+	// Bucket secret exists on the hub — OIDC is configured
+	bucketSecret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftBucketSecretName,
+			Namespace: aCtrl.clusterName,
+		},
+		Data: map[string][]byte{
+			"bucket":                []byte(`my-bucket`),
+			"region":                []byte(`us-east-1`),
+			"aws-secret-access-key": []byte(`aws_s3_secret`),
+			"aws-access-key-id":     []byte(`aws_s3_key_id`),
+		},
+	}
+	aCtrl.hubClient.Create(ctx, bucketSecret)
+	defer aCtrl.hubClient.Delete(ctx, bucketSecret)
+
+	// Locally-saved secret matches hub — no secret change detected
+	bucketSecretLocal := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftBucketSecretName,
+			Namespace: aCtrl.addonNamespace,
+		},
+		Data: map[string][]byte{
+			"bucket":                []byte(`my-bucket`),
+			"region":                []byte(`us-east-1`),
+			"aws-secret-access-key": []byte(`aws_s3_secret`),
+			"aws-access-key-id":     []byte(`aws_s3_key_id`),
+		},
+	}
+	aCtrl.spokeUncachedClient.Create(ctx, bucketSecretLocal)
+	defer aCtrl.spokeUncachedClient.Delete(ctx, bucketSecretLocal)
+
+	// Image stream with same images as the running deployment — no image change detected
+	tr := []imageapi.TagReference{}
+	tr = append(tr, imageapi.TagReference{Name: hsOperatorImage, From: &corev1.ObjectReference{Name: "hypershift-operator@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAwsCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-aws-controller@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAzureCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-azure@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamKubevertCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-kubevirt@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamKonnectivity, From: &corev1.ObjectReference{Name: "apiserver-network-proxy@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAwsEncyptionProvider, From: &corev1.ObjectReference{Name: "aws-encryption-provider@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamClusterApi, From: &corev1.ObjectReference{Name: "cluster-api@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAgentCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-agent@sha256:aaa"}})
+	ims := &imageapi.ImageStream{}
+	ims.Spec.Tags = tr
+	imb, err := yaml.Marshal(ims)
+	assert.Nil(t, err, "expected Marshal to succeed: %s", err)
+
+	overrideCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      util.HypershiftDownstreamOverride,
+			Namespace: aCtrl.addonNamespace,
+		},
+		Data: map[string]string{util.HypershiftOverrideKey: base64.StdEncoding.EncodeToString(imb)},
+	}
+	aCtrl.spokeUncachedClient.Create(ctx, overrideCM)
+	defer aCtrl.spokeUncachedClient.Delete(ctx, overrideCM)
+
+	hypershiftNs := &corev1.Namespace{
+		ObjectMeta: metav1.ObjectMeta{Name: "hypershift"},
+	}
+	aCtrl.spokeUncachedClient.Create(ctx, hypershiftNs)
+	defer aCtrl.spokeUncachedClient.Delete(ctx, hypershiftNs)
+
+	// Simulate MCE reconciliation stripping OIDC args: deployment has correct images
+	// but is MISSING --oidc-storage-provider-s3-bucket-name and related args.
+	dp := &appsv1.Deployment{
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "Deployment",
+			APIVersion: "apps/v1",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "operator",
+			Namespace: "hypershift",
+		},
+		Spec: appsv1.DeploymentSpec{
+			Template: corev1.PodTemplateSpec{
+				Spec: corev1.PodSpec{
+					Containers: []corev1.Container{{
+						Name:  "operator",
+						Image: "hypershift-operator@sha256:aaa",
+						// No OIDC args — simulates MCE reconciliation overwriting the deployment
+						Args: []string{"--namespace", "hypershift"},
+						Env: []corev1.EnvVar{
+							{Name: "hypershift-operator", Value: "hypershift-operator@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageAwsCapiProvider, Value: "cluster-api-aws-controller@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageAzureCapiProvider, Value: "cluster-api-provider-azure@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageKubevertCapiProvider, Value: "cluster-api-provider-kubevirt@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageKonnectivity, Value: "apiserver-network-proxy@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageAwsEncyptionProvider, Value: "aws-encryption-provider@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageClusterApi, Value: "cluster-api@sha256:aaa"},
+							{Name: util.HypershiftEnvVarImageAgentCapiProvider, Value: "cluster-api-provider-agent@sha256:aaa"},
+						},
+					}},
+				},
+			},
+		},
+	}
+	aCtrl.spokeUncachedClient.Create(ctx, dp)
+	defer aCtrl.spokeUncachedClient.Delete(ctx, dp)
+
+	assert.Eventually(t, func() bool {
+		theDeployment := &appsv1.Deployment{}
+		err := aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Namespace: "hypershift", Name: "operator"}, theDeployment)
+		return err == nil
+	}, 10*time.Second, 1*time.Second, "The test operator deployment was created successfully")
+
+	// Mark the install job as succeeded asynchronously so RunHypershiftOperatorInstallOnAgentStartup
+	// does not block indefinitely waiting for job completion.
+	go updateHsInstallJobToSucceeded(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
+
+	// Run the hypershift operator installation to simulate addon agent startup.
+	// Images and secrets are unchanged, but OIDC args are missing from the deployment.
+	// The addon agent must NOT skip the reinstall — it must trigger an install job to
+	// restore the OIDC args (ACM-35409).
+	err = aCtrl.RunHypershiftOperatorInstallOnAgentStartup(ctx)
+	assert.Nil(t, err, "RunHypershiftOperatorInstallOnAgentStartup should not error")
+
+	noInstallJob, err := noInstallJobs(ctx, aCtrl.spokeUncachedClient, aCtrl.addonNamespace)
+	assert.Nil(t, err, "there should be no error checking for install jobs")
+	assert.False(t, noInstallJob, "an install job must be created to restore the stripped OIDC args")
 }
 
 func TestCreateSpokeCredential(t *testing.T) {

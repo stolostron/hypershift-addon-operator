@@ -389,13 +389,17 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		// compare installed operator images to the new image stream
 		// compare locally saved secrets to the hub secrets as well
 		// If they are the same, skip re-install.
+		// Also force re-install if OIDC is configured on the hub but the running deployment
+		// is missing the OIDC args — this can happen when MCE reconciliation overwrites the
+		// HyperShift deployment without preserving the OIDC S3 configuration (ACM-35409).
 		if reinstallCheckRequired &&
 			!(c.operatorImagesUpdated(im, *operatorDeployment) ||
 				c.secretDataUpdated(util.HypershiftBucketSecretName, *se) ||
 				c.secretDataUpdated(util.HypershiftPrivateLinkSecretName, *spl) ||
 				c.secretDataUpdated(util.HypershiftAzurePrivateSecretName, *sAzurePrivate) ||
 				c.secretDataUpdated(util.HypershiftExternalDNSSecretName, *sExtDNS) ||
-				c.configmapDataUpdated(util.HypershiftInstallFlagsCM, installFlagsCM)) {
+				c.configmapDataUpdated(util.HypershiftInstallFlagsCM, installFlagsCM)) &&
+			(!oidcBucket || c.deploymentHasOIDCArgs(*operatorDeployment)) {
 			c.log.Info("no image/secret/install-flag change, skip hypershift operator installation")
 
 			if err := c.updateHyperShiftDeployment(ctx); err != nil {
@@ -1049,6 +1053,22 @@ func getContainerEnvVar(envVars []corev1.EnvVar, imageName string) string {
 		}
 	}
 	return ""
+}
+
+// deploymentHasOIDCArgs returns true if the HyperShift operator deployment already
+// contains the OIDC S3 storage provider bucket-name argument. It is used to detect
+// cases where MCE reconciliation has overwritten the deployment and stripped the OIDC
+// args, so that the addon agent forces a reinstall to restore them (ACM-35409).
+func (c *UpgradeController) deploymentHasOIDCArgs(operatorDeployment appsv1.Deployment) bool {
+	if len(operatorDeployment.Spec.Template.Spec.Containers) == 0 {
+		return false
+	}
+	for _, arg := range operatorDeployment.Spec.Template.Spec.Containers[0].Args {
+		if arg == "--oidc-storage-provider-s3-bucket-name" {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *UpgradeController) secretDataUpdated(secretName string, secret corev1.Secret) bool {
