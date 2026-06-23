@@ -11,9 +11,12 @@ spec:
       app: {{ .AddonName }}
   policyTypes:
   - Ingress
+  - Egress
   ingress:
   - ports:
     - port: 8443
       protocol: TCP
     - port: 8000
       protocol: TCP
+  egress:
+  - {}
