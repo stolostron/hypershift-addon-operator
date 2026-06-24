@@ -867,6 +867,9 @@ func (c *UpgradeController) updateExtDnsDeployment(ctx context.Context) error {
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, externalDNSOperatorKey, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
 		return err
 	}
 
