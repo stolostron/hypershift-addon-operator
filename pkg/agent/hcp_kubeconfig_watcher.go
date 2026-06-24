@@ -9,6 +9,7 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -71,6 +72,10 @@ func (c *HcpKubeconfigChangeWatcher) Reconcile(ctx context.Context, req ctrl.Req
 	theSecret := &corev1.Secret{}
 	err := c.spokeClient.Get(ctx, req.NamespacedName, theSecret)
 	if err != nil {
+		if apierrors.IsNotFound(err) {
+			// Secret was deleted between the predicate check and reconcile; nothing to do.
+			return ctrl.Result{}, nil
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -80,8 +85,12 @@ func (c *HcpKubeconfigChangeWatcher) Reconcile(ctx context.Context, req ctrl.Req
 	for _, owner := range secretOwners {
 		if owner.Kind == ownerRefKind {
 			hcNN := types.NamespacedName{Namespace: req.Namespace, Name: owner.Name}
-			err = c.spokeClient.Get(ctx, hcNN, hostedClusterObj)
-			if err != nil {
+			if err = c.spokeClient.Get(ctx, hcNN, hostedClusterObj); err != nil {
+				if apierrors.IsNotFound(err) {
+					// HostedCluster deleted between predicate check and reconcile; nothing to do.
+					c.log.Info(fmt.Sprintf("Owning hosted cluster %s no longer exists, skipping annotation.", owner.Name))
+					return ctrl.Result{}, nil
+				}
 				c.log.Error(err, fmt.Sprintf("Failed to find the owning hosted cluster %s.", owner.Name))
 				return ctrl.Result{}, err
 			}
@@ -90,8 +99,9 @@ func (c *HcpKubeconfigChangeWatcher) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	if !hcFound {
-		c.log.Error(err, fmt.Sprintf("Failed to find an owning hosted cluster for this admin kubeconfig %s.", req.Name))
-		return ctrl.Result{}, err
+		// No HostedCluster owner reference found on the secret; this should not happen
+		// if the predicate is working correctly, but guard against race conditions.
+		return ctrl.Result{}, fmt.Errorf("no HostedCluster owner reference found on admin kubeconfig %s", req.Name)
 	}
 
 	originalHC := hostedClusterObj.DeepCopy()
