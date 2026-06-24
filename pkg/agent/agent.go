@@ -143,15 +143,7 @@ func (o *AgentOptions) AddFlags(cmd *cobra.Command) {
 func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	log := o.Log.WithName("controller-manager-setup")
 
-	// Disable WatchListClient feature gate (ACM-36014).
-	// In client-go v0.35+, WatchListClient defaults to true (Beta), enabling
-	// sendInitialEvents=true for all informers. This requires the API server to
-	// deliver a k8s.io/initial-events-end BOOKMARK event before the informer
-	// is considered synced. For several custom-resource types watched by this
-	// agent (HostedCluster, Klusterlet, …) that BOOKMARK never arrives, so
-	// all 7 caches time out and the pod crash-loops every CacheSyncTimeout.
-	// Falling back to standard List+Watch avoids the BOOKMARK dependency and
-	// allows caches to sync reliably.
+	// Disable WatchListClient (ACM-36014): default Beta gate breaks cache sync on CRDs.
 	if fg, ok := clientfeatures.FeatureGates().(interface {
 		Set(clientfeatures.Feature, bool) error
 	}); ok {

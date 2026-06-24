@@ -4,13 +4,14 @@ import (
 	"context"
 	"embed"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 
 	"github.com/go-logr/logr"
 	configv1 "github.com/openshift/api/config/v1"
-	"github.com/openshift/controller-runtime-common/pkg/tls"
+	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	"github.com/openshift/library-go/pkg/controller/controllercmd"
 	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/spf13/cobra"
@@ -22,6 +23,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
@@ -93,7 +95,16 @@ type override struct {
 
 func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 	var withOverride bool
+	var disableTLSWatcher bool
 	runController := func(ctx context.Context, controllerContext *controllercmd.ControllerContext) error {
+		if err := disableWatchListClient(); err != nil {
+			return err
+		}
+
+		// Child context: SecurityProfileWatcher cancels this to restart on TLS profile change.
+		managerCtx, cancelManager := context.WithCancel(ctx)
+		defer cancelManager()
+
 		mgr, err := addonmanager.New(controllerContext.KubeConfig)
 		if err != nil {
 			return err
@@ -131,52 +142,40 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 
 		// Start the addon framework manager in a goroutine
 		go func() {
-			if err := mgr.Start(ctx); err != nil {
+			if err := mgr.Start(managerCtx); err != nil {
 				log.Error(err, "failed to start addon framework manager")
 				os.Exit(1)
 			}
 		}()
 
-		// Create a separate controller-runtime manager for custom controllers
-		// Use the same scheme that has all the types registered
-		customMgr, err := ctrl.NewManager(controllerContext.KubeConfig, ctrl.Options{
-			Scheme:           genericScheme,
-			LeaderElection:   false, // Disable leader election for custom manager
-			LeaderElectionID: "custom-controller-leader-election",
-		})
+		customMgr, err := newCustomControllerManager(controllerContext, hubClient, log)
 		if err != nil {
-			log.Error(err, "failed to create custom controller manager")
 			return err
 		}
 
-		// Verify the scheme has the required types
-		gvk := addonapiv1alpha1.SchemeGroupVersion.WithKind("ManagedClusterAddOn")
-		if !genericScheme.Recognizes(gvk) {
-			log.Error(fmt.Errorf("scheme does not recognize ManagedClusterAddOn"), "scheme verification failed")
-			return fmt.Errorf("scheme does not recognize ManagedClusterAddOn")
-		}
-		log.Info("Scheme verification successful", "gvk", gvk)
-
-		// Add the discovery config controller to the custom manager
-		discoveryConfigController := &DiscoveryConfigController{
-			Client:            hubClient,
-			Log:               log.WithName("discovery-config-controller"),
-			Scheme:            genericScheme,
-			OperatorNamespace: controllerContext.OperatorNamespace,
-		}
-
-		if err = discoveryConfigController.SetupWithManager(customMgr); err != nil {
-			log.Error(err, "failed to setup discovery config controller")
+		profileSpec, err := fetchTLSProfileOrDefault(managerCtx, hubClient, log)
+		if err != nil {
 			return err
 		}
 
-		// Start the custom controller manager in a goroutine
+		err = setupTLSProfileWatcher(
+			customMgr, hubClient, profileSpec, disableTLSWatcher, cancelManager, log)
+		if err != nil {
+			return err
+		}
+
+		// Start the custom controller manager in a goroutine.
+		// If it fails to start (e.g. informer cache sync timeout), cancel the
+		// manager context so the pod restarts and gets a clean retry.
 		go func() {
 			log.Info("starting custom controller manager")
-			if err := customMgr.Start(ctx); err != nil {
+			if err := customMgr.Start(managerCtx); err != nil {
 				log.Error(err, "failed to start custom controller manager")
+				cancelManager()
 			}
 		}()
+
+		go startHCPProxy(managerCtx, profileSpec, controllerContext.KubeConfig, hubClient, log)
 
 		err = EnableHypershiftCLIDownload(ctx, hubClient, log)
 		if err != nil {
@@ -185,7 +184,7 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 			log.Error(err, "failed to enable hypershift CLI download")
 		}
 
-		<-ctx.Done()
+		<-managerCtx.Done()
 
 		return nil
 	}
@@ -203,8 +202,128 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 		"disable-leader-election", true,
 		"Disable leader election for the agent.")
 	flags.BoolVar(&withOverride, "with-image-override", false, "Use image from override configmap")
+	flags.BoolVar(&disableTLSWatcher, "disable-tls-watcher", false,
+		"Disable the TLS security profile watcher (local development only).")
 
 	return cmd
+}
+
+// disableWatchListClient turns off the WatchListClient feature gate (ACM-36014).
+// The default Beta gate breaks cache sync on CRDs.
+func disableWatchListClient() error {
+	if fg, ok := clientfeatures.FeatureGates().(interface {
+		Set(clientfeatures.Feature, bool) error
+	}); ok {
+		if err := fg.Set(clientfeatures.WatchListClient, false); err != nil {
+			return fmt.Errorf("disable WatchListClient feature gate: %w", err)
+		}
+		return nil
+	}
+	if err := os.Setenv("KUBE_FEATURE_WatchListClient", "false"); err != nil {
+		return fmt.Errorf("set KUBE_FEATURE_WatchListClient env var: %w", err)
+	}
+	return nil
+}
+
+func newCustomControllerManager(
+	controllerContext *controllercmd.ControllerContext,
+	hubClient client.Client,
+	log logr.Logger,
+) (ctrl.Manager, error) {
+	customMgr, err := ctrl.NewManager(controllerContext.KubeConfig, ctrl.Options{
+		Scheme:           genericScheme,
+		LeaderElection:   false,
+		LeaderElectionID: "custom-controller-leader-election",
+	})
+	if err != nil {
+		log.Error(err, "failed to create custom controller manager")
+		return nil, err
+	}
+
+	gvk := addonapiv1alpha1.SchemeGroupVersion.WithKind("ManagedClusterAddOn")
+	if !genericScheme.Recognizes(gvk) {
+		log.Error(fmt.Errorf("scheme does not recognize ManagedClusterAddOn"), "scheme verification failed")
+		return nil, fmt.Errorf("scheme does not recognize ManagedClusterAddOn")
+	}
+	log.Info("Scheme verification successful", "gvk", gvk)
+
+	discoveryConfigController := &DiscoveryConfigController{
+		Client:            hubClient,
+		Log:               log.WithName("discovery-config-controller"),
+		Scheme:            genericScheme,
+		OperatorNamespace: controllerContext.OperatorNamespace,
+	}
+	if err = discoveryConfigController.SetupWithManager(customMgr); err != nil {
+		log.Error(err, "failed to setup discovery config controller")
+		return nil, err
+	}
+	return customMgr, nil
+}
+
+func fetchTLSProfileOrDefault(
+	ctx context.Context,
+	hubClient client.Client,
+	log logr.Logger,
+) (configv1.TLSProfileSpec, error) {
+	profileSpec, err := tlspkg.FetchAPIServerTLSProfile(ctx, hubClient)
+	if err != nil {
+		log.Error(err, "failed to fetch APIServer TLS profile, using Intermediate defaults")
+		profileSpec, _ = tlspkg.GetTLSProfileSpec(nil)
+	}
+	return profileSpec, nil
+}
+
+func setupTLSProfileWatcher(
+	customMgr ctrl.Manager,
+	hubClient client.Client,
+	profileSpec configv1.TLSProfileSpec,
+	disableTLSWatcher bool,
+	cancelManager context.CancelFunc,
+	log logr.Logger,
+) error {
+	if disableTLSWatcher {
+		log.Info("TLS security profile watcher disabled by flag")
+		return nil
+	}
+	// kind / vanilla k8s lack config.openshift.io APIServer. Registering the
+	// watcher there spams "no matches for kind APIServer" every poll interval.
+	apiServerGVK := configv1.GroupVersion.WithKind("APIServer")
+	if _, err := customMgr.GetRESTMapper().RESTMapping(
+		apiServerGVK.GroupKind(), apiServerGVK.Version,
+	); err != nil {
+		log.Info("APIServer CRD not available, skipping TLS profile watcher",
+			"error", err)
+		return nil
+	}
+	// When the cluster TLS profile changes, cancelManager() triggers a graceful
+	// shutdown — the pod restarts and picks up the new profile.
+	watcher := &tlspkg.SecurityProfileWatcher{
+		Client:                hubClient,
+		InitialTLSProfileSpec: profileSpec,
+		OnProfileChange: func(_ context.Context, old, new configv1.TLSProfileSpec) {
+			log.Info("cluster TLS profile changed, initiating graceful restart",
+				"old", old.MinTLSVersion, "new", new.MinTLSVersion)
+			cancelManager()
+		},
+	}
+	if err := watcher.SetupWithManager(customMgr); err != nil {
+		log.Error(err, "failed to setup TLS security profile watcher")
+		return err
+	}
+	return nil
+}
+
+func startHCPProxy(
+	ctx context.Context,
+	profileSpec configv1.TLSProfileSpec,
+	kubeConfig *rest.Config,
+	hubClient client.Client,
+	log logr.Logger,
+) {
+	err := StartHCPProxy(ctx, profileSpec, kubeConfig, hubClient, log.WithName("hcp-proxy"))
+	if err != nil && !errors.Is(err, context.Canceled) {
+		log.Error(err, "HCP proxy stopped unexpectedly")
+	}
 }
 
 func getAgentAddon(
@@ -407,10 +526,10 @@ func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
 // for kube-rbac-proxy flags. Falls back to Intermediate profile on error.
 func (o *override) getTLSProfileValues() (string, string) {
 	ctx := context.Background()
-	profileSpec, err := tls.FetchAPIServerTLSProfile(ctx, o.Client)
+	profileSpec, err := tlspkg.FetchAPIServerTLSProfile(ctx, o.Client)
 	if err != nil {
 		o.log.Info("unable to read APIServer TLS profile, using Intermediate defaults", "error", err)
-		profileSpec, _ = tls.GetTLSProfileSpec(nil)
+		profileSpec, _ = tlspkg.GetTLSProfileSpec(nil)
 	}
 
 	minVersion := string(profileSpec.MinTLSVersion)

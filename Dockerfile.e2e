@@ -1,0 +1,6 @@
+# Minimal image for kind e2e — binary is built on the host (uses Go module cache).
+# Usage: CGO_ENABLED=0 GOOS=linux go build -o bin/hypershift-addon cmd/main.go
+#        docker build -f Dockerfile.e2e -t $E2E_IMG .
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+COPY bin/hypershift-addon .
+USER 65532:65532

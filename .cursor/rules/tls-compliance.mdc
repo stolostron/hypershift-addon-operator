@@ -1,0 +1,190 @@
+---
+description: >
+  OpenShift central TLS profile compliance (ACM-26882, release blocker OCP 4.23 / ACM 5.0).
+  Apply whenever writing or reviewing any code that opens a TLS server, creates an outbound
+  HTTP/HTTPS client, generates certificates, or touches TLS configuration.
+globs:
+  - "**/*.go"
+alwaysApply: true
+---
+
+# TLS Compliance — Mandatory Pattern
+
+This repo is covered by **ACM-26882 "Central TLS Profile consistency"**, which is a release
+blocker for OCP 4.23 / ACM 5.0. Every piece of new or modified TLS code **MUST** follow the
+four rules below. Violations will block merges.
+
+## The four rules
+
+### 1. Fetch the profile once at manager startup
+
+In `manager.go` (or equivalent entry-point), call **before** starting any server or client:
+
+```go
+import tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
+
+profileSpec, err := tlspkg.FetchAPIServerTLSProfile(ctx, hubClient)
+if err != nil {
+    // kind / non-OpenShift clusters lack the resource — use Intermediate fallback
+    log.Error(err, "failed to fetch APIServer TLS profile, using Intermediate defaults")
+    profileSpec, _ = tlspkg.GetTLSProfileSpec(nil)
+}
+```
+
+Pass `profileSpec` explicitly to every server and client constructor — **never re-fetch it
+inside a loop or per-request**.
+
+### 2. TLS server — apply profile via `tlspkg.NewTLSConfigFromProfile`
+
+```go
+// NewTLSConfigFromProfile returns (applyFn, unsupportedCipherNames) — not an error.
+tlsCfgFn, unsupported := tlspkg.NewTLSConfigFromProfile(profileSpec)
+if len(unsupported) > 0 {
+    log.Info("TLS profile contains unsupported ciphers, they will be ignored", "ciphers", unsupported)
+}
+cert, err := generateSelfSignedCert(operatorNS)  // see rule 4
+if err != nil {
+    return fmt.Errorf("generate serving cert: %w", err)
+}
+tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+tlsCfgFn(tlsCfg)  // sets MinVersion + CipherSuites from central profile
+
+srv := &http.Server{TLSConfig: tlsCfg, ...}
+```
+
+**Never** set `tls.Config.MinVersion`, `tls.Config.CipherSuites`, or `tls.Config.CurvePreferences`
+by hand. Those values must come exclusively from the profile function.
+
+### 3. Outbound HTTP client — use `buildHTTPClient`
+
+Every outbound HTTPS call must go through the shared helper that applies the profile to the
+transport:
+
+```go
+// buildHTTPClient creates an http.Client whose TLS transport honours the cluster
+// TLS profile (MinVersion, CipherSuites) and carries the hub bearer token.
+func (p *hcpProxy) buildHTTPClient(timeout time.Duration) (*http.Client, error) {
+    tlsCfg, err := rest.TLSConfigFor(p.hubConfig)
+    if err != nil {
+        return nil, fmt.Errorf("TLS config from rest.Config: %w", err)
+    }
+    tlsConfigFn, _ := tlspkg.NewTLSConfigFromProfile(p.profileSpec)
+    tlsConfigFn(tlsCfg)   // overlay MinVersion + CipherSuites
+
+    base := &http.Transport{TLSClientConfig: tlsCfg, ...}
+    wrapped, err := rest.HTTPWrappersForConfig(p.hubConfig, base)
+    if err != nil {
+        return nil, fmt.Errorf("HTTP auth wrappers: %w", err)
+    }
+    return &http.Client{Transport: wrapped, Timeout: timeout}, nil
+}
+```
+
+Do **not** create raw `http.Client` or `http.Transport` instances with a bare `tls.Config{}` —
+always call `buildHTTPClient` (or an equivalent that applies `tlspkg.NewTLSConfigFromProfile`).
+
+### 4. Certificates — prefer service-ca, fall back to `libgocrypto`
+
+**On OpenShift** the preferred source is the cluster Service CA.  Annotate the Service:
+
+```yaml
+metadata:
+  annotations:
+    service.beta.openshift.io/serving-cert-secret-name: <name>-tls
+```
+
+Mount the generated Secret with `optional: true` and use `loadOrGenerateCert` which:
+1. Loads `tls.crt` / `tls.key` from the mount path when present (OpenShift — trusted, auto-rotated)
+2. Falls back to `generateSelfSignedCert` when the path is absent (kind / vanilla k8s)
+
+**On non-OpenShift clusters (kind, e2e)** the annotation is ignored and the fallback
+in-process path activates automatically via `loadOrGenerateCert`.
+
+For the fallback, use **`github.com/openshift/library-go/pkg/crypto`**:
+
+```go
+import (
+    libgocrypto "github.com/openshift/library-go/pkg/crypto"
+    "k8s.io/apimachinery/pkg/util/sets"
+)
+
+func generateSelfSignedCert(operatorNS string) (tls.Certificate, error) {
+    const certLifetime = 2 * 365 * 24 * time.Hour   // ≤ 7200-day library-go limit
+
+    caConfig, err := libgocrypto.MakeSelfSignedCAConfigForDuration(
+        serviceName+"-ca", certLifetime)
+    if err != nil {
+        return tls.Certificate{}, fmt.Errorf("create CA: %w", err)
+    }
+    ca := &libgocrypto.CA{
+        Config:          caConfig,
+        SerialGenerator: &libgocrypto.RandomSerialGenerator{},
+    }
+    hostnames := sets.New[string]("localhost", "127.0.0.1",
+        serviceName, serviceName+"."+operatorNS+".svc",
+        serviceName+"."+operatorNS+".svc.cluster.local")
+    serverConfig, err := ca.MakeServerCert(hostnames, certLifetime)
+    if err != nil {
+        return tls.Certificate{}, fmt.Errorf("create server cert: %w", err)
+    }
+    certPEM, keyPEM, err := serverConfig.GetPEMBytes()
+    if err != nil {
+        return tls.Certificate{}, fmt.Errorf("encode server cert PEM: %w", err)
+    }
+    return tls.X509KeyPair(certPEM, keyPEM)
+}
+```
+
+**Never** use `crypto/ecdsa`, `crypto/x509.CreateCertificate`, `crypto/rand`, `math/big`, or
+`encoding/pem` directly for certificate generation — those bypass OpenShift's key-type and
+serial-number conventions.
+
+### 5. Runtime watch — register `SecurityProfileWatcher`
+
+Any manager that embeds a TLS server must restart cleanly when the cluster profile changes:
+
+```go
+watcher := &tlspkg.SecurityProfileWatcher{
+    Client:                hubClient,
+    InitialTLSProfileSpec: profileSpec,
+    OnProfileChange: func(_ context.Context, old, new configv1.TLSProfileSpec) {
+        log.Info("TLS profile changed, restarting", "old", old.MinTLSVersion, "new", new.MinTLSVersion)
+        cancelManager()   // triggers graceful pod restart
+    },
+}
+if err := watcher.SetupWithManager(mgr); err != nil {
+    return fmt.Errorf("setup TLS watcher: %w", err)
+}
+```
+
+## RBAC required
+
+Whenever any of the above is used, the manager's ClusterRole must include:
+
+```yaml
+- apiGroups: ["config.openshift.io"]
+  resources: ["apiservers"]
+  verbs: ["get", "list", "watch"]
+```
+
+Add it to the `backplane-operator` hypershift-addon-manager ClusterRole
+(see `.cursor/rules/backplane-operator-sync.mdc`). For kind e2e, also keep
+`test/e2e/addon-manager-deployment.yaml` in sync.
+
+## Forbidden patterns (will fail code review)
+
+| Forbidden | Use instead |
+|---|---|
+| `tls.Config{MinVersion: tls.VersionTLS12}` | `tlspkg.NewTLSConfigFromProfile(profileSpec)` |
+| `tls.Config{MinVersion: tls.VersionTLS13}` | same |
+| `tls.Config{CipherSuites: [...]}` (hardcoded) | same |
+| `http.Client{Transport: &http.Transport{TLSClientConfig: ...}}` without profile | `buildHTTPClient(...)` |
+| `x509.CreateCertificate(rand.Reader, ...)` | `libgocrypto.MakeSelfSignedCAConfigForDuration` |
+| `ecdsa.GenerateKey(elliptic.P256(), ...)` for serving cert | `libgocrypto.MakeServerCert` |
+
+## Reference
+
+- Epic: [ACM-26882](https://redhat.atlassian.net/browse/ACM-26882) — Central TLS Profile consistency
+- HyperShift addon task: [ACM-30178](https://redhat.atlassian.net/browse/ACM-30178) — verified ACM 5.0.0-112
+- Technical guide: https://docs.google.com/document/d/1cMc9E8psHfnoK06ntR8kHSWB8d3rMtmldhnmM4nImjs
+- Slack: [#forum-ocp-tls-strict-obedience](https://redhat.enterprise.slack.com/archives/C098FU5MRAB)

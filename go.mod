@@ -31,7 +31,7 @@ require (
 	k8s.io/api v0.35.2
 	k8s.io/apimachinery v0.35.2
 	k8s.io/client-go v0.35.2
-	k8s.io/component-base v0.35.1
+	k8s.io/component-base v0.35.2
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
 	open-cluster-management.io/addon-framework v1.2.1-0.20260204021841-348aab340dbf
 	open-cluster-management.io/api v1.2.0
@@ -201,15 +201,15 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	helm.sh/helm/v3 v3.19.4 // indirect
 	k8s.io/apiextensions-apiserver v0.35.1 // indirect
-	k8s.io/apiserver v0.35.1 // indirect
+	k8s.io/apiserver v0.35.2 // indirect
 	k8s.io/autoscaler/vertical-pod-autoscaler v1.3.0 // indirect
 	k8s.io/cloud-provider v0.35.0 // indirect
 	k8s.io/component-helpers v0.35.0 // indirect
 	k8s.io/csi-translation-lib v0.35.0 // indirect
 	k8s.io/klog v1.0.0 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
-	k8s.io/kms v0.35.1 // indirect
-	k8s.io/kube-aggregator v0.34.2 // indirect
+	k8s.io/kms v0.35.2 // indirect
+	k8s.io/kube-aggregator v0.35.2 // indirect
 	k8s.io/kube-openapi v0.0.0-20251125145642-4e65d59e963e // indirect
 	kubevirt.io/api v1.7.0 // indirect
 	kubevirt.io/containerized-data-importer-api v1.63.1 // indirect

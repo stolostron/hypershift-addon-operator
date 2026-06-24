@@ -65,6 +65,78 @@ For system architecture, data flows, and module layout, see [docs/ARCHITECTURE.m
 - **Constants:** shared names, namespaces, labels, and image defaults in `pkg/util/constant.go`
 - **Scheme registration:** no project-owned CRDs — consumes types from OCM, HyperShift, OpenShift, MCE, discovery, OLM
 
+## TLS configuration (mandatory — release blocker ACM-26882)
+
+> **This is a release blocker for OCP 4.23 / ACM 5.0.** All new TLS code MUST follow the
+> pattern below. See `.cursor/rules/tls-compliance.mdc` for the full rule with forbidden patterns.
+
+This repo inherits its TLS settings from the cluster's central configuration source
+(`apiservers.config.openshift.io/cluster`) via `github.com/openshift/controller-runtime-common/pkg/tls`.
+**Never hardcode** `MinVersion`, `CipherSuites`, or `CurvePreferences`.
+
+### Mandatory 4-step pattern for any new TLS server or client
+
+**Step 1 — Fetch at manager startup** (`manager.go`)
+```go
+profileSpec, err := tlspkg.FetchAPIServerTLSProfile(ctx, hubClient)
+if err != nil {  // fallback for kind/non-OpenShift clusters
+    profileSpec, _ = tlspkg.GetTLSProfileSpec(nil)  // Intermediate (TLS 1.2+)
+}
+```
+
+**Step 2 — TLS server** — apply profile to the HTTPS listener
+```go
+tlsCfgFn, _ := tlspkg.NewTLSConfigFromProfile(profileSpec)
+tlsCfg := &tls.Config{Certificates: []tls.Certificate{cert}}
+tlsCfgFn(tlsCfg)  // sets MinVersion + CipherSuites — do NOT set them yourself
+```
+
+**Step 3 — Outbound HTTP clients** — always use `buildHTTPClient`
+```go
+// buildHTTPClient overlays the TLS profile onto rest.TLSConfigFor + HTTPWrappersForConfig
+client, err := p.buildHTTPClient(30 * time.Second)
+```
+Never create `http.Client` / `http.Transport` with a bare `tls.Config{}` directly.
+
+**Step 4 — Runtime watch** — restart on profile change
+```go
+watcher := &tlspkg.SecurityProfileWatcher{..., OnProfileChange: func(...) { cancelManager() }}
+watcher.SetupWithManager(mgr)
+```
+
+### Serving certificate generation — use library-go, not stdlib crypto
+
+```go
+import libgocrypto "github.com/openshift/library-go/pkg/crypto"
+// Use libgocrypto.MakeSelfSignedCAConfigForDuration + CA.MakeServerCert
+// See generateSelfSignedCert() in pkg/manager/hcp_proxy.go for the full pattern.
+```
+Do **not** use `crypto/ecdsa`, `x509.CreateCertificate`, `math/big`, or `encoding/pem` directly.
+
+### RBAC required for every component using the TLS profile
+The backplane-operator hypershift-addon-manager ClusterRole must include:
+```yaml
+- apiGroups: ["config.openshift.io"]
+  resources: ["apiservers"]
+  verbs: ["get", "list", "watch"]
+```
+For kind e2e, keep `test/e2e/addon-manager-deployment.yaml` in sync.
+
+## Cross-repo dependencies
+
+### backplane-operator (hub manager manifests)
+
+The hub manager pod (Deployment, ClusterRole, ServiceAccount, HCP proxy Service,
+APIService, and proxy RBAC) is **not** applied at runtime by this repo. It is
+defined in:
+
+  `stolostron/backplane-operator`
+  `pkg/templates/charts/toggle/hypershift/templates/`
+
+When adding new container ports, RBAC rules, or env vars to the hub manager, you
+**must** also update the corresponding template in `backplane-operator`. See
+`.cursor/rules/backplane-operator-sync.mdc` for the detailed sync checklist.
+
 ## CI systems
 
 - **Prow:** OpenShift CI for release branches (config in `openshift/release` repo)
