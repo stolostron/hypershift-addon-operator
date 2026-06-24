@@ -397,6 +397,14 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 				c.secretDataUpdated(util.HypershiftExternalDNSSecretName, *sExtDNS) ||
 				c.configmapDataUpdated(util.HypershiftInstallFlagsCM, installFlagsCM)) {
 			c.log.Info("no image/secret/install-flag change, skip hypershift operator installation")
+
+			if err := c.updateHyperShiftDeployment(ctx); err != nil {
+				c.log.Error(err, "failed to update the hypershift operator deployment")
+			}
+			if err := c.updateExtDnsDeployment(ctx); err != nil {
+				c.log.Error(err, "failed to update the external DNS operator deployment")
+			}
+
 			return nil
 		}
 	} else {
@@ -788,12 +796,37 @@ func (c *UpgradeController) operatorUpgradable(ctx context.Context) (error, bool
 	return nil, true, obj
 }
 
+func (c *UpgradeController) getAgentPodPlacement() ([]corev1.Toleration, map[string]string) {
+	selfPodNamespace := os.Getenv("POD_NAMESPACE")
+	if len(selfPodNamespace) == 0 {
+		return nil, nil
+	}
+
+	selfPodName := os.Getenv("POD_NAME")
+	if len(selfPodName) == 0 {
+		return nil, nil
+	}
+
+	pod := &corev1.Pod{}
+	key := types.NamespacedName{Namespace: selfPodNamespace, Name: selfPodName}
+	if err := c.spokeUncachedClient.Get(context.TODO(), key, pod); err != nil {
+		c.log.Error(err, "failed getting addon agent pod for nodeSelector or tolerations")
+		return nil, nil
+	}
+	
+	return pod.Spec.Tolerations, pod.Spec.NodeSelector
+}
+
 func (c *UpgradeController) updateHyperShiftDeployment(ctx context.Context) error {
 	obj := &appsv1.Deployment{}
 
 	if err := c.spokeUncachedClient.Get(ctx, hypershiftOperatorKey, obj); err != nil {
 		return err
 	}
+
+	tolerations, nodeSelector := c.getAgentPodPlacement()
+	obj.Spec.Template.Spec.Tolerations = tolerations
+	obj.Spec.Template.Spec.NodeSelector = nodeSelector
 
 	// Update pull image
 	if c.pullSecret != "" {
@@ -832,6 +865,10 @@ func (c *UpgradeController) updateExtDnsDeployment(ctx context.Context) error {
 	if err := c.spokeUncachedClient.Get(ctx, externalDNSOperatorKey, obj); err != nil {
 		return err
 	}
+
+	tolerations, nodeSelector := c.getAgentPodPlacement()
+	obj.Spec.Template.Spec.Tolerations = tolerations
+	obj.Spec.Template.Spec.NodeSelector = nodeSelector
 
 	// Update pull image
 	if c.pullSecret != "" {
