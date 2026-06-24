@@ -2,7 +2,6 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -67,7 +66,7 @@ func (c *HcpKubeconfigChangeWatcher) SetupWithManager(mgr ctrl.Manager) error {
 }
 
 func (c *HcpKubeconfigChangeWatcher) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	c.log.Info(fmt.Sprintf("Hosted Cluster admin kubeconfig %s updated.", req.Name))
+	c.log.Info("Hosted Cluster admin kubeconfig updated", "secret", req.Name)
 
 	theSecret := &corev1.Secret{}
 	err := c.spokeClient.Get(ctx, req.NamespacedName, theSecret)
@@ -88,10 +87,10 @@ func (c *HcpKubeconfigChangeWatcher) Reconcile(ctx context.Context, req ctrl.Req
 			if err = c.spokeClient.Get(ctx, hcNN, hostedClusterObj); err != nil {
 				if apierrors.IsNotFound(err) {
 					// HostedCluster deleted between predicate check and reconcile; nothing to do.
-					c.log.Info(fmt.Sprintf("Owning hosted cluster %s no longer exists, skipping annotation.", owner.Name))
+					c.log.Info("Owning hosted cluster no longer exists, skipping annotation", "hostedCluster", owner.Name)
 					return ctrl.Result{}, nil
 				}
-				c.log.Error(err, fmt.Sprintf("Failed to find the owning hosted cluster %s.", owner.Name))
+				c.log.Error(err, "Failed to find the owning hosted cluster", "hostedCluster", owner.Name)
 				return ctrl.Result{}, err
 			}
 			hcFound = true
@@ -99,23 +98,24 @@ func (c *HcpKubeconfigChangeWatcher) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	if !hcFound {
-		// No HostedCluster owner reference found on the secret; this should not happen
-		// if the predicate is working correctly, but guard against race conditions.
-		return ctrl.Result{}, fmt.Errorf("no HostedCluster owner reference found on admin kubeconfig %s", req.Name)
+		// No HostedCluster owner reference found; guard against race conditions.
+		// This is a terminal state for this secret — do not requeue.
+		c.log.Info("No HostedCluster owner reference found on admin kubeconfig, skipping", "secret", req.Name, "namespace", req.Namespace)
+		return ctrl.Result{}, nil
 	}
 
 	originalHC := hostedClusterObj.DeepCopy()
 
 	// Add/update the annotation to the hostedcluster
-	if hostedClusterObj.ObjectMeta.Annotations == nil { // Create the annotation map if it doesn't exist
+	if hostedClusterObj.ObjectMeta.Annotations == nil {
 		hostedClusterObj.ObjectMeta.Annotations = make(map[string]string)
 	}
 
 	currentTime := time.Now()
 	hostedClusterObj.Annotations[hcAnnotation] = currentTime.Format(time.RFC3339)
-	c.log.Info(fmt.Sprintf("Annotated %s with %s", hostedClusterObj.Name, hcAnnotation))
+	c.log.Info("Annotated HostedCluster with kubeconfig update timestamp", "hostedCluster", hostedClusterObj.Name, "annotation", hcAnnotation)
 
-	if err := c.spokeClient.Patch(ctx, hostedClusterObj, client.MergeFromWithOptions(originalHC)); err != nil { //Add/update hostedcluster annotation
+	if err := c.spokeClient.Patch(ctx, hostedClusterObj, client.MergeFromWithOptions(originalHC)); err != nil {
 		return ctrl.Result{}, err
 	}
 
