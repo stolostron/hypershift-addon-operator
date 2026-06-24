@@ -36,6 +36,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -151,6 +152,13 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		LeaderElection:         false,
 		Metrics: server.Options{
 			BindAddress: o.MetricAddr,
+		},
+		// Increase the default 2-minute cache sync timeout. On loaded clusters the
+		// API server may be slow to deliver the initial-list bookmark event; crashing
+		// and restarting only makes the problem worse. 10 minutes gives enough headroom
+		// without hiding a genuinely stuck informer.
+		Controller: ctrlconfig.Controller{
+			CacheSyncTimeout: 10 * time.Minute,
 		},
 	})
 
