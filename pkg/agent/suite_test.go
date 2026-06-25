@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -40,6 +41,12 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	// Controller reconciliation under envtest can take several seconds, especially
+	// in CI. Raise the default so all Eventually() calls in this suite have
+	// enough time without needing per-call timeouts.
+	SetDefaultEventuallyTimeout(30 * time.Second)
+	SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
+
 	zapLogger := zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
 	logf.SetLogger(zapLogger)
 	ctx, cancel = context.WithCancel(context.TODO())
