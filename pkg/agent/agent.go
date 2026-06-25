@@ -30,13 +30,13 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	ctrlconfig "sigs.k8s.io/controller-runtime/pkg/config"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/event"
@@ -143,6 +143,25 @@ func (o *AgentOptions) AddFlags(cmd *cobra.Command) {
 func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	log := o.Log.WithName("controller-manager-setup")
 
+	// Disable WatchListClient feature gate (ACM-36014).
+	// In client-go v0.35+, WatchListClient defaults to true (Beta), enabling
+	// sendInitialEvents=true for all informers. This requires the API server to
+	// deliver a k8s.io/initial-events-end BOOKMARK event before the informer
+	// is considered synced. For several custom-resource types watched by this
+	// agent (HostedCluster, Klusterlet, …) that BOOKMARK never arrives, so
+	// all 7 caches time out and the pod crash-loops every CacheSyncTimeout.
+	// Falling back to standard List+Watch avoids the BOOKMARK dependency and
+	// allows caches to sync reliably.
+	if fg, ok := clientfeatures.FeatureGates().(interface {
+		Set(clientfeatures.Feature, bool) error
+	}); ok {
+		if err := fg.Set(clientfeatures.WatchListClient, false); err != nil {
+			log.Info("could not disable WatchListClient feature gate", "err", err)
+		}
+	} else if err := os.Setenv("KUBE_FEATURE_WatchListClient", "false"); err != nil {
+		log.Error(err, "failed to set KUBE_FEATURE_WatchListClient env var")
+	}
+
 	flag.Parse()
 
 	spokeConfig := ctrl.GetConfigOrDie()
@@ -152,13 +171,6 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		LeaderElection:         false,
 		Metrics: server.Options{
 			BindAddress: o.MetricAddr,
-		},
-		// Increase the default 2-minute cache sync timeout. On loaded clusters the
-		// API server may be slow to deliver the initial-list bookmark event; crashing
-		// and restarting only makes the problem worse. 10 minutes gives enough headroom
-		// without hiding a genuinely stuck informer.
-		Controller: ctrlconfig.Controller{
-			CacheSyncTimeout: 10 * time.Minute,
 		},
 	})
 
