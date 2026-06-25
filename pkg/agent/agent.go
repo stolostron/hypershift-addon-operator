@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	clientfeatures "k8s.io/client-go/features"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
@@ -142,6 +143,26 @@ func (o *AgentOptions) AddFlags(cmd *cobra.Command) {
 
 func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 	log := o.Log.WithName("controller-manager-setup")
+
+	// Disable WatchListClient feature gate (ACM-36014).
+	// In client-go v0.35+, WatchListClient defaults to true (Beta), enabling
+	// sendInitialEvents=true for all informers. This requires the API server to
+	// deliver a k8s.io/initial-events-end BOOKMARK event before the informer
+	// is considered synced. For several custom-resource types watched by this
+	// agent (HostedCluster, Klusterlet, …) that BOOKMARK never arrives, so
+	// all 7 caches time out and the pod crash-loops every CacheSyncTimeout.
+	// Falling back to standard List+Watch avoids the BOOKMARK dependency and
+	// allows caches to sync reliably.
+	if fg, ok := clientfeatures.FeatureGates().(interface {
+		Set(clientfeatures.Feature, bool) error
+	}); ok {
+		if err := fg.Set(clientfeatures.WatchListClient, false); err != nil {
+			log.Info("could not disable WatchListClient feature gate, falling back to env var", "err", err)
+			os.Setenv("KUBE_FEATURE_WatchListClient", "false") //nolint:errcheck
+		}
+	} else {
+		os.Setenv("KUBE_FEATURE_WatchListClient", "false") //nolint:errcheck
+	}
 
 	flag.Parse()
 
