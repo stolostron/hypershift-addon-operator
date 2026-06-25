@@ -109,6 +109,14 @@ var _ = BeforeSuite(func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
+
+	// Wait for the manager's informer caches to complete their initial sync
+	// before any test runs. Without this, tests that create resources immediately
+	// after BeforeSuite may run while the controller watches are still starting
+	// their initial list. In that window, resource-creation events are missed,
+	// the reconciler is never triggered, and Eventually() times out regardless
+	// of how long the timeout is.
+	Expect(k8sManager.GetCache().WaitForCacheSync(ctx)).To(BeTrue())
 })
 
 var _ = AfterSuite(func() {
