@@ -156,15 +156,10 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		Set(clientfeatures.Feature, bool) error
 	}); ok {
 		if err := fg.Set(clientfeatures.WatchListClient, false); err != nil {
-			log.Info("could not disable WatchListClient feature gate, falling back to env var", "err", err)
-			if envErr := os.Setenv("KUBE_FEATURE_WatchListClient", "false"); envErr != nil {
-				log.Error(envErr, "failed to set KUBE_FEATURE_WatchListClient env var")
-			}
+			log.Info("could not disable WatchListClient feature gate", "err", err)
 		}
-	} else {
-		if envErr := os.Setenv("KUBE_FEATURE_WatchListClient", "false"); envErr != nil {
-			log.Error(envErr, "failed to set KUBE_FEATURE_WatchListClient env var")
-		}
+	} else if err := os.Setenv("KUBE_FEATURE_WatchListClient", "false"); err != nil {
+		log.Error(err, "failed to set KUBE_FEATURE_WatchListClient env var")
 	}
 
 	flag.Parse()

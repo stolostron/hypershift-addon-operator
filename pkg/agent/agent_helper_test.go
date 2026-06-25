@@ -420,4 +420,3 @@ func Test_createClient_FallbackTLS(t *testing.T) {
 	assert.Nil(t, err, "createClient should not error even without APIServer (falls back to Intermediate)")
 	assert.NotNil(t, api, "should return a valid Prometheus API client with fallback TLS")
 }
-
