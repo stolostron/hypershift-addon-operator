@@ -57,12 +57,6 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
-# Use the locally-installed Go toolchain instead of auto-downloading one.
-# setup-envtest@release-0.19 (v0.24.1) declares go 1.26 in its own module, which
-# would otherwise cause Go 1.25 CI to download a minimal Go 1.26 without covdata
-# (golang/go#75031). GOTOOLCHAIN=local keeps the CI builder's full install in place.
-export GOTOOLCHAIN=local
-
 .PHONY: test
 test: fmt vet envtest ## Run tests (with coverage).
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test $(shell go list -f '{{if .TestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v /test/e2e) -coverprofile cover.out
