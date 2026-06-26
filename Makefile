@@ -7,7 +7,8 @@ IMG ?= $(REPO)hypershift-addon-operator:latest
 IMG_CANARY ?= $(REPO)hypershift-addon-operator-canary-test:latest
 
 # ENVTEST_K8S_VERSION refers to the version of kubebuilder assets to be downloaded by envtest binary.
-ENVTEST_K8S_VERSION = 1.22
+# 1.22 was dropped by modern setup-envtest; use 1.28.3 which is still available for linux/amd64.
+ENVTEST_K8S_VERSION = 1.28.3
 
 KUBECTL?=kubectl
 
@@ -94,7 +95,9 @@ ifndef ignore-not-found
 endif
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
-ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+# Pin to the release branch matching our controller-runtime version (v0.19.6) instead
+# of @latest to avoid pulling in a version that requires a newer Go toolchain.
+ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.19
 .PHONY: envtest
 envtest: ## Download envtest-setup locally if necessary.
 	$(call go-get-tool,$(ENVTEST),$(ENVTEST_PACKAGE))
@@ -112,8 +115,7 @@ TMP_DIR=$$(mktemp -d) ;\
 cd $$TMP_DIR ;\
 go mod init tmp ;\
 echo "Downloading $(2)" ;\
-GOBIN=$(PROJECT_DIR)/bin go get -d $(2) ;\
-GOBIN=$(PROJECT_DIR)/bin go install $(3) ;\
+GOBIN=$(PROJECT_DIR)/bin go install $(2) ;\
 rm -rf $$TMP_DIR ;\
 }
 endef

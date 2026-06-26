@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -40,6 +41,12 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	// Controller reconciliation under envtest can take several seconds, especially
+	// in CI. Raise the default so all Eventually() calls in this suite have
+	// enough time without needing per-call timeouts.
+	SetDefaultEventuallyTimeout(30 * time.Second)
+	SetDefaultEventuallyPollingInterval(100 * time.Millisecond)
+
 	zapLogger := zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
 	logf.SetLogger(zapLogger)
 	ctx, cancel = context.WithCancel(context.TODO())
@@ -102,6 +109,14 @@ var _ = BeforeSuite(func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
+
+	// Wait for the manager's informer caches to complete their initial sync
+	// before any test runs. Without this, tests that create resources immediately
+	// after BeforeSuite may run while the controller watches are still starting
+	// their initial list. In that window, resource-creation events are missed,
+	// the reconciler is never triggered, and Eventually() times out regardless
+	// of how long the timeout is.
+	Expect(k8sManager.GetCache().WaitForCacheSync(ctx)).To(BeTrue())
 })
 
 var _ = AfterSuite(func() {
