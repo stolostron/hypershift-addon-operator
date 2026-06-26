@@ -119,7 +119,7 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownload() {
 	defer o.Client.Delete(context.TODO(), newmce)
 
 	// This should get no MCE CSV (error case)
-	csv, err := GetMCECSV(o.Client, o.log)
+	csv, err := GetMCECSV(context.Background(), o.Client, o.log)
 	suite.NotNil(err, "no MCE CSV found")
 
 	// Create upstream MCE 2.1.0 CSV
@@ -135,7 +135,7 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownload() {
 	defer o.Client.Delete(context.TODO(), newcsv)
 
 	// This should get upstream MCE 2.1.1 CSV
-	csv, err = GetMCECSV(o.Client, o.log)
+	csv, err = GetMCECSV(context.Background(), o.Client, o.log)
 	suite.Nil(err, "err nil when mce csv is found")
 	suite.Equal("multicluster-engine.v2.1.1", csv.Name)
 
@@ -156,7 +156,7 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownload() {
 	defer o.Client.Delete(context.TODO(), newcsv)
 
 	// This should get MCE 2.2.1 CSV
-	csv, err = GetMCECSV(o.Client, o.log)
+	csv, err = GetMCECSV(context.Background(), o.Client, o.log)
 	suite.Nil(err, "err nil when mce csv is found")
 	suite.Equal("multicluster-engine.v2.2.1", csv.Name)
 
@@ -224,7 +224,7 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownload() {
 	// The previous version of hypershift-cli-download resources are now created
 	defer o.Client.Delete(context.TODO(), oldCliRoute)
 
-	err = EnableHypershiftCLIDownload(o.Client, o.log)
+	err = EnableHypershiftCLIDownload(context.Background(), o.Client, o.log)
 	suite.Nil(err, "err nil when hypershift CLI download is deployed successfully")
 
 	// Check hypershift CLI deployment
@@ -346,7 +346,7 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadNoConsole() {
 	suite.Nil(err, "could not create test MCE")
 
 	// This should get no MCE CSV (error case)
-	csv, err := GetMCECSV(o.Client, o.log)
+	csv, err := GetMCECSV(context.Background(), o.Client, o.log)
 	suite.NotNil(err, "no MCE CSV found")
 
 	// Create upstream MCE 2.1.0 CSV
@@ -360,7 +360,7 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadNoConsole() {
 	suite.Nil(err, "err nil when mce csv is created successfull")
 
 	// This should get upstream MCE 2.1.1 CSV
-	csv, err = GetMCECSV(o.Client, o.log)
+	csv, err = GetMCECSV(context.Background(), o.Client, o.log)
 	suite.Nil(err, "err nil when mce csv is found")
 	suite.Equal("multicluster-engine.v2.1.1", csv.Name)
 
@@ -379,7 +379,7 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadNoConsole() {
 	suite.Nil(err, "err nil when mce csv is created successfull")
 
 	// This should get MCE 2.2.1 CSV
-	csv, err = GetMCECSV(o.Client, o.log)
+	csv, err = GetMCECSV(context.Background(), o.Client, o.log)
 	suite.Nil(err, "err nil when mce csv is found")
 	suite.Equal("multicluster-engine.v2.2.1", csv.Name)
 
@@ -404,7 +404,7 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadNoConsole() {
 	err = o.Client.Create(context.TODO(), clusterRole)
 	suite.Nil(err, "err nil when addon clusterRole is created successfully")
 
-	err = EnableHypershiftCLIDownload(o.Client, o.log)
+	err = EnableHypershiftCLIDownload(context.Background(), o.Client, o.log)
 	suite.Nil(err, "err nil when hypershift CLI download is deployed successfully")
 
 	// Check hypershift CLI deployment
@@ -782,7 +782,7 @@ func (suite *CLIDownloadTestSuite) asyncClusterRole(o *override, s *runtime.Sche
 }
 
 func asyncEnableHypershiftCLIDownload(mockClient client.Client, log logr.Logger, c chan error) {
-	err := EnableHypershiftCLIDownload(mockClient, log)
+	err := EnableHypershiftCLIDownload(context.Background(), mockClient, log)
 	c <- err
 	log.Info("Successfully enabled HypershiftCLIDownload after retrying")
 	if err != nil {
