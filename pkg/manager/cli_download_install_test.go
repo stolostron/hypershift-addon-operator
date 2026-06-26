@@ -274,6 +274,15 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownload() {
 	suite.Nil(err, "err nil when hypershift CLI download ConsoleCLIDownload exists")
 	suite.Equal("open-cluster-management:hypershift:hypershift-addon-manager", cliDownload.OwnerReferences[0].Name)
 
+	// Verify links use the flat hcp-<os>-<arch>.tar.gz naming (openshift/hypershift#8649)
+	suite.Equal(8, len(cliDownload.Spec.Links), "expected 8 download links")
+	for _, link := range cliDownload.Spec.Links {
+		suite.Contains(link.Href, "/hcp-", "link href should use flat hcp-<os>-<arch>.tar.gz format: "+link.Href)
+		suite.NotContains(link.Href, "/linux/", "link href should not use old directory-path format: "+link.Href)
+		suite.NotContains(link.Href, "/darwin/", "link href should not use old directory-path format: "+link.Href)
+		suite.NotContains(link.Href, "/windows/", "link href should not use old directory-path format: "+link.Href)
+	}
+
 	// Check the old hypershift-cli-download resources are deleted
 	removedCliDeployment := &appsv1.Deployment{}
 	removedCliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: OldCLIDownloadResourceName}

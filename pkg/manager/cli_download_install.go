@@ -427,36 +427,38 @@ func getConsoleDownload(routeUrl string, log logr.Logger) (*consolev1.ConsoleCLI
 
 	links := []consolev1.CLIDownloadLink{}
 
+	// Archive filenames follow the flat hcp-<os>-<arch>.tar.gz naming convention
+	// introduced in openshift/hypershift#8649.
 	links = append(links,
 		consolev1.CLIDownloadLink{
-			Href: "https://" + routeUrl + "/linux/amd64/hcp.tar.gz",
+			Href: "https://" + routeUrl + "/hcp-linux-amd64.tar.gz",
 			Text: "Download hcp CLI for Linux for x86_64"},
 		consolev1.CLIDownloadLink{
-			Href: "https://" + routeUrl + "/darwin/amd64/hcp.tar.gz",
+			Href: "https://" + routeUrl + "/hcp-darwin-amd64.tar.gz",
 			Text: "Download hcp CLI for Mac for x86_64",
 		},
 		consolev1.CLIDownloadLink{
-			Href: "https://" + routeUrl + "/windows/amd64/hcp.tar.gz",
+			Href: "https://" + routeUrl + "/hcp-windows-amd64.tar.gz",
 			Text: "Download hcp CLI for Windows for x86_64",
 		},
 		consolev1.CLIDownloadLink{
-			Href: "https://" + routeUrl + "/linux/arm64/hcp.tar.gz",
+			Href: "https://" + routeUrl + "/hcp-linux-arm64.tar.gz",
 			Text: "Download hcp CLI for Linux for ARM 64",
 		},
 		consolev1.CLIDownloadLink{
-			Href: "https://" + routeUrl + "/darwin/arm64/hcp.tar.gz",
+			Href: "https://" + routeUrl + "/hcp-darwin-arm64.tar.gz",
 			Text: "Download hcp CLI for Mac for ARM 64",
 		},
 		consolev1.CLIDownloadLink{
-			Href: "https://" + routeUrl + "/linux/ppc64/hcp.tar.gz",
-			Text: "Download hcp CLI for Linux for IBM Power",
+			Href: "https://" + routeUrl + "/hcp-windows-arm64.tar.gz",
+			Text: "Download hcp CLI for Windows for ARM 64",
 		},
 		consolev1.CLIDownloadLink{
-			Href: "https://" + routeUrl + "/linux/ppc64le/hcp.tar.gz",
+			Href: "https://" + routeUrl + "/hcp-linux-ppc64le.tar.gz",
 			Text: "Download hcp CLI for Linux for IBM Power, little endian",
 		},
 		consolev1.CLIDownloadLink{
-			Href: "https://" + routeUrl + "/linux/s390x/hcp.tar.gz",
+			Href: "https://" + routeUrl + "/hcp-linux-s390x.tar.gz",
 			Text: "Download hcp CLI for Linux for IBM Z",
 		})
 
