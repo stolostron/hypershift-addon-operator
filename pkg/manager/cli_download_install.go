@@ -221,7 +221,15 @@ func deployHCPCLIDownload(hubclient client.Client, cliImage string, log logr.Log
 		}
 		// set ownerRef for garbage collection after the hypershift feature is disabled
 		cliDownload.SetOwnerReferences([]metav1.OwnerReference{*clusterScopedOwnerRef})
-		_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, cliDownload, func() error { return nil })
+		// Capture the desired links and owner refs so the mutate function can apply them
+		// even when CreateOrUpdate overwrites the object with the current cluster state.
+		desiredLinks := cliDownload.Spec.Links
+		desiredOwnerRefs := cliDownload.GetOwnerReferences()
+		_, err = controllerutil.CreateOrUpdate(context.TODO(), hubclient, cliDownload, func() error {
+			cliDownload.Spec.Links = desiredLinks
+			cliDownload.SetOwnerReferences(desiredOwnerRefs)
+			return nil
+		})
 		if err != nil {
 			log.Error(err, "failed to create or update hcp-cli-download ConsoleCLIDownload")
 			return err
