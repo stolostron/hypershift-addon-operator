@@ -39,8 +39,12 @@ func EnableHypershiftCLIDownload(ctx context.Context, hubclient client.Client, l
 	var err error
 	for try := 1; try <= 5; try++ {
 		if try != 1 {
-			log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace, retrying in 2 minutes (attempt "+strconv.Itoa(try)+"/5)")
-			time.Sleep(2 * time.Minute)
+			log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace, retrying in 2 minutes", "attempt", strconv.Itoa(try)+"/5")
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Minute):
+			}
 		}
 		csv, err = GetMCECSV(ctx, hubclient, log)
 		if err == nil {
@@ -151,7 +155,7 @@ func deployHCPCLIDownload(ctx context.Context, hubclient client.Client, cliImage
 		// CLI download resources are renamed. Remove resources with old names
 		removeHypershiftCLIDownload(ctx, hubclient, installNamespace, log)
 
-		log.Info("deploying hcp CLI download in namespace " + installNamespace)
+		log.Info("deploying hcp CLI download", "namespace", installNamespace)
 
 		// Deployment
 		deployment, err := getCLIDeployment(ctx, cliImage, envVars, log, installNamespace, hubclient)
@@ -250,7 +254,7 @@ func removeHypershiftCLIDownload(ctx context.Context, hubclient client.Client, i
 	if err == nil {
 		deleteErr := hubclient.Delete(ctx, cliDownload)
 		if deleteErr != nil {
-			log.Error(err, "failed to delete hypershift-cli-download ConsoleCLIDownload")
+			log.Error(deleteErr, "failed to delete hypershift-cli-download ConsoleCLIDownload")
 		}
 	} else {
 		if !apierrors.IsNotFound(err) {
@@ -264,7 +268,7 @@ func removeHypershiftCLIDownload(ctx context.Context, hubclient client.Client, i
 	if err == nil {
 		deleteErr := hubclient.Delete(ctx, cliRoute)
 		if deleteErr != nil {
-			log.Error(err, "failed to delete hypershift-cli-download Route")
+			log.Error(deleteErr, "failed to delete hypershift-cli-download Route")
 		}
 	} else {
 		if !apierrors.IsNotFound(err) {
@@ -278,7 +282,7 @@ func removeHypershiftCLIDownload(ctx context.Context, hubclient client.Client, i
 	if err == nil {
 		deleteErr := hubclient.Delete(ctx, cliService)
 		if deleteErr != nil {
-			log.Error(err, "failed to delete hypershift-cli-download Service")
+			log.Error(deleteErr, "failed to delete hypershift-cli-download Service")
 		}
 	} else {
 		if !apierrors.IsNotFound(err) {
@@ -292,7 +296,7 @@ func removeHypershiftCLIDownload(ctx context.Context, hubclient client.Client, i
 	if err == nil {
 		deleteErr := hubclient.Delete(ctx, cliDeployment)
 		if deleteErr != nil {
-			log.Error(err, "failed to delete hypershift-cli-download Deployment")
+			log.Error(deleteErr, "failed to delete hypershift-cli-download Deployment")
 		}
 	} else {
 		if !apierrors.IsNotFound(err) {
@@ -307,7 +311,7 @@ func removeHypershiftCLIDownload(ctx context.Context, hubclient client.Client, i
 	if err == nil {
 		deleteErr := hubclient.Delete(ctx, currentCliDeployment)
 		if deleteErr != nil {
-			log.Error(err, "failed to delete hcp-cli-download Deployment")
+			log.Error(deleteErr, "failed to delete hcp-cli-download Deployment")
 		}
 	} else {
 		if !apierrors.IsNotFound(err) {
