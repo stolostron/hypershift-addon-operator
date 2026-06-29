@@ -14,10 +14,10 @@ oc get mce -o name           # confirm MCE is present
 ```
 If the cluster is unreachable, ask the user for a new API URL + token.
 
-### Step 2 — Fetch the Jira issue
+### Step 2 — Fetch the Jira issue and extract test steps
 Use `user-jira-mcp-server` → `get_issue` with the issue key.
 
-Look for test/reproduction steps in these locations (in priority order):
+Look for reproduction/test steps in these locations (in priority order):
 
 1. **Comments** — scan all comments for phrases like "steps to reproduce", "how to test",
    "verification steps", "to reproduce", "test plan". These are usually written by the
@@ -25,18 +25,48 @@ Look for test/reproduction steps in these locations (in priority order):
 2. **Description** — look for a "Steps to Reproduce" or "How to verify" section.
 3. **Acceptance Criteria** field — if present, treat each item as a verification checkpoint.
 
-Extract and list all steps found before proceeding to Step 3.
+Extract and list all steps found. Keep them ready for Step 4.
 
-### Step 3 — Run the verification
+### Step 3 — Build and deploy the local fix to the cluster
+
+Before running any reproduction steps, deploy the local fix so the cluster is running the
+code you want to verify. Follow the **"Build and Deploy a Dev Image"** section below.
+
+Key commands:
+```bash
+# Pause MCE, build, deploy, and set HYPERSHIFT_ADDON_IMAGE_NAME
+MCE_NAME=$(kubectl get mce -o jsonpath='{.items[0].metadata.name}')
+kubectl annotate mce ${MCE_NAME} installer.multicluster.openshift.io/pause=true --overwrite
+kubectl scale deployment hypershift-addon-manager -n multicluster-engine --replicas=0
+oc start-build hypershift-addon-dev --from-dir=. --follow -n multicluster-engine
+DEV_IMAGE=$(oc get istag hypershift-addon-dev:latest -n multicluster-engine \
+  -o jsonpath='{.image.dockerImageReference}')
+kubectl scale deployment hypershift-addon-manager -n multicluster-engine --replicas=1
+kubectl set image deployment/hypershift-addon-manager \
+  -n multicluster-engine hypershift-addon-manager="${DEV_IMAGE}"
+kubectl set env deployment/hypershift-addon-manager \
+  -n multicluster-engine HYPERSHIFT_ADDON_IMAGE_NAME="${DEV_IMAGE}"
+kubectl rollout status deployment/hypershift-addon-manager -n multicluster-engine
+```
+
+Confirm the fix is live before continuing:
+```bash
+kubectl get pod -n multicluster-engine -l app=hypershift-addon-manager \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].image}{"\n"}{end}'
+```
+
+### Step 4 — Run the reproduction steps against the fixed cluster
+
+Now run the steps extracted from Jira in Step 2 against the cluster that has your fix deployed.
 
 **If Jira has explicit reproduction/test steps:**
 Follow them exactly in order. For each step:
 - Run the command or action described
 - Capture the output
-- Note whether the result matches what the bug described (failure) or what the fix expects (success)
+- Confirm the bug symptom is **gone** and the expected behavior is present
 
 **If Jira has no steps, derive them from the description:**
-- **What is the bug state?** Simulate it if safe (reversible patch, temp secret, rollout restart).
+- **What was the bug symptom?** Try to trigger it and confirm it no longer occurs.
 - **What is the expected state after the fix?** Assert it is now true.
 - **What does the fix code do?** Confirm the fix code path is reached in logs or cluster state.
 
@@ -152,10 +182,10 @@ echo "MCE resumed"
 > **Important:** Always resume MCE after verification. Leaving it paused will prevent MCE from
 > reconciling legitimate changes (upgrades, config updates, health recovery).
 
-### Step 4 — Clean up
+### Step 5 — Clean up
 Revert any temporary resources created during simulation (secrets, patches, restarts).
 
-### Step 5 — Post findings to Jira
+### Step 6 — Post findings to Jira
 Use `user-jira-mcp-server` → `add_comment` with:
 - Cluster URL and MCE version
 - Addon agent image SHA
