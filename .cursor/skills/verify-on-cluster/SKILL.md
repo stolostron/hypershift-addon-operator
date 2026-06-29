@@ -16,14 +16,29 @@ If the cluster is unreachable, ask the user for a new API URL + token.
 
 ### Step 2 — Fetch the Jira issue
 Use `user-jira-mcp-server` → `get_issue` with the issue key.
-Read: summary, description, comments (especially reproduction/verification steps written by the team).
+
+Look for test/reproduction steps in these locations (in priority order):
+
+1. **Comments** — scan all comments for phrases like "steps to reproduce", "how to test",
+   "verification steps", "to reproduce", "test plan". These are usually written by the
+   reporter or the engineer who fixed the bug.
+2. **Description** — look for a "Steps to Reproduce" or "How to verify" section.
+3. **Acceptance Criteria** field — if present, treat each item as a verification checkpoint.
+
+Extract and list all steps found before proceeding to Step 3.
 
 ### Step 3 — Run the verification
-Follow any documented steps in the issue comments.
-If no steps exist, derive them from the description:
-- **What is the expected state?** Assert it is true.
+
+**If Jira has explicit reproduction/test steps:**
+Follow them exactly in order. For each step:
+- Run the command or action described
+- Capture the output
+- Note whether the result matches what the bug described (failure) or what the fix expects (success)
+
+**If Jira has no steps, derive them from the description:**
 - **What is the bug state?** Simulate it if safe (reversible patch, temp secret, rollout restart).
-- **What does the fix do?** Confirm the fix code path is reached in logs or cluster state.
+- **What is the expected state after the fix?** Assert it is now true.
+- **What does the fix code do?** Confirm the fix code path is reached in logs or cluster state.
 
 Common cluster commands for this repo:
 ```bash
