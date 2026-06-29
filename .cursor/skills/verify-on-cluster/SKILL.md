@@ -43,6 +43,29 @@ oc get deployment hypershift-addon-agent -n open-cluster-management-agent-addon 
 oc get mce multiclusterengine -o jsonpath='{.status.currentVersion}'
 ```
 
+### Pausing the MCE Operator (required before patching managed resources)
+
+The MCE operator continuously reconciles its managed components and will revert manual changes.
+Pause it before making any temporary patches to deployments, images, or config:
+
+```bash
+# Get the MCE instance name
+MCE_NAME=$(kubectl get mce -o jsonpath='{.items[0].metadata.name}')
+
+# Pause MCE reconciliation
+kubectl annotate mce ${MCE_NAME} installer.multicluster.openshift.io/pause=true --overwrite
+echo "MCE paused — operator will no longer reconcile changes"
+
+# ... make your changes / run verification ...
+
+# Resume MCE reconciliation when done
+kubectl annotate mce ${MCE_NAME} installer.multicluster.openshift.io/pause- --overwrite
+echo "MCE resumed"
+```
+
+> **Important:** Always resume MCE after verification. Leaving it paused will prevent MCE from
+> reconciling legitimate changes (upgrades, config updates, health recovery).
+
 ### Step 4 — Clean up
 Revert any temporary resources created during simulation (secrets, patches, restarts).
 
