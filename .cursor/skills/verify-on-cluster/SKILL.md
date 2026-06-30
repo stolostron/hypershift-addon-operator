@@ -14,16 +14,61 @@ oc get mce -o name           # confirm MCE is present
 ```
 If the cluster is unreachable, ask the user for a new API URL + token.
 
-### Step 2 — Fetch the Jira issue
+### Step 2 — Fetch the Jira issue and extract test steps
 Use `user-jira-mcp-server` → `get_issue` with the issue key.
-Read: summary, description, comments (especially reproduction/verification steps written by the team).
 
-### Step 3 — Run the verification
-Follow any documented steps in the issue comments.
-If no steps exist, derive them from the description:
-- **What is the expected state?** Assert it is true.
-- **What is the bug state?** Simulate it if safe (reversible patch, temp secret, rollout restart).
-- **What does the fix do?** Confirm the fix code path is reached in logs or cluster state.
+Look for reproduction/test steps in these locations (in priority order):
+
+1. **Comments** — scan all comments for phrases like "steps to reproduce", "how to test",
+   "verification steps", "to reproduce", "test plan". These are usually written by the
+   reporter or the engineer who fixed the bug.
+2. **Description** — look for a "Steps to Reproduce" or "How to verify" section.
+3. **Acceptance Criteria** field — if present, treat each item as a verification checkpoint.
+
+Extract and list all steps found. Keep them ready for Step 4.
+
+### Step 3 — Build and deploy the local fix to the cluster
+
+Before running any reproduction steps, deploy the local fix so the cluster is running the
+code you want to verify. Follow the **"Build and Deploy a Dev Image"** section below.
+
+Key commands:
+```bash
+# Pause MCE, build, deploy, and set HYPERSHIFT_ADDON_IMAGE_NAME
+MCE_NAME=$(kubectl get mce -o jsonpath='{.items[0].metadata.name}')
+kubectl annotate mce ${MCE_NAME} installer.multicluster.openshift.io/pause=true --overwrite
+kubectl scale deployment hypershift-addon-manager -n multicluster-engine --replicas=0
+oc start-build hypershift-addon-dev --from-dir=. --follow -n multicluster-engine
+DEV_IMAGE=$(oc get istag hypershift-addon-dev:latest -n multicluster-engine \
+  -o jsonpath='{.image.dockerImageReference}')
+kubectl scale deployment hypershift-addon-manager -n multicluster-engine --replicas=1
+kubectl set image deployment/hypershift-addon-manager \
+  -n multicluster-engine hypershift-addon-manager="${DEV_IMAGE}"
+kubectl set env deployment/hypershift-addon-manager \
+  -n multicluster-engine HYPERSHIFT_ADDON_IMAGE_NAME="${DEV_IMAGE}"
+kubectl rollout status deployment/hypershift-addon-manager -n multicluster-engine
+```
+
+Confirm the fix is live before continuing:
+```bash
+kubectl get pod -n multicluster-engine -l app=hypershift-addon-manager \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].image}{"\n"}{end}'
+```
+
+### Step 4 — Run the reproduction steps against the fixed cluster
+
+Now run the steps extracted from Jira in Step 2 against the cluster that has your fix deployed.
+
+**If Jira has explicit reproduction/test steps:**
+Follow them exactly in order. For each step:
+- Run the command or action described
+- Capture the output
+- Confirm the bug symptom is **gone** and the expected behavior is present
+
+**If Jira has no steps, derive them from the description:**
+- **What was the bug symptom?** Try to trigger it and confirm it no longer occurs.
+- **What is the expected state after the fix?** Assert it is now true.
+- **What does the fix code do?** Confirm the fix code path is reached in logs or cluster state.
 
 Common cluster commands for this repo:
 ```bash
@@ -43,10 +88,104 @@ oc get deployment hypershift-addon-agent -n open-cluster-management-agent-addon 
 oc get mce multiclusterengine -o jsonpath='{.status.currentVersion}'
 ```
 
-### Step 4 — Clean up
+### Building and Deploying a Dev Image (when testing local code changes)
+
+Use the OpenShift in-cluster build system — no local container runtime required.
+
+#### One-time setup (create the BuildConfig)
+```bash
+cd /path/to/hypershift-addon-operator
+oc new-build --name=hypershift-addon-dev --binary --strategy=docker -n multicluster-engine
+```
+
+#### Build and deploy loop (repeat after each code change)
+```bash
+# 1. Pause MCE so it doesn't revert your image change
+MCE_NAME=$(kubectl get mce -o jsonpath='{.items[0].metadata.name}')
+kubectl annotate mce ${MCE_NAME} installer.multicluster.openshift.io/pause=true --overwrite
+
+# 2. Scale down the in-cluster manager to prevent reconcile conflicts
+kubectl scale deployment hypershift-addon-manager -n multicluster-engine --replicas=0
+
+# 3. Fix any vet issues, then trigger the in-cluster build (uploads local source)
+oc start-build hypershift-addon-dev --from-dir=. --follow -n multicluster-engine
+
+# 4. Get the newly built image reference
+DEV_IMAGE=$(oc get istag hypershift-addon-dev:latest -n multicluster-engine \
+  -o jsonpath='{.image.dockerImageReference}')
+echo "Built image: ${DEV_IMAGE}"
+
+# 5. Scale the manager back up with the new image
+kubectl scale deployment hypershift-addon-manager -n multicluster-engine --replicas=1
+kubectl set image deployment/hypershift-addon-manager \
+  -n multicluster-engine hypershift-addon-manager="${DEV_IMAGE}"
+
+# 6. Overwrite HYPERSHIFT_ADDON_IMAGE_NAME so the spoke agent also uses the dev image
+kubectl set env deployment/hypershift-addon-manager \
+  -n multicluster-engine HYPERSHIFT_ADDON_IMAGE_NAME="${DEV_IMAGE}"
+
+# 7. Wait for rollout
+kubectl rollout status deployment/hypershift-addon-manager -n multicluster-engine
+
+# 8. Verify the new image is running
+kubectl get pod -n multicluster-engine -l app=hypershift-addon-manager \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"\t"}{.spec.containers[0].image}{"\n"}{end}'
+
+# 9. Check the agent on local-cluster picked up the new image
+oc get deployment hypershift-addon-agent -n open-cluster-management-agent-addon \
+  -o jsonpath='{range .spec.template.spec.containers[*]}{.name}: {.image}{"\n"}{end}'
+```
+
+#### Run make test against the cluster
+```bash
+# Unit + integration tests (no cluster required)
+make test
+
+# Verify go vet passes before building
+make vet
+
+# If testing e2e (requires cluster, builds e2e binary first)
+make build-e2e
+# then run the e2e binary with your cluster kubeconfig
+```
+
+#### Teardown — restore MCE control
+```bash
+# Remove the dev image override (MCE will restore the original image on next reconcile)
+MCE_NAME=$(kubectl get mce -o jsonpath='{.items[0].metadata.name}')
+kubectl annotate mce ${MCE_NAME} installer.multicluster.openshift.io/pause- --overwrite
+echo "MCE resumed — will restore managed images"
+```
+
+---
+
+### Pausing the MCE Operator (required before patching managed resources)
+
+The MCE operator continuously reconciles its managed components and will revert manual changes.
+Pause it before making any temporary patches to deployments, images, or config:
+
+```bash
+# Get the MCE instance name
+MCE_NAME=$(kubectl get mce -o jsonpath='{.items[0].metadata.name}')
+
+# Pause MCE reconciliation
+kubectl annotate mce ${MCE_NAME} installer.multicluster.openshift.io/pause=true --overwrite
+echo "MCE paused — operator will no longer reconcile changes"
+
+# ... make your changes / run verification ...
+
+# Resume MCE reconciliation when done
+kubectl annotate mce ${MCE_NAME} installer.multicluster.openshift.io/pause- --overwrite
+echo "MCE resumed"
+```
+
+> **Important:** Always resume MCE after verification. Leaving it paused will prevent MCE from
+> reconciling legitimate changes (upgrades, config updates, health recovery).
+
+### Step 5 — Clean up
 Revert any temporary resources created during simulation (secrets, patches, restarts).
 
-### Step 5 — Post findings to Jira
+### Step 6 — Post findings to Jira
 Use `user-jira-mcp-server` → `add_comment` with:
 - Cluster URL and MCE version
 - Addon agent image SHA
@@ -60,7 +199,7 @@ Use `user-jira-mcp-server` → `add_comment` with:
 | Bug type | Safe simulation |
 |---|---|
 | Secret missing → addon skips step | `oc create secret ... --from-literal=...` then delete after |
-| Deployment args stripped by MCE | `oc patch deployment --type=json` to remove args; restore by re-patching the original args back (a pod restart alone will NOT restore mutated spec — the addon manager will reconcile the original spec on its next loop, or you can force it with `oc rollout restart`) |
+| Deployment args stripped by MCE | `oc patch deployment --type=json` to remove args; restore by re-patching the original args back — a restart alone will NOT restore mutated spec (the addon manager will reconcile the original spec on its next loop, or force it with `oc rollout restart`) |
 | Feature flag / config state | Edit `hypershift-operator-install-flags` configmap; revert after |
 | Addon agent startup path | `oc rollout restart deployment/hypershift-addon-agent -n open-cluster-management-agent-addon` |
 
