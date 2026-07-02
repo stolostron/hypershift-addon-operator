@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	discoveryv1 "github.com/stolostron/discovery/api/v1"
 	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 
@@ -71,6 +72,8 @@ var _ = BeforeSuite(func() {
 	err = appsv1.AddToScheme(k8sscheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 	err = discoveryv1.AddToScheme(k8sscheme.Scheme)
+	Expect(err).NotTo(HaveOccurred())
+	err = hyperv1beta1.AddToScheme(k8sscheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
 	// Register and start the Foo controller
