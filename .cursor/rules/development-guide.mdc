@@ -55,7 +55,3 @@ Release branches follow `backplane-X.YY` (e.g., `backplane-2.11`). The main deve
 3. Patch manager image: `oc set image deployment/hypershift-addon-manager -n multicluster-engine hypershift-addon-manager=<image>`
 4. Patch agent image env: `oc set env deployment/hypershift-addon-manager -n multicluster-engine HYPERSHIFT_ADDON_IMAGE_NAME=<image>`
 5. Scale MCE operator back up when done
-
-## Personal configuration
-
-Read `.claude/user.local.md` at the start of any task that needs an assignee, email, or project key. If the file does not exist, ask the user.

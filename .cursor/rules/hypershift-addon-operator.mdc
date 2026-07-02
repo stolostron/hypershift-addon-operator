@@ -1,5 +1,5 @@
 ---
-description: Project conventions for hypershift-addon-operator
+description: HyperShift Addon Operator — module layout, architecture, and coding conventions
 alwaysApply: true
 ---
 
@@ -23,14 +23,14 @@ Deploys the HyperShift operator onto managed clusters as an OCM addon for ACM / 
 ## Development Commands
 
 ```
-make build          # vendor + fmt + vet, outputs bin/hypershift-addon
-make test           # fmt + vet + envtest, runs all tests except e2e with coverage
-make test-no-cover  # same without coverage
-make fmt            # go fmt ./...
-make vet            # go vet ./...
-make vendor         # go mod tidy + go mod vendor
-make docker-build   # build container image
-make build-e2e      # compile e2e test binary
+make build            # vendor + fmt + vet, outputs bin/hypershift-addon
+make test             # fmt + vet + envtest, runs all tests except e2e with coverage
+make test-no-cover    # same without coverage
+make fmt              # go fmt ./...
+make vet              # go vet ./...
+make vendor           # go mod tidy + go mod vendor
+make docker-build     # build container image
+make build-e2e        # compile e2e test binary
 ```
 
 ## Coding Conventions
@@ -63,7 +63,7 @@ No project-owned CRDs — consumes types from OCM, HyperShift, OpenShift, MCE, d
 ## Ecosystem Integration Map
 
 | Project | Module | Role in this operator |
-|---------|--------|-----------------------|
+|---|-----|-----|
 | **OCM Addon Framework** | `open-cluster-management.io/addon-framework` | Hub-side addon lifecycle: registration, template rendering, health probes. `pkg/manager` builds on `addonmanager` + `addonfactory`. |
 | **OCM API** | `open-cluster-management.io/api` | Types: `ManagedCluster`, `ManagedClusterAddOn`, `ClusterManagementAddOn`, `AddOnDeploymentConfig`, `AddOnPlacementScore`. |
 | **HyperShift** | `github.com/openshift/hypershift` + `/api` | The operator this addon installs/upgrades on spoke clusters. Types: `HostedCluster`, `HostedControlPlane`, `NodePool`. `pkg/install` manages its deployment lifecycle. |
