@@ -111,6 +111,17 @@ var _ = BeforeSuite(func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
+
+	// Wait for the manager's informer cache to complete its initial list-watch sync
+	// before tests run. Without this, a test that creates an object and immediately
+	// updates its status can race with the cache's initial list: if the list happens
+	// after both the create and the status update, the cache receives the object in
+	// its final state with no subsequent update event, so the event filter's UpdateFunc
+	// is never called and the reconciler is never triggered.
+	By("waiting for manager cache to sync")
+	syncCtx, syncCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer syncCancel()
+	Expect(k8sManager.GetCache().WaitForCacheSync(syncCtx)).To(BeTrue(), "manager cache should sync within 30s")
 })
 
 var _ = AfterSuite(func() {
