@@ -91,3 +91,7 @@ rules:
   - apiGroups: ["operator.openshift.io"]
     resources: ["clusterapis"]
     verbs: ["get", "list", "watch", "patch"]
+  # Required to manage NetworkPolicy resources created by the addon agent (ACM-36362)
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["get", "list", "watch", "create", "patch", "update", "delete"]
