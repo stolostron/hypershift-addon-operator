@@ -56,7 +56,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.2.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.3 // indirect
 	github.com/NYTimes/gziphandler v1.1.1 // indirect
-	github.com/antlr4-go/antlr/v4 v4.13.0 // indirect
+	github.com/antlr/antlr4/runtime/Go/antlr/v4 v4.0.0-20230305170008-8188dc5388df // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/blang/semver v3.5.1+incompatible // indirect
@@ -194,6 +194,9 @@ require (
 // Copied from hypershift
 replace (
 	cloud.google.com/go/compute => cloud.google.com/go v0.93.3
+	// k8s.io/apiserver v0.29.x is incompatible with cel-go >= v0.18 (AstNode.Expr API change).
+	// Match hypershift's pin so go vet / vendor succeed.
+	github.com/google/cel-go => github.com/google/cel-go v0.17.7
 	github.com/prometheus/client_golang => github.com/prometheus/client_golang v1.18.0
 	github.com/prometheus/common => github.com/prometheus/common v0.44.0
 	sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.6.1
