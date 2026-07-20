@@ -347,8 +347,6 @@ func TestRunHypershiftRender(t *testing.T) {
 		"CustomResourceDefinition//azuremanagedmachinepools.infrastructure.cluster.x-k8s.io":                {},
 		"CustomResourceDefinition//ibmpowervsclustertemplates.infrastructure.cluster.x-k8s.io":              {},
 		"CustomResourceDefinition//kubevirtclustertemplates.infrastructure.cluster.x-k8s.io":                {},
-		"CustomResourceDefinition//certificaterevocationrequests.certificates.hypershift.openshift.io":      {},
-		"CustomResourceDefinition//certificatesigningrequestapprovals.certificates.hypershift.openshift.io": {},
 		"CustomResourceDefinition//certificatesigningrequestapprovals.hypershift.openshift.io":              {},
 	}
 
