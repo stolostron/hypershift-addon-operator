@@ -573,8 +573,8 @@ github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250624174747-899af6
 github.com/openshift/cluster-api-provider-agent/api v0.0.0-20250624174747-899af6573f5f/go.mod h1:OzR0JFhrNsvrbXEY1BiwLzzBXQGp45/8EQMKplcj1kw=
 github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87 h1:cHyxR+Y8rAMT6m1jQCaYGRwikqahI0OjjUDhFNf3ySQ=
 github.com/openshift/custom-resource-status v1.1.3-0.20220503160415-f2fdb4999d87/go.mod h1:DB/Mf2oTeiAmVVX1gN+NEqweonAPY0TKUwADizj8+ZA=
-github.com/openshift/hypershift v0.1.73 h1:E2yms05K9vSdwhXkA7BC/WnlEP9dVebOvDcj980pwXY=
-github.com/openshift/hypershift v0.1.73/go.mod h1:+dEp9AcTuzpB58k+5YDaobxMyMPeKgk0fV3zk/4RjlU=
+github.com/openshift/hypershift v0.1.74 h1:NbCB946KOYo+dOVG4uAfTWlJR97xyoAqd9KX85kuV2o=
+github.com/openshift/hypershift v0.1.74/go.mod h1:C6a08TvE+Vf/EWML7IZTk5GLUPDEuZaUdFuS8e+9V3c=
 github.com/openshift/hypershift/api v0.0.0-20260223124214-160c3b45c888 h1:wTx7uADdggUnvsVyI5ZXvVILPGTsFA5BqMPtCfi1L3g=
 github.com/openshift/hypershift/api v0.0.0-20260223124214-160c3b45c888/go.mod h1:bu6ITLvRL/bLvqleCibB56tuQ7oyWoztzAVkohV8Y5Q=
 github.com/openshift/library-go v0.0.0-20251204132909-8814e976a023 h1:N3lDu1F0sA9Equpje5Cuvs0it0L6Ef6Mmcv9eoh8jtE=
