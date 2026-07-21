@@ -206,6 +206,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 			err = k8sClient.Delete(ctx, hc)
 			Expect(err).NotTo(HaveOccurred())
 
+			os.Unsetenv("DISABLE_HC_DISCOVERY")
 		})
 	})
 

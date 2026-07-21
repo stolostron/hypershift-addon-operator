@@ -112,7 +112,7 @@ var _ = Describe("Hosted cluster kubeconfig secret change watcher", Ordered, fun
 					return ""
 				}
 				return hostedCluster.Annotations[hcAnnotation]
-			}).WithTimeout(10 * time.Second).ShouldNot(Equal(""))
+			}).ShouldNot(Equal(""))
 		})
 	})
 })

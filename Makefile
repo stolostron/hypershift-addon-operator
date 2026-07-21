@@ -60,7 +60,10 @@ vet: ## Run go vet against code.
 
 .PHONY: test
 test: fmt vet envtest ## Run tests.
-	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test $(shell go list -f '{{if .TestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v /test/e2e) -coverprofile cover.out
+	@assets=$$($(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path); \
+	if [ -z "$$assets" ]; then echo "ERROR: setup-envtest returned empty KUBEBUILDER_ASSETS for $(ENVTEST_K8S_VERSION)"; exit 1; fi; \
+	echo "KUBEBUILDER_ASSETS=$$assets"; \
+	KUBEBUILDER_ASSETS="$$assets" go test $(shell go list -f '{{if .TestGoFiles}}{{.ImportPath}}{{end}}' ./... | grep -v /test/e2e) -coverprofile cover.out
 
 ##@ Build
 .PHONY: vendor
@@ -95,9 +98,13 @@ ifndef ignore-not-found
 endif
 
 ENVTEST = $(shell pwd)/bin/setup-envtest
-# Pin to the release branch matching our controller-runtime version (v0.17.2) instead
-# of @latest to avoid pulling in a version that requires a newer Go toolchain.
-ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@release-0.17
+# Keep setup-envtest aligned with the replaced controller-runtime version.
+# release-0.17 still fetches from the deprecated GCS kubebuilder-tools bucket
+# (now 401 Unauthorized), which leaves KUBEBUILDER_ASSETS empty in CI and makes
+# envtest fall back to /usr/local/kubebuilder/bin — breaking controller watches
+# with client-go v0.35. Use Replace.Version when go.mod replaces controller-runtime.
+ENVTEST_VERSION ?= $(shell go list -m -f '{{if .Replace}}{{.Replace.Version}}{{else}}{{.Version}}{{end}}' sigs.k8s.io/controller-runtime | awk -F'[v.]' '{printf "release-%d.%d", $$2, $$3}')
+ENVTEST_PACKAGE ?= sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION)
 .PHONY: envtest
 envtest: ## Download envtest-setup locally if necessary.
 	$(call go-get-tool,$(ENVTEST),$(ENVTEST_PACKAGE))
