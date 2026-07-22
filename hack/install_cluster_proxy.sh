@@ -18,6 +18,7 @@ NAMESPACE=${CLUSTER_PROXY_NAMESPACE:-open-cluster-management-addon}
 RELEASE=${CLUSTER_PROXY_RELEASE:-cluster-proxy}
 MANAGED_CLUSTER=${MANAGED_CLUSTER_NAME:-local-cluster}
 TIMEOUT=${CLUSTER_PROXY_TIMEOUT:-300s}
+INSTALL_NS=${CLUSTER_PROXY_AGENT_NAMESPACE:-open-cluster-management-agent-addon}
 
 if ! command -v "${HELM}" >/dev/null 2>&1; then
   echo "ERROR: helm is required to install OCM cluster-proxy" >&2
@@ -50,7 +51,22 @@ done
 ${KUBECTL} get svc -n "${NAMESPACE}" cluster-proxy-addon-user
 ${KUBECTL} rollout status -n "${NAMESPACE}" deployment/cluster-proxy-addon-user --timeout="${TIMEOUT}"
 
-echo "Waiting for ManagedClusterAddOn cluster-proxy on ${MANAGED_CLUSTER}..."
+# Chart installStrategy is Placement-based; addon-manager creates the
+# ManagedClusterAddOn asynchronously. kubectl wait fails immediately with
+# NotFound if the object is missing, which races right after OCM join.
+# Ensure the MCA exists (idempotent) before waiting for Available.
+echo "Ensuring ManagedClusterAddOn cluster-proxy on ${MANAGED_CLUSTER}..."
+${KUBECTL} apply -f - <<EOF
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: ManagedClusterAddOn
+metadata:
+  name: cluster-proxy
+  namespace: ${MANAGED_CLUSTER}
+spec:
+  installNamespace: ${INSTALL_NS}
+EOF
+
+echo "Waiting for ManagedClusterAddOn cluster-proxy Available on ${MANAGED_CLUSTER}..."
 ${KUBECTL} wait --for=condition=Available=True \
   "managedclusteraddon/cluster-proxy" \
   -n "${MANAGED_CLUSTER}" \
