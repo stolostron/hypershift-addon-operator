@@ -1190,16 +1190,7 @@ func (c *agentController) SetupWithManager(mgr ctrl.Manager) error {
 func hostedClusterEventFilters() predicate.Predicate {
 	return predicate.Funcs{
 		CreateFunc: func(e event.CreateEvent) bool {
-			// Allow creates when the HC is already available. This covers:
-			// 1) Agent restart — the informer replays existing objects as creates
-			// 2) Test/startup races — the object lands in the cache before the
-			//    controller registers its handler, so only a CreateEvent is fired
-			//    (no subsequent UpdateEvent for the availability transition).
-			hc, ok := e.Object.(*hyperv1beta1.HostedCluster)
-			if !ok {
-				return false
-			}
-			return isHostedControlPlaneAvailable(*hc)
+			return false
 		},
 		UpdateFunc: func(e event.UpdateEvent) bool {
 			newHc, newOK := e.ObjectNew.(*hyperv1beta1.HostedCluster)
