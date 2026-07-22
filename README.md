@@ -48,5 +48,9 @@ NAME               AVAILABLE   DEGRADED   PROGRESSING
 hypershift-addon   True
 ```
 
+## HCP Proxy — local development & testing
+
+See [HCP Proxy local development & testing](docs/management/hcp-proxy-local-dev.md).
+
 ## Metrics Dashboard
 [Instructions here](docs/metricsDashboard/README.md)

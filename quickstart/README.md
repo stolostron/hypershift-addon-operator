@@ -62,3 +62,8 @@ https://github.com/stolostron/hypershift-addon-operator/blob/main/docs/installin
    hypershift create cluster aws --name my-cluster --namespace default --secret-creds my-aws --region us-east-1 --instance-type t3.xlarge --node-pool-replicas 1
    ```
    This creates a single worker node hosted cluster, using the `my-aws` credential in us-east-1
+
+## HCP Proxy — local development & testing
+
+For running the hub HCP proxy locally (VS Code debug, curl against `hcp.ocm.io`), see
+[HCP Proxy local development & testing](../docs/management/hcp-proxy-local-dev.md).

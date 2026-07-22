@@ -32,6 +32,8 @@ Tools and guides for managing HyperShift hosted clusters after deployment.
 - **[Discovering Hosted Clusters](./management/discovering_hostedclusters.md)** - Auto-discovery and import of hosted clusters
 - **[HyperShift Addon Status](./management/hypershift_addon_status.md)** - Monitor addon health and status
 - **[Cluster Capacity Metrics](./management/cluster_capacity_metrics_hcp.md)** - Understanding capacity planning and metrics
+- **[Managing HostedClusters from the Hub](./management/from-hub-cli.md)** - Create, edit, and delete HostedClusters via `hcp from-hub` without direct access to the hosting cluster
+- **[HCP Proxy local development & testing](./management/hcp-proxy-local-dev.md)** - Run the hub HCP proxy locally and exercise the `hcp.ocm.io` API with curl
 
 ### 🔄 [GitOps](./gitops/)
 ACM-centric guides for managing **HyperShift hosted clusters** with **Git** (typically Argo CD): secrets and hub responsibilities, discovery and auto-import, `ManagedCluster` / hosted-mode klusterlet, and hub-side troubleshooting.

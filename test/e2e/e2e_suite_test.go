@@ -24,7 +24,9 @@ func TestE2e(t *testing.T) {
 }
 
 const (
-	eventuallyTimeout  = 300
+	// Kind HCP-proxy e2e should fail fast; production OCP soak tests can override
+	// via longer per-spec Eventually timeouts if needed.
+	eventuallyTimeout  = 60
 	eventuallyInterval = 2
 )
 
@@ -69,14 +71,13 @@ var _ = ginkgo.BeforeSuite(func() {
 	}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred())
 
 	ginkgo.By("Check if the managed cluster is OCP")
-	gomega.Eventually(func() error {
-		_, err := util.GetResource(dynamicClient, util.InfrastructuresGVR, "", "cluster")
-		if err != nil {
-			return err
-		}
-		isOcp = true
-		return nil
-	}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred())
+	// Probe once — kind has no config.openshift.io Infrastructure CR. Do not
+	// Eventually-retry NotFound for 300s (that was hanging HCP proxy e2e on kind).
+	_, err = util.GetResource(dynamicClient, util.InfrastructuresGVR, "", "cluster")
+	isOcp = err == nil
+	if err != nil {
+		ginkgo.GinkgoWriter.Printf("managed cluster is not OCP (Infrastructure.cluster missing): %v\n", err)
+	}
 
 	_, err = kubeClient.CoreV1().Namespaces().Get(context.TODO(), defaultInstallNamespace, metav1.GetOptions{})
 	if apierrors.IsNotFound(err) {

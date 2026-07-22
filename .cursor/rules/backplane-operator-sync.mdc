@@ -1,0 +1,70 @@
+---
+description: Sync hub-side HCP proxy resources to backplane-operator. Apply when editing pkg/manager/hcp_proxy.go or related hub manager wiring.
+globs:
+  - pkg/manager/hcp_proxy.go
+  - pkg/manager/manager.go
+---
+
+# backplane-operator Sync Rule
+
+Hub-side HCP proxy resources (Service, APIService, ClusterRole/Binding, Deployment
+ports, manager ClusterRole rules) are provisioned by **backplane-operator**, not
+applied at runtime by this operator:
+
+  `pkg/templates/charts/toggle/hypershift/templates/`
+  (in the `stolostron/backplane-operator` repository)
+
+E2E copies of the manifests live in `test/e2e/addon-manager-deployment.yaml` for kind only.
+
+## Required syncs
+
+### New hub-facing ports
+→ Add `containerPort` entry to `hypershift-addon-manager-deployment.yaml`
+
+```yaml
+ports:
+- containerPort: 9443
+  name: hcp-proxy
+  protocol: TCP
+```
+
+### HCP proxy Service / APIService / RBAC
+→ Add or update templates in backplane-operator (Service targeting port 9443,
+APIService `v1alpha1.hcp.ocm.io`, ClusterRole/Binding for the manager SA).
+
+### New hub manager RBAC rules
+→ Add rules to `hypershift-addon-manager_clusterrole.yaml`
+
+Currently required for the HCP proxy:
+```yaml
+- apiGroups: ["clusterview.open-cluster-management.io"]
+  resources: ["userpermissions"]
+  verbs: ["get"]
+- apiGroups: ["cluster.open-cluster-management.io"]
+  resources: ["managedclusters"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["operator.open-cluster-management.io"]
+  resources: ["multiclusterhubs"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["config.openshift.io"]
+  resources: ["apiservers"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["users", "groups", "serviceaccounts"]
+  verbs: ["impersonate"]
+- apiGroups: ["authentication.k8s.io"]
+  resources: ["userextras"]
+  verbs: ["impersonate"]
+```
+
+The `config.openshift.io/apiservers` rule is required so SecurityProfileWatcher
+and `FetchAPIServerTLSProfile` can read the cluster TLS profile.
+
+### New hub ServiceAccount
+→ Add entry to `hypershift-addon-manager-serviceaccount.yaml`
+
+## Why
+The hub manager pod (Deployment, ClusterRole, ServiceAccount, Service, APIService)
+is defined in `backplane-operator`, not applied by `StartHCPProxy` in this repo.
+
+Upstream PR reference: https://github.com/stolostron/backplane-operator/tree/main/pkg/templates/charts/toggle/hypershift/templates

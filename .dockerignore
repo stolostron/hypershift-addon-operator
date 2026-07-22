@@ -1,0 +1,12 @@
+.git
+.github
+.cursor
+.work
+docs
+examples
+quickstart
+*.md
+cover.out
+e2e.test
+bin/*
+!bin/hypershift-addon

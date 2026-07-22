@@ -1,0 +1,53 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Hub Manager",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/main.go",
+      "args": [
+        "manager",
+        "--disable-leader-election",
+        "--kubeconfig", "${env:HOME}/.kube/config",
+        "--disable-tls-watcher"
+      ],
+      "env": {
+      },
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole"
+    },
+    {
+      "name": "Spoke Agent",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/main.go",
+      "args": [
+        "agent",
+        "--hub-kubeconfig", "${env:HOME}/.kube/config",
+        "--cluster-name", "local-cluster",
+        "--addon-namespace", "hypershift",
+        "--hypershfit-operator-image", "quay.io/hypershift/hypershift-operator:latest"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole"
+    },
+    {
+      "name": "Cleanup",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/cmd/main.go",
+      "args": [
+        "cleanup",
+        "--hub-kubeconfig", "${env:HOME}/.kube/config",
+        "--cluster-name", "local-cluster",
+        "--addon-namespace", "hypershift"
+      ],
+      "cwd": "${workspaceFolder}",
+      "console": "internalConsole"
+    }
+  ]
+}
