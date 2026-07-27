@@ -532,22 +532,15 @@ func (p *hcpProxy) checkHubPermission(
 	}
 
 	// Step 1 — probe API availability using the operator's own credentials (cached client).
-	// The userpermissions API is virtual: it returns results scoped to the caller's identity.
-	// The operator SA has no managedcluster:admin bindings, so a regular 404 ("not found")
-	// is expected and means the API exists. Only a 404 with "the server could not find the
-	// requested resource" means the API group itself is absent (kind / non-ACM hub).
 	if _, probeErr := p.hubDynClient.Resource(gvr).Get(ctx, "managedcluster:admin", metav1.GetOptions{}); probeErr != nil {
-		if apierrors.IsNotFound(probeErr) {
-			if strings.Contains(probeErr.Error(), "the server could not find the requested resource") {
-				// API group is not registered (kind / non-ACM hub) — skip non-fatally.
-				p.log.Info("clusterview API not installed, skipping hub permission check")
-				return nil
-			}
-			// API exists but the SA has no admin bindings — expected. Proceed to step 2.
-		} else {
-			// Fail closed: network/auth/other probe errors must not bypass authorization.
-			return fmt.Errorf("clusterview permission probe failed: %w", probeErr)
+		if apierrors.IsNotFound(probeErr) &&
+			strings.Contains(probeErr.Error(), "the server could not find the requested resource") {
+			// API group is not registered (kind / non-ACM hub) — skip non-fatally.
+			p.log.Info("clusterview API not installed, skipping hub permission check")
+			return nil
 		}
+		// Fail closed: network/auth/other probe errors must not bypass authorization.
+		return fmt.Errorf("clusterview permission probe failed: %w", probeErr)
 	}
 
 	// Step 2 — check caller's permissions under impersonation.

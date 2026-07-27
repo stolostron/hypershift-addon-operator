@@ -495,46 +495,6 @@ func Test_checkHubPermission_WhenClusterviewAPIAbsent_ItShouldSkipAndAllow(t *te
 	assert.NoError(t, err)
 }
 
-func Test_checkHubPermission_WhenProbeReturnsResourceNotFound_ItShouldProceedToStep2(t *testing.T) {
-	// Simulates a real ACM hub where the clusterview API exists but the operator SA
-	// has no managedcluster:admin bindings. The probe (step 1) returns a proper resource-level
-	// 404 — not the API-absent message. The code should proceed to step 2 (impersonated check).
-	adminUP := map[string]interface{}{
-		"apiVersion": "clusterview.open-cluster-management.io/v1alpha1",
-		"kind":       "UserPermission",
-		"metadata":   map[string]interface{}{"name": "managedcluster:admin"},
-		"status": map[string]interface{}{
-			"bindings": []interface{}{
-				map[string]interface{}{"cluster": "spoke-1"},
-			},
-		},
-	}
-	hubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Operator probe (no Impersonate header): resource-level 404 with proper Status
-		if r.Header.Get("Impersonate-User") == "" {
-			w.Header().Set(headerContentType, contentTypeJSON)
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = io.WriteString(w, `{"kind":"Status","apiVersion":"v1","status":"Failure",`+
-				`"message":"userpermissions.clusterview.open-cluster-management.io \"managedcluster:admin\" not found",`+
-				`"reason":"NotFound","code":404}`)
-			return
-		}
-		// Impersonated call (step 2): return admin bindings
-		if strings.Contains(r.URL.Path, "userpermissions/managedcluster:admin") {
-			w.Header().Set(headerContentType, contentTypeJSON)
-			w.WriteHeader(http.StatusOK)
-			_ = json.NewEncoder(w).Encode(adminUP)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer hubSrv.Close()
-
-	p := newTestProxyWithHubServer(t, hubSrv.URL)
-	err := p.checkHubPermission(context.Background(), "alice", []string{"dev"}, "spoke-1")
-	assert.NoError(t, err)
-}
-
 func Test_checkHubPermission_WhenProbeErrors_ItShouldFailClosed(t *testing.T) {
 	// Transient hub failures must not bypass authorization.
 	hubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
