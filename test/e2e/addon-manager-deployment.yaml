@@ -159,6 +159,9 @@ spec:
             # Skip TLS verify for the self-signed user-server serving cert.
             - name: CLUSTER_PROXY_INSECURE
               value: "true"
+            # kind has no clusterview API — skip hub permission check.
+            - name: SKIP_HUB_PERMISSION_CHECK
+              value: "true"
           volumeMounts:
             - mountPath: /etc/hcp-proxy/tls
               name: hcp-proxy-tls
