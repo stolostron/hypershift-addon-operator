@@ -478,10 +478,11 @@ func Test_checkHubPermission_WhenViewOnlyUser_ItShouldReturnError(t *testing.T) 
 	assert.Contains(t, err.Error(), "does not have admin access")
 }
 
-func Test_checkHubPermission_WhenClusterviewAPIAbsent_ItShouldSkipAndAllow(t *testing.T) {
-	// Simulates a kind/non-ACM hub: every request returns 404 with the
-	// "server could not find the requested resource" message, meaning the API group
-	// is not installed at all — the check is skipped non-fatally.
+func Test_checkHubPermission_WhenClusterviewAPIAbsent_WithEnvVar_ItShouldSkipAndAllow(t *testing.T) {
+	// Simulates a kind/non-ACM hub with SKIP_HUB_PERMISSION_CHECK=true:
+	// the API group is not installed and the env var allows skipping.
+	t.Setenv("SKIP_HUB_PERMISSION_CHECK", "true")
+
 	hubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(headerContentType, contentTypeJSON)
 		w.WriteHeader(http.StatusNotFound)
@@ -493,6 +494,25 @@ func Test_checkHubPermission_WhenClusterviewAPIAbsent_ItShouldSkipAndAllow(t *te
 	p := newTestProxyWithHubServer(t, hubSrv.URL)
 	err := p.checkHubPermission(context.Background(), "anyuser", nil, "spoke-1")
 	assert.NoError(t, err)
+}
+
+func Test_checkHubPermission_WhenClusterviewAPIAbsent_WithoutEnvVar_ItShouldFailClosed(t *testing.T) {
+	// Simulates a partial MCE install failure where the API is absent but
+	// SKIP_HUB_PERMISSION_CHECK is not set — should fail closed for security.
+	t.Setenv("SKIP_HUB_PERMISSION_CHECK", "")
+
+	hubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(headerContentType, contentTypeJSON)
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"kind":"Status","apiVersion":"v1","reason":"NotFound",`+
+			`"message":"the server could not find the requested resource"}`)
+	}))
+	defer hubSrv.Close()
+
+	p := newTestProxyWithHubServer(t, hubSrv.URL)
+	err := p.checkHubPermission(context.Background(), "anyuser", nil, "spoke-1")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "UserPermission is required in production")
 }
 
 func Test_checkHubPermission_WhenProbeReturnsResourceNotFound_ItShouldProceedToStep2(t *testing.T) {
@@ -1600,6 +1620,7 @@ func availableManagedCluster(name string) *clusterv1.ManagedCluster {
 // checkHubPermission (used by handleRoute) skips non-fatally in unit tests.
 func newTestProxyWithSpokeURL(t *testing.T, spokeServerURL string, objs ...runtime.Object) *hcpProxy {
 	t.Helper()
+	t.Setenv("SKIP_HUB_PERMISSION_CHECK", "true")
 	p := newTestProxy(t, objs...)
 	hubSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(headerContentType, contentTypeJSON)

@@ -539,9 +539,14 @@ func (p *hcpProxy) checkHubPermission(
 	if _, probeErr := p.hubDynClient.Resource(gvr).Get(ctx, "managedcluster:admin", metav1.GetOptions{}); probeErr != nil {
 		if apierrors.IsNotFound(probeErr) {
 			if strings.Contains(probeErr.Error(), "the server could not find the requested resource") {
-				// API group is not registered (kind / non-ACM hub) — skip non-fatally.
-				p.log.Info("clusterview API not installed, skipping hub permission check")
-				return nil
+				// API group is not registered — only skip in E2E/kind environments.
+				// On production clusters this could indicate a partial MCE install failure;
+				// skipping would be a security risk.
+				if os.Getenv("SKIP_HUB_PERMISSION_CHECK") == "true" {
+					p.log.Info("clusterview API not installed, skipping hub permission check (SKIP_HUB_PERMISSION_CHECK=true)")
+					return nil
+				}
+				return fmt.Errorf("UserPermission is required in production. Please ensure the cluster has UserPermission configured")
 			}
 			// API exists but the SA has no admin bindings — expected. Proceed to step 2.
 		} else {
