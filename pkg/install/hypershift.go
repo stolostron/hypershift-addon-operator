@@ -43,6 +43,25 @@ var (
 	}
 )
 
+const (
+	flagHypershiftImage       = "--hypershift-image"
+	flagImageRefs             = "--image-refs"
+	flagNamespace             = "--namespace"
+	flagOIDCS3BucketName      = "--oidc-storage-provider-s3-bucket-name"
+	flagOIDCS3Region          = "--oidc-storage-provider-s3-region"
+	flagOIDCS3Secret          = "--oidc-storage-provider-s3-secret"
+	flagOIDCS3Credentials     = "--oidc-storage-provider-s3-credentials"
+	flagPullSecret            = "--pull-secret"
+	flagAdditionalTrustBundle = "--additional-trust-bundle"
+	flagAWSPrivateSecret      = "--aws-private-secret"
+	flagAWSPrivateRegion      = "--aws-private-region"
+	flagAzurePrivateSecret    = "--azure-private-secret"
+	flagExternalDNSSecret     = "--external-dns-secret"
+	flagExternalDNSDomain     = "--external-dns-domain-filter"
+	flagExternalDNSProvider   = "--external-dns-provider"
+	flagExternalDNSTxtOwner   = "--external-dns-txt-owner-id"
+)
+
 func (c *UpgradeController) RunHypershiftCmdWithRetires(
 	ctx context.Context, attempts int, sleep time.Duration, f func(context.Context) error) error {
 	var err error
@@ -141,8 +160,8 @@ func (c *UpgradeController) RunHypershiftCleanup(ctx context.Context) error {
 
 	args := []string{
 		"render",
-		"--hypershift-image", c.operatorImage,
-		"--namespace", hypershiftOperatorKey.Namespace,
+		flagHypershiftImage, c.operatorImage,
+		flagNamespace, hypershiftOperatorKey.Namespace,
 		"--format", "json",
 	}
 
@@ -272,7 +291,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	}
 
 	args := []string{
-		"--namespace", hypershiftOperatorKey.Namespace,
+		flagNamespace, hypershiftOperatorKey.Namespace,
 	}
 
 	if oidcBucket { // if the S3 secret is found, install hypershift with s3 options
@@ -288,9 +307,9 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		}
 		c.log.Info("oidc s3 bucket, region & credential arguments included")
 		awsArgs := []string{
-			"--oidc-storage-provider-s3-bucket-name", bucketName,
-			"--oidc-storage-provider-s3-region", bucketRegion,
-			"--oidc-storage-provider-s3-secret", util.HypershiftBucketSecretName,
+			flagOIDCS3BucketName, bucketName,
+			flagOIDCS3Region, bucketRegion,
+			flagOIDCS3Secret, util.HypershiftBucketSecretName,
 		}
 		args = append(args, awsArgs...)
 
@@ -305,7 +324,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 		}
 		c.log.Info("private link region & credential arguments included")
 		awsArgs := []string{
-			"--aws-private-secret", util.HypershiftPrivateLinkSecretName,
+			flagAWSPrivateSecret, util.HypershiftPrivateLinkSecretName,
 			"--aws-private-region", string(spl.Data["region"]),
 			"--private-platform", "AWS",
 		}
@@ -412,7 +431,7 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 			return nil
 		}
 	} else {
-		args = append(args, "--hypershift-image", hypershiftImage)
+		args = append(args, flagHypershiftImage, hypershiftImage)
 	}
 
 	// migrate the install flags that we used to add by default
@@ -489,6 +508,40 @@ func (c *UpgradeController) runHypershiftInstall(ctx context.Context, controller
 	return nil
 }
 
+// reservedInstallFlags are flags that the controller derives from trusted
+// sources (the verified image stream, the addon's own namespace, secrets it
+// manages) and passes to the privileged install Job itself. The
+// hypershift-operator-install-flags ConfigMap lives in a per-managed-cluster
+// namespace that may be writable by a tenant namespace-admin, so it must not
+// be able to override these — in particular --hypershift-image, which would
+// let a tenant run an arbitrary container with the install Job's
+// cluster-scoped RBAC on the hosting cluster.
+var reservedInstallFlags = map[string]bool{
+	flagHypershiftImage:       true,
+	flagImageRefs:             true,
+	flagNamespace:             true,
+	flagPullSecret:            true,
+	flagAdditionalTrustBundle: true,
+	flagOIDCS3Secret:          true,
+	flagOIDCS3Credentials:     true,
+	flagOIDCS3BucketName:      true,
+	flagOIDCS3Region:          true,
+	flagAWSPrivateSecret:      true,
+	flagAWSPrivateRegion:      true,
+	flagAzurePrivateSecret:    true,
+	flagExternalDNSSecret:     true,
+	flagExternalDNSDomain:     true,
+	flagExternalDNSProvider:   true,
+	flagExternalDNSTxtOwner:   true,
+}
+
+func isReservedInstallFlag(flag string) bool {
+	if i := strings.Index(flag, "="); i > 0 {
+		flag = flag[:i]
+	}
+	return reservedInstallFlags[flag]
+}
+
 func (c *UpgradeController) buildOtherInstallFlags(installFlagsCM corev1.ConfigMap) []string {
 	flagsToAdd := []string{}
 	flagsToRemove := []string{}
@@ -560,6 +613,12 @@ func (c *UpgradeController) buildOtherInstallFlags(installFlagsCM corev1.ConfigM
 	for _, flag := range flagsToAdd {
 		// if the string is a flag key having -- prefix and not already added to the args
 		if strings.HasPrefix(flag, "--") && !contains(args, flag) {
+			if isReservedInstallFlag(flag) {
+				c.log.Info(fmt.Sprintf(
+					"install flag %s is managed by the addon controller and may not be set via the %s ConfigMap; ignoring",
+					flag, util.HypershiftInstallFlagsCM))
+				continue
+			}
 			flagVal := getParamValue(flagsToAdd, flag)
 			flagArgs := []string{flag}
 			if flagVal != "" {
@@ -1076,15 +1135,15 @@ func (c *UpgradeController) deploymentHasOIDCArgs(operatorDeployment appsv1.Depl
 	hasSecret := false
 	for _, arg := range operatorDeployment.Spec.Template.Spec.Containers[0].Args {
 		switch {
-		case oidcFlagMatch(arg, "--oidc-storage-provider-s3-bucket-name"):
+		case oidcFlagMatch(arg, flagOIDCS3BucketName):
 			hasBucket = true
-		case oidcFlagMatch(arg, "--oidc-storage-provider-s3-region"):
+		case oidcFlagMatch(arg, flagOIDCS3Region):
 			hasRegion = true
 		// hypershift install may render the secret arg as either
 		// --oidc-storage-provider-s3-secret (secret name) or
 		// --oidc-storage-provider-s3-credentials (file path).
-		case oidcFlagMatch(arg, "--oidc-storage-provider-s3-secret"),
-			oidcFlagMatch(arg, "--oidc-storage-provider-s3-credentials"):
+		case oidcFlagMatch(arg, flagOIDCS3Secret),
+			oidcFlagMatch(arg, flagOIDCS3Credentials):
 			hasSecret = true
 		}
 	}

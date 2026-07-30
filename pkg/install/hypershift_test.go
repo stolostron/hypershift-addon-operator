@@ -2295,3 +2295,31 @@ func TestAWSPlatformDetection(t *testing.T) {
 	}, 10*time.Second, 1*time.Second, "Only OIDC Credentials provided. Installing for AWS platform")
 	controller.Stop()
 }
+
+func TestBuildOtherInstallFlagsRejectsReservedFlags(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		log: zapr.NewLogger(zapLog),
+	}
+
+	cm := corev1.ConfigMap{
+		Data: map[string]string{
+			"installFlagsToAdd": "--exclude-etcd --hypershift-image attacker.example/evil:latest " +
+				"--namespace=kube-system --metrics-set SRE --image-refs /tmp/evil",
+			"installFlagsToRemove": "--enable-uwm-telemetry-remote-write",
+		},
+	}
+
+	args := aCtrl.buildOtherInstallFlags(cm)
+
+	for _, reserved := range []string{"--hypershift-image", "--namespace", "--namespace=kube-system", "--image-refs"} {
+		assert.NotContains(t, args, reserved,
+			"reserved controller-managed flag %s must not be forwarded from the install-flags ConfigMap", reserved)
+	}
+	assert.NotContains(t, args, "attacker.example/evil:latest",
+		"reserved flag value must not be forwarded from the install-flags ConfigMap")
+	// Documented tunables must still pass through.
+	assert.Contains(t, args, "--exclude-etcd")
+	assert.Contains(t, args, "--metrics-set")
+	assert.Contains(t, args, "SRE")
+}
