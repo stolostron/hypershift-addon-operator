@@ -57,6 +57,33 @@ func initErrorClient() ctrlClient.Client {
 	return ncb.Build()
 }
 
+// TestBuildOtherInstallFlagsBlocksReservedFlags is a regression test for CVE-2026-66808:
+// a hub-cluster namespace admin with write access to the hypershift-operator-install-flags
+// configmap must not be able to inject reserved flags (e.g. --image-refs) into the
+// privileged hypershift install Job.
+func TestBuildOtherInstallFlagsBlocksReservedFlags(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		log: zapr.NewLogger(zapLog),
+	}
+
+	installFlagsCM := corev1.ConfigMap{
+		Data: map[string]string{
+			"installFlagsToAdd": "--image-refs /tmp/malicious-image-refs --hypershift-image quay.io/evil/hypershift:latest --namespace attacker-ns --exclude-etcd",
+		},
+	}
+
+	args := aCtrl.buildOtherInstallFlags(installFlagsCM)
+
+	assert.NotContains(t, args, "--image-refs", "--image-refs must never be settable via the install flags configmap")
+	assert.NotContains(t, args, "--hypershift-image", "--hypershift-image must never be settable via the install flags configmap")
+	assert.NotContains(t, args, "--namespace", "--namespace must never be settable via the install flags configmap")
+	assert.NotContains(t, args, "/tmp/malicious-image-refs")
+	assert.NotContains(t, args, "quay.io/evil/hypershift:latest")
+	assert.NotContains(t, args, "attacker-ns")
+	assert.Contains(t, args, "--exclude-etcd", "non-reserved flags should still be honored")
+}
+
 func initDeployObj() *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

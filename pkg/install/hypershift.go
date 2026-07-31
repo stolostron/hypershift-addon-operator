@@ -481,6 +481,15 @@ func (c *UpgradeController) buildOtherInstallFlags(installFlagsCM corev1.ConfigM
 	for _, flag := range flagsToAdd {
 		// if the string is a flag key having -- prefix and not already added to the args
 		if strings.HasPrefix(flag, "--") && !contains(args, flag) {
+			if reservedInstallFlags[flag] {
+				// CVE-2026-66808: --image-refs, --hypershift-image and --namespace are derived
+				// from trusted, operator-controlled sources. A hub-cluster namespace admin with
+				// write access to the hypershift-operator-install-flags configmap must not be
+				// able to override them, since doing so could inject an arbitrary image
+				// reference into the privileged install Job.
+				c.log.Info(fmt.Sprintf("install flag [ %s ] is reserved and cannot be set via the %s configmap, ignoring it", flag, util.HypershiftInstallFlagsCM))
+				continue
+			}
 			flagVal := getParamValue(flagsToAdd, flag)
 			flagArgs := []string{flag}
 			if flagVal != "" {
@@ -492,6 +501,15 @@ func (c *UpgradeController) buildOtherInstallFlags(installFlagsCM corev1.ConfigM
 	}
 
 	return args
+}
+
+// reservedInstallFlags are hypershift install flags that the addon operator derives from
+// trusted sources and manages itself. They must never be settable via the
+// hypershift-operator-install-flags configmap (see CVE-2026-66808).
+var reservedInstallFlags = map[string]bool{
+	"--image-refs":       true,
+	"--hypershift-image": true,
+	"--namespace":        true,
 }
 
 func contains(theList []string, flagToFind string) bool {
