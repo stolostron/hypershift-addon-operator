@@ -144,13 +144,17 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			gomega.Expect(names).To(gomega.ContainElements("hostedclusters", "hostedclusters/resources"))
 		})
 
-		ginkgo.It("should return 400 when hostingCluster is missing from a spoke request", func() {
+		ginkgo.It("should return empty list when collection GET is missing hostingCluster", func() {
 			client := insecureHTTPClient()
 			url := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+"/namespaces/clusters/hostedclusters")
 			resp, err := client.Get(url) // no ?hostingCluster
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 			defer resp.Body.Close()
-			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusBadRequest))
+			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
+			var doc map[string]interface{}
+			gomega.Expect(json.NewDecoder(resp.Body).Decode(&doc)).To(gomega.Succeed())
+			gomega.Expect(doc["kind"]).To(gomega.Equal("HostedClusterList"))
+			gomega.Expect(doc["items"]).To(gomega.BeEmpty())
 		})
 
 		ginkgo.It("should return 503 when the hosting cluster does not exist", func() {
@@ -368,21 +372,21 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 				"hcp.ocm.io should appear in server API groups")
 		})
 
-		ginkgo.It("should return 400 via the APIService route when hostingCluster is absent", func() {
+		ginkgo.It("should return empty list via the APIService route when hostingCluster is absent", func() {
 			ginkgo.By("Making raw REST call to /apis/hcp.ocm.io/v1alpha1/namespaces/clusters/hostedclusters")
 			restClient, err := util.NewKubeClient()
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 
-			// The proxy returns 400 because hostingCluster is not set;
-			// the kube-apiserver may wrap this as a 400 or 503.
-			// Either way the call should not succeed with 200.
+			// Collection GET without hostingCluster returns an empty
+			// HostedClusterList so the namespace controller can complete
+			// cleanup without being blocked.
 			gomega.Eventually(func() int {
 				var statusCode int
 				restClient.CoreV1().RESTClient().Get().
 					AbsPath("/apis/hcp.ocm.io/v1alpha1/namespaces/clusters/hostedclusters").
 					Do(ctx).StatusCode(&statusCode)
 				return statusCode
-			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.Equal(http.StatusOK))
+			}, eventuallyTimeout, eventuallyInterval).Should(gomega.Equal(http.StatusOK))
 		})
 	})
 
