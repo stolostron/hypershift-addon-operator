@@ -365,6 +365,24 @@ func Test_handleRoute_WhenMissingHostingCluster_OnCollectionDELETE_ItShouldRetur
 	assert.Empty(t, items)
 }
 
+func Test_handleRoute_WhenMissingHostingCluster_OnCollectionPOST_ItShouldReturn400(t *testing.T) {
+	p := newTestProxy(t)
+	w := httptest.NewRecorder()
+	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters"
+	r := httptest.NewRequest(http.MethodPost, path, nil) // no ?hostingCluster
+	p.handleRoute(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func Test_handleRoute_WhenInvalidHostingCluster_OnCollection_ItShouldReturn400(t *testing.T) {
+	p := newTestProxy(t)
+	w := httptest.NewRecorder()
+	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters?hostingCluster=../evil"
+	r := httptest.NewRequest(http.MethodDelete, path, nil)
+	p.handleRoute(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
 func Test_handleRoute_WhenSpokeNotAvailable_ItShouldReturn503(t *testing.T) {
 	// Spoke exists but is not available
 	mc := &clusterv1.ManagedCluster{

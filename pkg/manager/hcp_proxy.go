@@ -406,17 +406,23 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 	remaining := strings.TrimPrefix(r.URL.Path, prefix)
 	parts := strings.Split(remaining, "/")
 
-	hostingCluster, err := sanitizeProxyName(r.URL.Query().Get("hostingCluster"))
-	if err != nil {
-		// When hostingCluster is absent the caller cannot target any spoke.
-		// The Kubernetes namespace controller sends collection-level DELETE and
-		// LIST requests during namespace cleanup without this parameter; return
-		// an empty success so namespace deletion is not blocked.
+	hostingClusterParam := r.URL.Query().Get("hostingCluster")
+
+	// When hostingCluster is completely absent, the Kubernetes namespace
+	// controller may be sending collection-level GET (list) or DELETE
+	// (delete-collection) requests during namespace cleanup. Return an
+	// empty HostedClusterList so namespace deletion is not blocked.
+	// POST (create) still requires a spoke target → fall through to 400.
+	if hostingClusterParam == "" {
 		isCollection := len(parts) == 3 && parts[0] == "namespaces" && parts[2] == hcpProxyResource
-		if isCollection {
+		if isCollection && (r.Method == http.MethodGet || r.Method == http.MethodDelete) {
 			p.handleEmptyCollection(w, r)
 			return
 		}
+	}
+
+	hostingCluster, err := sanitizeProxyName(hostingClusterParam)
+	if err != nil {
 		writeJSONError(w,
 			"hostingCluster query parameter is required and must be a valid DNS-1123 subdomain",
 			http.StatusBadRequest)
