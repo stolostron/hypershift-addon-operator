@@ -317,17 +317,68 @@ func Test_handleDiscovery_WhenVersionPath_ItShouldReturnAPIResourceList(t *testi
 	assert.Len(t, resources, 2)
 	first := resources[0].(map[string]interface{})
 	assert.Equal(t, hcpProxyResource, first["name"])
+	verbs := first["verbs"].([]interface{})
+	assert.Contains(t, verbs, "list")
+	assert.Contains(t, verbs, "deletecollection")
 	second := resources[1].(map[string]interface{})
 	assert.Equal(t, hcpProxyResource+"/resources", second["name"])
 }
 
 // --- handleRoute ---
 
-func Test_handleRoute_WhenMissingHostingCluster_ItShouldReturn400(t *testing.T) {
+func Test_handleRoute_WhenMissingHostingCluster_OnNamedEndpoint_ItShouldReturn400(t *testing.T) {
+	p := newTestProxy(t)
+	w := httptest.NewRecorder()
+	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters/my-hc"
+	r := httptest.NewRequest(http.MethodGet, path, nil) // no ?hostingCluster
+	p.handleRoute(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func Test_handleRoute_WhenMissingHostingCluster_OnCollectionGET_ItShouldReturnEmptyList(t *testing.T) {
 	p := newTestProxy(t)
 	w := httptest.NewRecorder()
 	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters"
 	r := httptest.NewRequest(http.MethodGet, path, nil) // no ?hostingCluster
+	p.handleRoute(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var doc map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+	assert.Equal(t, "HostedClusterList", doc["kind"])
+	items := doc["items"].([]interface{})
+	assert.Empty(t, items)
+}
+
+func Test_handleRoute_WhenMissingHostingCluster_OnCollectionDELETE_ItShouldReturnEmptyList(t *testing.T) {
+	p := newTestProxy(t)
+	w := httptest.NewRecorder()
+	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters"
+	r := httptest.NewRequest(http.MethodDelete, path, nil) // no ?hostingCluster
+	p.handleRoute(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var doc map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+	assert.Equal(t, "HostedClusterList", doc["kind"])
+	items := doc["items"].([]interface{})
+	assert.Empty(t, items)
+}
+
+func Test_handleRoute_WhenMissingHostingCluster_OnCollectionPOST_ItShouldReturn400(t *testing.T) {
+	p := newTestProxy(t)
+	w := httptest.NewRecorder()
+	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters"
+	r := httptest.NewRequest(http.MethodPost, path, nil) // no ?hostingCluster
+	p.handleRoute(w, r)
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func Test_handleRoute_WhenInvalidHostingCluster_OnCollection_ItShouldReturn400(t *testing.T) {
+	p := newTestProxy(t)
+	w := httptest.NewRecorder()
+	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters?hostingCluster=../evil"
+	r := httptest.NewRequest(http.MethodDelete, path, nil)
 	p.handleRoute(w, r)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }

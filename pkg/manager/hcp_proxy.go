@@ -385,7 +385,7 @@ func (p *hcpProxy) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 				"singularName": "hostedcluster",
 				"namespaced":   true,
 				"kind":         "HostedCluster",
-				"verbs":        []string{"create", "delete", "get"},
+				"verbs":        []string{"create", "delete", "deletecollection", "get", "list"},
 			},
 			{
 				// Alias subresource: same as GET|PUT /{name} but with an explicit /resources suffix.
@@ -406,7 +406,22 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 	remaining := strings.TrimPrefix(r.URL.Path, prefix)
 	parts := strings.Split(remaining, "/")
 
-	hostingCluster, err := sanitizeProxyName(r.URL.Query().Get("hostingCluster"))
+	hostingClusterParam := r.URL.Query().Get("hostingCluster")
+
+	// When hostingCluster is completely absent, the Kubernetes namespace
+	// controller may be sending collection-level GET (list) or DELETE
+	// (delete-collection) requests during namespace cleanup. Return an
+	// empty HostedClusterList so namespace deletion is not blocked.
+	// POST (create) still requires a spoke target → fall through to 400.
+	if hostingClusterParam == "" {
+		isCollection := len(parts) == 3 && parts[0] == "namespaces" && parts[2] == hcpProxyResource
+		if isCollection && (r.Method == http.MethodGet || r.Method == http.MethodDelete) {
+			p.handleEmptyCollection(w, r)
+			return
+		}
+	}
+
+	hostingCluster, err := sanitizeProxyName(hostingClusterParam)
 	if err != nil {
 		writeJSONError(w,
 			"hostingCluster query parameter is required and must be a valid DNS-1123 subdomain",
@@ -477,6 +492,22 @@ func (p *hcpProxy) dispatchNamed(w http.ResponseWriter, r *http.Request, nsRaw, 
 	default:
 		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleEmptyCollection returns an empty success response for collection-level
+// operations (LIST / DELETE-collection) that arrive without a hostingCluster
+// query parameter. The Kubernetes namespace controller sends these during
+// namespace cleanup to enumerate and remove all resources of every registered
+// API type. Since the proxy does not store resources locally (it proxies to
+// spoke clusters identified by hostingCluster), an empty list is correct.
+func (p *hcpProxy) handleEmptyCollection(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set(headerContentType, contentTypeJSON)
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"apiVersion": hcpProxyAPIGroup + "/" + hcpProxyAPIVersion,
+		"kind":       "HostedClusterList",
+		"metadata":   map[string]interface{}{"resourceVersion": ""},
+		"items":      []interface{}{},
+	})
 }
 
 // checkSpokeHealth verifies that the named ManagedCluster is Available.
