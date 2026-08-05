@@ -402,6 +402,13 @@ func (p *hcpProxy) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 
 // handleRoute dispatches all /apis/hcp.ocm.io/v1alpha1/... requests.
 func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
+	// Watch is not supported — the proxy is a stateless pass-through and
+	// cannot maintain long-lived event streams across spoke clusters.
+	if r.URL.Query().Get("watch") == "true" {
+		writeJSONError(w, "watch is not supported by the HCP proxy", http.StatusMethodNotAllowed)
+		return
+	}
+
 	prefix := apiPathPrefix + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/"
 	remaining := strings.TrimPrefix(r.URL.Path, prefix)
 	parts := strings.Split(remaining, "/")
@@ -410,12 +417,14 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 
 	// When hostingCluster is completely absent, the Kubernetes namespace
 	// controller may be sending collection-level GET (list) or DELETE
-	// (delete-collection) requests during namespace cleanup. Return an
-	// empty HostedClusterList so namespace deletion is not blocked.
+	// (delete-collection) requests during namespace cleanup. The same
+	// applies to cluster-wide list calls (e.g. "oc get hostedclusters -A").
+	// Return an empty HostedClusterList so these callers are not blocked.
 	// POST (create) still requires a spoke target → fall through to 400.
 	if hostingClusterParam == "" {
-		isCollection := len(parts) == 3 && parts[0] == "namespaces" && parts[2] == hcpProxyResource
-		if isCollection && (r.Method == http.MethodGet || r.Method == http.MethodDelete) {
+		isNamespacedCollection := len(parts) == 3 && parts[0] == "namespaces" && parts[2] == hcpProxyResource
+		isClusterWideList := len(parts) == 1 && parts[0] == hcpProxyResource
+		if (isNamespacedCollection || isClusterWideList) && (r.Method == http.MethodGet || r.Method == http.MethodDelete) {
 			p.handleEmptyCollection(w, r)
 			return
 		}
