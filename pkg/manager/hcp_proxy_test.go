@@ -326,6 +326,19 @@ func Test_handleDiscovery_WhenVersionPath_ItShouldReturnAPIResourceList(t *testi
 
 // --- handleRoute ---
 
+func Test_handleRoute_WhenWatchRequested_ItShouldReturn405(t *testing.T) {
+	p := newTestProxy(t)
+	w := httptest.NewRecorder()
+	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters?watch=true"
+	r := httptest.NewRequest(http.MethodGet, path, nil)
+	p.handleRoute(w, r)
+	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
+
+	var doc map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+	assert.Contains(t, doc["error"], "watch is not supported")
+}
+
 func Test_handleRoute_WhenMissingHostingCluster_OnNamedEndpoint_ItShouldReturn400(t *testing.T) {
 	p := newTestProxy(t)
 	w := httptest.NewRecorder()
@@ -372,6 +385,21 @@ func Test_handleRoute_WhenMissingHostingCluster_OnCollectionPOST_ItShouldReturn4
 	r := httptest.NewRequest(http.MethodPost, path, nil) // no ?hostingCluster
 	p.handleRoute(w, r)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+}
+
+func Test_handleRoute_WhenClusterWideGET_WithoutHostingCluster_ItShouldReturnEmptyList(t *testing.T) {
+	p := newTestProxy(t)
+	w := httptest.NewRecorder()
+	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/hostedclusters"
+	r := httptest.NewRequest(http.MethodGet, path, nil) // oc get hostedclusters -A
+	p.handleRoute(w, r)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	var doc map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
+	assert.Equal(t, "HostedClusterList", doc["kind"])
+	items := doc["items"].([]interface{})
+	assert.Empty(t, items)
 }
 
 func Test_handleRoute_WhenInvalidHostingCluster_OnCollection_ItShouldReturn400(t *testing.T) {
