@@ -1153,10 +1153,9 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 }
 
-// TestBuildOtherInstallFlagsBlocksReservedFlags is a regression test for CVE-2026-66808:
-// a hub-cluster namespace admin with write access to the hypershift-operator-install-flags
-// configmap must not be able to inject reserved flags (e.g. --image-refs) into the
-// privileged hypershift install Job.
+// TestBuildOtherInstallFlagsBlocksReservedFlags verifies that reserved flags
+// (e.g. --image-refs) cannot be injected via the hypershift-operator-install-flags
+// configmap into the privileged hypershift install Job.
 func TestBuildOtherInstallFlagsBlocksReservedFlags(t *testing.T) {
 	zapLog, _ := zap.NewDevelopment()
 	aCtrl := &UpgradeController{
