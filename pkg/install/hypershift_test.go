@@ -124,13 +124,24 @@ func TestIsReservedInstallFlag(t *testing.T) {
 		{"--image-refs=/tmp/evil", true},
 		{"--namespace", true},
 		{"--namespace=attacker-ns", true},
-		{"--namespace@youarebad", false}, // "@" is not a pflag value separator, so this isn't the reserved flag
+		// "@" is not a pflag value separator, so this isn't the reserved flag. It is
+		// also not a real hypershift install flag, so it would fail as an unrecognized
+		// flag if it ever reached the real CLI, rather than actually setting --namespace.
+		{"--namespace@youarebad", false},
 		{"--exclude-etcd", false},
 		{"--platform-monitoring", false},
-		{"--image-ref=evil", false},     // missing the trailing "s", not the reserved "--image-refs" flag
-		{"--image-ref!bad", false},      // missing the trailing "s", and "!" is not a pflag value separator either
-		{"--image=ref++evil", false},    // does not start with any reserved flag name at all
-		{"--namespace-someword", false}, // a distinct, unreserved flag; only exact "--namespace" is reserved
+		// Missing the trailing "s", not the reserved "--image-refs" flag, and not a real
+		// hypershift install flag either, so it would fail as unrecognized on the real CLI.
+		{"--image-ref=evil", false},
+		{"--image-ref!bad", false}, // same as above; "!" is not a pflag value separator either
+		// Does not start with any reserved flag name, and is not a real hypershift install
+		// flag, so it would also fail as unrecognized rather than actually pass through.
+		{"--image=ref++evil", false},
+		// A distinct, unreserved flag; only exact "--namespace" is reserved. No flag by this
+		// name is registered on the real CLI today either, so it would currently fail as
+		// unrecognized too -- but unlike the reserved flags, it isn't our place to block it,
+		// since it doesn't set --namespace and could become a legitimate flag in the future.
+		{"--namespace-someword", false},
 	}
 
 	for _, tc := range tests {
