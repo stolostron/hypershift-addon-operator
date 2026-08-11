@@ -441,6 +441,81 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadNoConsole() {
 	suite.EqualError(err, "consoleclidownloads.console.openshift.io \"hcp-cli-download\" not found")
 }
 
+// TestEnableHypershiftCLIDownloadWithImageEnvVarOverride simulates an OLM v1 install where no MCE
+// ClusterServiceVersion object exists in the cluster. The hcp CLI download image should be
+// taken from the HYPERSHIFT_CLI_IMAGE_NAME env var instead, so the CSV lookup/retry loop is
+// skipped entirely and the route/service/deployment are still created.
+//
+// Named to sort alphabetically after TestEnableHypershiftCLIDownloadNoConsole so it doesn't
+// change existing suite test ordering (TestEnableHypershiftCLIDownloadNoConsole relies on
+// ConsoleCLIDownload state left over from TestEnableHypershiftCLIDownload).
+func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadWithImageEnvVarOverride() {
+	controllerContext := &controllercmd.ControllerContext{}
+
+	o := &override{
+		Client:            suite.testKubeClient,
+		log:               suite.log,
+		operatorNamespace: controllerContext.OperatorNamespace,
+		withOverride:      false,
+	}
+
+	// Create mock multicluster engine. No MCE CSV is created, simulating an OLM v1 install
+	// where ClusterServiceVersion objects do not exist in the cluster.
+	//
+	// TestEnableHypershiftCLIDownloadNoConsole (which runs before this test) does not clean up
+	// the MCE/addon deployment/clusterRole it creates, so tolerate them already existing here.
+	newmce := getTestMCE("multiclusterengine", "multicluster-engine")
+	err := o.Client.Create(context.TODO(), newmce)
+	suite.True(err == nil || apierrors.IsAlreadyExists(err), "err nil or already exists when test MCE is created")
+	defer o.Client.Delete(context.TODO(), newmce)
+
+	dep := getTestAddonDeployment()
+	err = o.Client.Create(context.TODO(), dep)
+	suite.True(err == nil || apierrors.IsAlreadyExists(err), "err nil or already exists when addon deployment is created")
+	defer o.Client.Delete(context.TODO(), dep)
+
+	clusterRole := getTestClusterRole()
+	err = o.Client.Create(context.TODO(), clusterRole)
+	suite.True(err == nil || apierrors.IsAlreadyExists(err), "err nil or already exists when addon clusterRole is created")
+	defer o.Client.Delete(context.TODO(), clusterRole)
+
+	ocCliDownload := getTestOCCLIDownload()
+	err = o.Client.Create(context.TODO(), ocCliDownload)
+	suite.Nil(err, "err nil when oc cli ConsoleCLIDownload is created successfully")
+	defer o.Client.Delete(context.TODO(), ocCliDownload)
+
+	os.Setenv(HypershiftCLIImageEnvVar, "https://hypershift.cli.olmv1.image.io")
+	defer os.Unsetenv(HypershiftCLIImageEnvVar)
+
+	err = EnableHypershiftCLIDownload(context.Background(), o.Client, o.log)
+	suite.Nil(err, "err nil when hypershift CLI download is deployed successfully using the image env var override")
+
+	cliDeployment := &appsv1.Deployment{}
+	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
+	err = o.Client.Get(context.TODO(), cliDeploymentNN, cliDeployment)
+	suite.Nil(err, "err nil when hypershift CLI download deployment exists")
+	suite.Equal("https://hypershift.cli.olmv1.image.io", cliDeployment.Spec.Template.Spec.Containers[0].Image)
+	defer o.Client.Delete(context.TODO(), cliDeployment)
+
+	cliService := &corev1.Service{}
+	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
+	err = o.Client.Get(context.TODO(), cliServiceNN, cliService)
+	suite.Nil(err, "err nil when hypershift CLI download service exists")
+	defer o.Client.Delete(context.TODO(), cliService)
+
+	cliRoute := &routev1.Route{}
+	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
+	err = o.Client.Get(context.TODO(), cliRouteNN, cliRoute)
+	suite.Nil(err, "err nil when hypershift CLI download route exists")
+	defer o.Client.Delete(context.TODO(), cliRoute)
+
+	cliDownload := &consolev1.ConsoleCLIDownload{}
+	cliDownloadNN := types.NamespacedName{Name: NewCLIDownloadResourceName}
+	err = o.Client.Get(context.TODO(), cliDownloadNN, cliDownload)
+	suite.Nil(err, "err nil when hypershift CLI download ConsoleCLIDownload exists")
+	suite.deleteCLIDownload(cliDownload.Name)
+}
+
 func (suite *CLIDownloadTestSuite) TestRetryCSV() {
 	controllerContext := &controllercmd.ControllerContext{}
 	client, sch := initCSVErrorClient()

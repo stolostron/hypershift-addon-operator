@@ -29,12 +29,48 @@ import (
 const (
 	NewCLIDownloadResourceName = "hcp-cli-download"
 	OldCLIDownloadResourceName = "hypershift-cli-download"
+
+	// HypershiftCLIImageEnvVar, when set, overrides the hcp CLI download image instead of
+	// looking it up from the MCE ClusterServiceVersion. This is required for OLM v1 installs,
+	// where ClusterServiceVersion objects do not exist so the image cannot be discovered by
+	// reading the live CSV.
+	HypershiftCLIImageEnvVar = "HYPERSHIFT_CLI_IMAGE_NAME"
 )
 
 func EnableHypershiftCLIDownload(ctx context.Context, hubclient client.Client, log logr.Logger) error {
-	// get the current version of MCE CSV from multicluster-engine namespace
+	// Prefer the explicit image override so this also works for OLM v1 installs where no
+	// ClusterServiceVersion object exists to read the hypershift_cli related image from.
+	cliDownloadImage := os.Getenv(HypershiftCLIImageEnvVar)
 
-	//Every 2 minutes, try to get csv in case of cluster upgrade (5 attempts)
+	if cliDownloadImage == "" {
+		csv, err := getMCECSVWithRetry(ctx, hubclient, log)
+		if err != nil {
+			log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace")
+			return err
+		}
+
+		// check if the CSV has hypershift_cli image, which is the downstream case
+		cliDownloadImage = getHypershiftCLIDownloadImage(csv, log)
+	}
+
+	if cliDownloadImage == "" {
+		// in upstream build, there is no hcp CLI download image
+		log.Info("the hcp CLI download image was not found. Skip enabling the hcp CLI download")
+		return nil
+	}
+
+	err := deployHCPCLIDownload(ctx, hubclient, cliDownloadImage, log)
+	if err != nil {
+		log.Error(err, "failed to deploy HypershiftCLIDownload")
+		return err
+	}
+
+	return nil
+}
+
+// getMCECSVWithRetry gets the current version of the MCE CSV from the multicluster-engine
+// namespace, retrying every 2 minutes (5 attempts) in case of a cluster upgrade in progress.
+func getMCECSVWithRetry(ctx context.Context, hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.ClusterServiceVersion, error) {
 	var csv *operatorsv1alpha1.ClusterServiceVersion
 	var err error
 	for try := 1; try <= 5; try++ {
@@ -42,7 +78,7 @@ func EnableHypershiftCLIDownload(ctx context.Context, hubclient client.Client, l
 			log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace, retrying in 2 minutes", "attempt", strconv.Itoa(try)+"/5")
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return nil, ctx.Err()
 			case <-time.After(2 * time.Minute):
 			}
 		}
@@ -52,27 +88,7 @@ func EnableHypershiftCLIDownload(ctx context.Context, hubclient client.Client, l
 		}
 	}
 
-	//Failed 5 attempts
-	if err != nil {
-		log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace")
-		return err
-	}
-
-	// check if the CSV has hypershift_cli image, which is the downstream case
-	cliDownloadImage := getHypershiftCLIDownloadImage(csv, log)
-	if cliDownloadImage == "" {
-		// in upstream build, there is no hcp CLI download image
-		log.Info("the hcp CLI download image was not found in the CSV. Skip enabling the hcp CLI download")
-		return nil
-	}
-
-	err = deployHCPCLIDownload(ctx, hubclient, cliDownloadImage, log)
-	if err != nil {
-		log.Error(err, "failed to deploy HypershiftCLIDownload")
-		return err
-	}
-
-	return err
+	return csv, err
 }
 
 func GetMCECSV(ctx context.Context, hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.ClusterServiceVersion, error) {
