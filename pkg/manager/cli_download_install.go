@@ -3,6 +3,7 @@ package manager
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"sort"
 	"strconv"
@@ -46,7 +47,7 @@ func EnableHypershiftCLIDownload(ctx context.Context, hubclient client.Client, l
 		csv, err := getMCECSVWithRetry(ctx, hubclient, log)
 		if err != nil {
 			log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace")
-			return err
+			return fmt.Errorf("get MCE CSV: %w", err)
 		}
 
 		// check if the CSV has hypershift_cli image, which is the downstream case
@@ -62,7 +63,7 @@ func EnableHypershiftCLIDownload(ctx context.Context, hubclient client.Client, l
 	err := deployHCPCLIDownload(ctx, hubclient, cliDownloadImage, log)
 	if err != nil {
 		log.Error(err, "failed to deploy HypershiftCLIDownload")
-		return err
+		return fmt.Errorf("deploy HypershiftCLIDownload: %w", err)
 	}
 
 	return nil
