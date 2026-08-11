@@ -1153,6 +1153,98 @@ func TestRunHypershiftInstallPrivateLinkExternalDNS(t *testing.T) {
 	assert.Nil(t, err, "is nil if cleanup is succcessful")
 }
 
+// TestBuildOtherInstallFlagsBlocksReservedFlags verifies that reserved flags
+// (e.g. --image-refs) cannot be injected via the hypershift-operator-install-flags
+// configmap into the privileged hypershift install Job.
+func TestBuildOtherInstallFlagsBlocksReservedFlags(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		log: zapr.NewLogger(zapLog),
+	}
+
+	installFlagsCM := corev1.ConfigMap{
+		Data: map[string]string{
+			"installFlagsToAdd": "--image-refs /tmp/malicious-image-refs --hypershift-image quay.io/evil/hypershift:latest --namespace attacker-ns --exclude-etcd",
+		},
+	}
+
+	args := aCtrl.buildOtherInstallFlags(installFlagsCM)
+
+	assert.NotContains(t, args, "--image-refs", "--image-refs must never be settable via the install flags configmap")
+	assert.NotContains(t, args, "--hypershift-image", "--hypershift-image must never be settable via the install flags configmap")
+	assert.NotContains(t, args, "--namespace", "--namespace must never be settable via the install flags configmap")
+	assert.NotContains(t, args, "/tmp/malicious-image-refs")
+	assert.NotContains(t, args, "quay.io/evil/hypershift:latest")
+	assert.NotContains(t, args, "attacker-ns")
+	assert.Contains(t, args, "--exclude-etcd", "non-reserved flags should still be honored")
+}
+
+// TestBuildOtherInstallFlagsBlocksReservedFlagsWithEqualsForm verifies that reserved
+// flags cannot be smuggled in using the "--flag=value" form, since pflag treats
+// "--flag=value" and "--flag value" as equivalent on the real hypershift install CLI.
+func TestBuildOtherInstallFlagsBlocksReservedFlagsWithEqualsForm(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		log: zapr.NewLogger(zapLog),
+	}
+
+	installFlagsCM := corev1.ConfigMap{
+		Data: map[string]string{
+			"installFlagsToAdd": "--image-refs=/tmp/malicious-image-refs --hypershift-image=quay.io/evil/hypershift:latest --namespace=attacker-ns --exclude-etcd",
+		},
+	}
+
+	args := aCtrl.buildOtherInstallFlags(installFlagsCM)
+
+	for _, a := range args {
+		assert.NotContains(t, a, "image-refs=", "--image-refs must never be settable via the install flags configmap")
+		assert.NotContains(t, a, "hypershift-image=", "--hypershift-image must never be settable via the install flags configmap")
+		assert.NotContains(t, a, "namespace=", "--namespace must never be settable via the install flags configmap")
+		assert.NotContains(t, a, "quay.io/evil/hypershift:latest")
+		assert.NotContains(t, a, "attacker-ns")
+	}
+	assert.Contains(t, args, "--exclude-etcd", "non-reserved flags should still be honored")
+}
+
+// TestIsReservedInstallFlag verifies the reserved-flag detection helper blocks
+// both the "--flag" and "--flag=value" forms of a reserved flag, while leaving
+// unrelated and lookalike flag names alone.
+func TestIsReservedInstallFlag(t *testing.T) {
+	tests := []struct {
+		flag     string
+		expected bool
+	}{
+		{"--hypershift-image", true},
+		{"--hypershift-image=evil:latest", true},
+		{"--image-refs", true},
+		{"--image-refs=/tmp/evil", true},
+		{"--namespace", true},
+		{"--namespace=attacker-ns", true},
+		// "@" is not a pflag value separator, so this isn't the reserved flag. It is
+		// also not a real hypershift install flag, so it would fail as an unrecognized
+		// flag if it ever reached the real CLI, rather than actually setting --namespace.
+		{"--namespace@youarebad", false},
+		{"--exclude-etcd", false},
+		{"--platform-monitoring", false},
+		// Missing the trailing "s", not the reserved "--image-refs" flag, and not a real
+		// hypershift install flag either, so it would fail as unrecognized on the real CLI.
+		{"--image-ref=evil", false},
+		{"--image-ref!bad", false}, // same as above; "!" is not a pflag value separator either
+		// Does not start with any reserved flag name, and is not a real hypershift install
+		// flag, so it would also fail as unrecognized rather than actually pass through.
+		{"--image=ref++evil", false},
+		// A distinct, unreserved flag; only exact "--namespace" is reserved. No flag by this
+		// name is registered on the real CLI today either, so it would currently fail as
+		// unrecognized too -- but unlike the reserved flags, it isn't our place to block it,
+		// since it doesn't set --namespace and could become a legitimate flag in the future.
+		{"--namespace-someword", false},
+	}
+
+	for _, tc := range tests {
+		assert.Equal(t, tc.expected, isReservedInstallFlag(tc.flag), "unexpected result for flag %q", tc.flag)
+	}
+}
+
 func TestRunHypershiftInstallPrivateAzure(t *testing.T) {
 	ctx := context.Background()
 
