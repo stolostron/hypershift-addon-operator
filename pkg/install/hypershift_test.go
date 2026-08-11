@@ -1179,6 +1179,58 @@ func TestBuildOtherInstallFlagsBlocksReservedFlags(t *testing.T) {
 	assert.Contains(t, args, "--exclude-etcd", "non-reserved flags should still be honored")
 }
 
+// TestBuildOtherInstallFlagsBlocksReservedFlagsWithEqualsForm verifies that reserved
+// flags cannot be smuggled in using the "--flag=value" form, since pflag treats
+// "--flag=value" and "--flag value" as equivalent on the real hypershift install CLI.
+func TestBuildOtherInstallFlagsBlocksReservedFlagsWithEqualsForm(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		log: zapr.NewLogger(zapLog),
+	}
+
+	installFlagsCM := corev1.ConfigMap{
+		Data: map[string]string{
+			"installFlagsToAdd": "--image-refs=/tmp/malicious-image-refs --hypershift-image=quay.io/evil/hypershift:latest --namespace=attacker-ns --exclude-etcd",
+		},
+	}
+
+	args := aCtrl.buildOtherInstallFlags(installFlagsCM)
+
+	for _, a := range args {
+		assert.NotContains(t, a, "image-refs=", "--image-refs must never be settable via the install flags configmap")
+		assert.NotContains(t, a, "hypershift-image=", "--hypershift-image must never be settable via the install flags configmap")
+		assert.NotContains(t, a, "namespace=", "--namespace must never be settable via the install flags configmap")
+		assert.NotContains(t, a, "quay.io/evil/hypershift:latest")
+		assert.NotContains(t, a, "attacker-ns")
+	}
+	assert.Contains(t, args, "--exclude-etcd", "non-reserved flags should still be honored")
+}
+
+// TestIsReservedInstallFlag verifies the reserved-flag detection helper blocks
+// anything starting with a reserved flag name, in any form ("--flag",
+// "--flag=value", or a lookalike flag name), while leaving unrelated flags alone.
+func TestIsReservedInstallFlag(t *testing.T) {
+	tests := []struct {
+		flag     string
+		expected bool
+	}{
+		{"--hypershift-image", true},
+		{"--hypershift-image=evil:latest", true},
+		{"--hypershift-image-evil:latest", true},
+		{"--hypershift-imageEvil", true},
+		{"--image-refs", true},
+		{"--image-refs=/tmp/evil", true},
+		{"--namespace", true},
+		{"--namespace=attacker-ns", true},
+		{"--exclude-etcd", false},
+		{"--platform-monitoring", false},
+	}
+
+	for _, tc := range tests {
+		assert.Equal(t, tc.expected, isReservedInstallFlag(tc.flag), "unexpected result for flag %q", tc.flag)
+	}
+}
+
 func TestRunHypershiftInstallPrivateAzure(t *testing.T) {
 	ctx := context.Background()
 
