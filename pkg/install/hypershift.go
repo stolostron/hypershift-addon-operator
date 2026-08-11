@@ -500,7 +500,7 @@ func (c *UpgradeController) buildOtherInstallFlags(installFlagsCM corev1.ConfigM
 	for _, flag := range flagsToAdd {
 		// if the string is a flag key having -- prefix and not already added to the args
 		if strings.HasPrefix(flag, "--") && !contains(args, flag) {
-			if reservedInstallFlags[flag] {
+			if isReservedInstallFlag(flag) {
 				c.log.Info(fmt.Sprintf("install flag [ %s ] is reserved and cannot be set via the %s configmap, ignoring it", flag, util.HypershiftInstallFlagsCM))
 				continue
 			}
@@ -524,6 +524,18 @@ var reservedInstallFlags = map[string]bool{
 	"--image-refs":       true,
 	"--hypershift-image": true,
 	"--namespace":        true,
+}
+
+// isReservedInstallFlag blocks any flag starting with a reserved flag name,
+// e.g. "--hypershift-image", "--hypershift-image=evil:latest", "--hypershift-imageEvil".
+func isReservedInstallFlag(flag string) bool {
+	for reserved := range reservedInstallFlags {
+		if strings.HasPrefix(flag, reserved) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func contains(theList []string, flagToFind string) bool {
