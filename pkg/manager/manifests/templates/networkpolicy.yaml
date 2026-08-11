@@ -16,5 +16,7 @@ spec:
   - ports:
     - port: 8443
       protocol: TCP
+    - port: 9443
+      protocol: TCP
   egress:
   - {}
