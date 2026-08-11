@@ -1224,6 +1224,8 @@ func TestIsReservedInstallFlag(t *testing.T) {
 		{"--namespace=attacker-ns", true},
 		{"--exclude-etcd", false},
 		{"--platform-monitoring", false},
+		{"--image-ref=evil", false},  // missing the trailing "s", not the reserved "--image-refs" flag
+		{"--image=ref++evil", false}, // does not start with any reserved flag name at all
 	}
 
 	for _, tc := range tests {
