@@ -87,7 +87,7 @@ These are other installation flags that the hypershift addon agent sets by defau
 
 The installation flags for the `oidc-storage-provider-s3`, `aws-private` and `external-dns` can be updated by updating the corresponding secrets.
 
-You cannot update the `--image-refs`.
+You cannot update `--image-refs`, `--hypershift-image` or `--namespace` via this configmap. These three flags are always derived from trusted, operator-controlled sources (the HyperShift operator image and its installation namespace), and any value for them supplied in `data.installFlagsToAdd` is ignored and logged. This restriction exists because these flags control which container image is installed with cluster-admin-equivalent privileges on the hosting cluster, so they must not be settable by anyone with only write access to this configmap.
 
 If you want to add or remove other installation flags, create a config map named `hypershift-operator-install-flags` in `local-cluster` namespace.
 
@@ -102,7 +102,7 @@ data:
   installFlagsToRemove: "--enable-uwm-telemetry-remote-write"
 ```
 
-The installation flags and their values specified in `data.installFlagsToAdd` are used when the hypershift addon agent installs the hypershift operator. All flag keys and values are added as a single string delimited by a space.
+The installation flags and their values specified in `data.installFlagsToAdd` are used when the hypershift addon agent installs the hypershift operator. All flag keys and values are added as a single string delimited by a space. `--image-refs`, `--hypershift-image` and `--namespace` are reserved and will be ignored even if specified here (see note above).
 
 The installation flags specified in `data.installFlagsToRemove` are removed when the hypershift addon agent installs the hypershift operator. So if you want to remove the default `--enable-uwm-telemetry-remote-write` flag, add it in `data.installFlagsToRemove`. All flag keys are added as a single string delimited by a space and you do not need to add the flag values.
 
