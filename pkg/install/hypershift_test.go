@@ -128,6 +128,7 @@ func TestIsReservedInstallFlag(t *testing.T) {
 		{"--exclude-etcd", false},
 		{"--platform-monitoring", false},
 		{"--image-ref=evil", false},     // missing the trailing "s", not the reserved "--image-refs" flag
+		{"--image-ref!bad", false},      // missing the trailing "s", and "!" is not a pflag value separator either
 		{"--image=ref++evil", false},    // does not start with any reserved flag name at all
 		{"--namespace-someword", false}, // a distinct, unreserved flag; only exact "--namespace" is reserved
 	}
