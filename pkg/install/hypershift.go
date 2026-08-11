@@ -582,16 +582,16 @@ var reservedInstallFlags = map[string]bool{
 	"--namespace":        true,
 }
 
-// isReservedInstallFlag blocks any flag starting with a reserved flag name,
-// e.g. "--hypershift-image", "--hypershift-image=evil:latest", "--hypershift-imageEvil".
+// isReservedInstallFlag reports whether flag sets a reserved hypershift install
+// flag. It accepts both "--flag" and "--flag=value" forms, since pflag treats
+// them as equivalent on the real hypershift install CLI.
 func isReservedInstallFlag(flag string) bool {
-	for reserved := range reservedInstallFlags {
-		if strings.HasPrefix(flag, reserved) {
-			return true
-		}
+	// Accept both "--flag" and "--flag=value" forms.
+	if i := strings.Index(flag, "="); i > 0 {
+		flag = flag[:i]
 	}
 
-	return false
+	return reservedInstallFlags[flag]
 }
 
 func contains(theList []string, flagToFind string) bool {

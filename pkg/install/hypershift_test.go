@@ -1207,8 +1207,8 @@ func TestBuildOtherInstallFlagsBlocksReservedFlagsWithEqualsForm(t *testing.T) {
 }
 
 // TestIsReservedInstallFlag verifies the reserved-flag detection helper blocks
-// anything starting with a reserved flag name, in any form ("--flag",
-// "--flag=value", or a lookalike flag name), while leaving unrelated flags alone.
+// both the "--flag" and "--flag=value" forms of a reserved flag, while leaving
+// unrelated and lookalike flag names alone.
 func TestIsReservedInstallFlag(t *testing.T) {
 	tests := []struct {
 		flag     string
@@ -1216,16 +1216,16 @@ func TestIsReservedInstallFlag(t *testing.T) {
 	}{
 		{"--hypershift-image", true},
 		{"--hypershift-image=evil:latest", true},
-		{"--hypershift-image-evil:latest", true},
-		{"--hypershift-imageEvil", true},
 		{"--image-refs", true},
 		{"--image-refs=/tmp/evil", true},
 		{"--namespace", true},
 		{"--namespace=attacker-ns", true},
+		{"--namespace@youarebad", false}, // "@" is not a pflag value separator, so this isn't the reserved flag
 		{"--exclude-etcd", false},
 		{"--platform-monitoring", false},
-		{"--image-ref=evil", false},  // missing the trailing "s", not the reserved "--image-refs" flag
-		{"--image=ref++evil", false}, // does not start with any reserved flag name at all
+		{"--image-ref=evil", false},     // missing the trailing "s", not the reserved "--image-refs" flag
+		{"--image=ref++evil", false},    // does not start with any reserved flag name at all
+		{"--namespace-someword", false}, // a distinct, unreserved flag; only exact "--namespace" is reserved
 	}
 
 	for _, tc := range tests {
