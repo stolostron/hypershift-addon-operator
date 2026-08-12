@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -159,6 +160,86 @@ func Test_loadOrGenerateCert_WhenServiceCACertFileAbsent_ItShouldGenerateFallbac
 	cert, err := loadOrGenerateCert("multicluster-engine", log)
 	require.NoError(t, err)
 	require.NotEmpty(t, cert.Certificate, "expected fallback self-signed cert")
+}
+
+// --- certCache ---
+
+func Test_certCache_WhenConcurrentHandshakes_ItShouldReturnSameFallbackCert(t *testing.T) {
+	origCert, origKey := certFilePath, keyFilePath
+	setCertPaths("/nonexistent/tls.crt", "/nonexistent/tls.key")
+	t.Cleanup(func() { setCertPaths(origCert, origKey) })
+
+	zapLog, _ := zap.NewDevelopment()
+	log := zapr.NewLogger(zapLog)
+	cache := &certCache{operatorNS: "multicluster-engine", log: log}
+
+	const goroutines = 20
+	results := make([]*tls.Certificate, goroutines)
+	errs := make([]error, goroutines)
+
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			results[idx], errs[idx] = cache.getCertificate()
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		require.NoError(t, err, "goroutine %d returned error", i)
+	}
+	// All goroutines must receive the exact same certificate pointer.
+	for i := 1; i < goroutines; i++ {
+		assert.Same(t, results[0], results[i],
+			"goroutine %d got a different cert pointer — fallback was generated more than once", i)
+	}
+}
+
+func Test_certCache_WhenServiceCACertAppears_ItShouldSwitchFromFallback(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "tls.crt")
+	keyFile := filepath.Join(dir, "tls.key")
+
+	// Start with no cert file → expect fallback.
+	origCert, origKey := certFilePath, keyFilePath
+	setCertPaths(certFile, keyFile)
+	t.Cleanup(func() { setCertPaths(origCert, origKey) })
+
+	zapLog, _ := zap.NewDevelopment()
+	log := zapr.NewLogger(zapLog)
+	cache := &certCache{operatorNS: "multicluster-engine", log: log}
+
+	// First call: file absent → self-signed fallback.
+	fallback, err := cache.getCertificate()
+	require.NoError(t, err)
+	require.NotNil(t, fallback)
+
+	// Parse the fallback cert to verify it's self-signed.
+	fallbackLeaf, err := x509.ParseCertificate(fallback.Certificate[0])
+	require.NoError(t, err)
+	assert.Contains(t, fallbackLeaf.Issuer.CommonName, "hcp-proxy",
+		"fallback cert should be issued by the self-signed CA")
+
+	// Now write a service-ca cert to disk (simulating kubelet projection).
+	serviceCA, err := generateSelfSignedCert("multicluster-engine")
+	require.NoError(t, err)
+	certPEM, keyPEM, err := tlsCertToPEM(serviceCA)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(certFile, certPEM, 0600))
+	require.NoError(t, os.WriteFile(keyFile, keyPEM, 0600))
+
+	// Next call: file present → should switch to service-ca cert.
+	switched, err := cache.getCertificate()
+	require.NoError(t, err)
+	require.NotNil(t, switched)
+	assert.NotSame(t, fallback, switched,
+		"cert pointer should change after service-ca cert is projected")
+
+	// The switched cert's raw bytes should match what we wrote to disk.
+	assert.Equal(t, serviceCA.Certificate[0], switched.Certificate[0],
+		"switched cert should match the service-ca cert on disk")
 }
 
 // --- whoIsTheCaller ---
