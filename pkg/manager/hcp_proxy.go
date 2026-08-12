@@ -109,7 +109,7 @@ type ResourceBundle struct {
 type hcpProxy struct {
 	hubConfig         *rest.Config
 	hubClient         client.Client
-	hubDynClient      dynamic.Interface       // operator-identity client for permission probe; cached at startup
+	hubDynClient      dynamic.Interface // operator-identity client for permission probe; cached at startup
 	operatorNamespace string
 	clusterProxyURL   string                  // resolved at startup; overridable in tests
 	profileSpec       configv1.TLSProfileSpec // cluster TLS profile applied to server + outbound clients
@@ -143,24 +143,20 @@ func StartHCPProxy(
 		log:               log,
 	}
 
-	cert, err := loadOrGenerateCert(operatorNamespace, log)
-	if err != nil {
-		return fmt.Errorf("failed to load/generate TLS cert: %w", err)
-	}
-
 	// Apply the cluster's APIServer TLS profile (MinVersion + CipherSuites) to the server.
 	tlsConfigFn, unsupported := tlspkg.NewTLSConfigFromProfile(profileSpec)
 	if len(unsupported) > 0 {
 		log.Info("TLS profile contains unsupported ciphers, they will be ignored", "ciphers", unsupported)
 	}
 
-	// Identity headers (X-Remote-*) are injected by kube-apiserver over the
-	// authenticated aggregated-API connection. ClientAuth/mTLS against the
-	// requestheader CA is not enabled here: local e2e and documented curl
-	// workflows hit the proxy directly with forged headers on a ClusterIP /
-	// port-forward path that is not exposed outside the hub.
 	tlsCfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			cert, err := loadOrGenerateCert(operatorNamespace, log)
+			if err != nil {
+				return nil, err
+			}
+			return &cert, nil
+		},
 	}
 	tlsConfigFn(tlsCfg)
 
@@ -1142,7 +1138,6 @@ func (p *hcpProxy) putOnSpoke(
 	}
 	return nil
 }
-
 
 // handleGetResources returns all K8s resources that make up a HostedCluster:
 //   - Namespace (best-effort — omitted if unreachable)

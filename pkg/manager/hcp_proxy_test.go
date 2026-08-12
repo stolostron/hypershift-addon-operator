@@ -275,7 +275,6 @@ func Test_clusterProxyNamespace_WhenOperatorNSEmpty_ItShouldUsePOD_NAMESPACE(t *
 	assert.Equal(t, "multicluster-engine", clusterProxyNamespace(""))
 }
 
-
 // --- handleHealthz ---
 
 func Test_handleHealthz_WhenCalled_ItShouldReturn200(t *testing.T) {
@@ -1520,7 +1519,6 @@ func Test_resolveClusterProxyURL_WhenRoutePresent_ItShouldPreferRoute(t *testing
 	url := resolveClusterProxyURL(context.Background(), p.hubClient, "my-mce-ns", p.log)
 	assert.Equal(t, "https://cp.example.com", url)
 }
-
 
 func Test_putOnSpoke_WhenSpokeReturnsError_ItShouldReturnError(t *testing.T) {
 	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
