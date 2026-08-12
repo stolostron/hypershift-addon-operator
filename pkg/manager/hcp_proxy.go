@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-logr/logr"
@@ -109,7 +110,7 @@ type ResourceBundle struct {
 type hcpProxy struct {
 	hubConfig         *rest.Config
 	hubClient         client.Client
-	hubDynClient      dynamic.Interface       // operator-identity client for permission probe; cached at startup
+	hubDynClient      dynamic.Interface // operator-identity client for permission probe; cached at startup
 	operatorNamespace string
 	clusterProxyURL   string                  // resolved at startup; overridable in tests
 	profileSpec       configv1.TLSProfileSpec // cluster TLS profile applied to server + outbound clients
@@ -143,24 +144,18 @@ func StartHCPProxy(
 		log:               log,
 	}
 
-	cert, err := loadOrGenerateCert(operatorNamespace, log)
-	if err != nil {
-		return fmt.Errorf("failed to load/generate TLS cert: %w", err)
-	}
-
 	// Apply the cluster's APIServer TLS profile (MinVersion + CipherSuites) to the server.
 	tlsConfigFn, unsupported := tlspkg.NewTLSConfigFromProfile(profileSpec)
 	if len(unsupported) > 0 {
 		log.Info("TLS profile contains unsupported ciphers, they will be ignored", "ciphers", unsupported)
 	}
 
-	// Identity headers (X-Remote-*) are injected by kube-apiserver over the
-	// authenticated aggregated-API connection. ClientAuth/mTLS against the
-	// requestheader CA is not enabled here: local e2e and documented curl
-	// workflows hit the proxy directly with forged headers on a ClusterIP /
-	// port-forward path that is not exposed outside the hub.
+	cache := &certCache{operatorNS: operatorNamespace, log: log}
+
 	tlsCfg := &tls.Config{
-		Certificates: []tls.Certificate{cert},
+		GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+			return cache.getCertificate()
+		},
 	}
 	tlsConfigFn(tlsCfg)
 
@@ -289,6 +284,52 @@ func discoverClusterProxyRouteURL(
 	return "https://" + host, nil
 }
 
+// certCache provides a synchronized certificate source for GetCertificate.
+// On every TLS handshake it checks whether the service-ca Secret has been
+// projected (cheap os.Stat on a tmpfs volume). When found, it loads and caches
+// the service-ca cert. When absent, it generates and caches a self-signed
+// fallback exactly once (expensive crypto), shared across concurrent handshakes.
+type certCache struct {
+	mu         sync.Mutex
+	operatorNS string
+	log        logr.Logger
+
+	// serviceCACert is the cached cert loaded from the mounted Secret.
+	serviceCACert *tls.Certificate
+	// fallbackCert is a lazily-generated self-signed cert (generated once).
+	fallbackCert *tls.Certificate
+}
+
+func (c *certCache) getCertificate() (*tls.Certificate, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Always check for the projected service-ca cert so the proxy switches
+	// to the real cert as soon as the kubelet projects the Secret volume.
+	if _, err := os.Stat(certFilePath); err == nil {
+		cert, err := tls.LoadX509KeyPair(certFilePath, keyFilePath)
+		if err != nil {
+			return nil, fmt.Errorf("load serving certificate during TLS handshake: %w", err)
+		}
+		c.serviceCACert = &cert
+		return c.serviceCACert, nil
+	}
+
+	// Service-ca cert not yet available — use cached fallback.
+	if c.fallbackCert != nil {
+		return c.fallbackCert, nil
+	}
+
+	// Generate fallback once; concurrent handshakes are serialized by the mutex.
+	c.log.Info("service-ca cert not found, generating self-signed fallback cert", "dir", hcpProxyTLSDir)
+	cert, err := generateSelfSignedCert(c.operatorNS)
+	if err != nil {
+		return nil, fmt.Errorf("generate fallback serving certificate: %w", err)
+	}
+	c.fallbackCert = &cert
+	return c.fallbackCert, nil
+}
+
 // loadOrGenerateCert loads the serving cert from the service-ca-operator Secret
 // mount (OpenShift), or falls back to a self-signed cert (kind / vanilla k8s).
 func loadOrGenerateCert(operatorNS string, log logr.Logger) (tls.Certificate, error) {
@@ -297,7 +338,6 @@ func loadOrGenerateCert(operatorNS string, log logr.Logger) (tls.Certificate, er
 		if err != nil {
 			return tls.Certificate{}, fmt.Errorf("load service-ca cert from %s: %w", hcpProxyTLSDir, err)
 		}
-		log.Info("loaded serving cert from service-ca Secret", "dir", hcpProxyTLSDir)
 		return cert, nil
 	}
 	log.Info("service-ca cert not found, generating self-signed fallback cert", "dir", hcpProxyTLSDir)
@@ -1142,7 +1182,6 @@ func (p *hcpProxy) putOnSpoke(
 	}
 	return nil
 }
-
 
 // handleGetResources returns all K8s resources that make up a HostedCluster:
 //   - Namespace (best-effort — omitted if unreachable)
