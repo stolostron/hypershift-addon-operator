@@ -2,6 +2,7 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -22,7 +23,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -441,6 +441,215 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadNoConsole() {
 	suite.EqualError(err, "consoleclidownloads.console.openshift.io \"hcp-cli-download\" not found")
 }
 
+// TestEnableHypershiftCLIDownloadWithImageEnvVarOverride simulates an OLM v1 install where no MCE
+// ClusterServiceVersion object exists in the cluster. The hcp CLI download image should be
+// taken from the HYPERSHIFT_CLI_IMAGE_NAME env var instead, so the CSV lookup/retry loop is
+// skipped entirely and the route/service/deployment are still created.
+//
+// Named to sort alphabetically after TestEnableHypershiftCLIDownloadNoConsole so it doesn't
+// change existing suite test ordering (TestEnableHypershiftCLIDownloadNoConsole relies on
+// ConsoleCLIDownload state left over from TestEnableHypershiftCLIDownload).
+func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadWithImageEnvVarOverride() {
+	controllerContext := &controllercmd.ControllerContext{}
+
+	o := &override{
+		Client:            suite.testKubeClient,
+		log:               suite.log,
+		operatorNamespace: controllerContext.OperatorNamespace,
+		withOverride:      false,
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Register cancel first so it runs last among Cleanups (after resource deletes).
+	suite.T().Cleanup(cancel)
+
+	// createFixture creates obj and registers cleanup only when this test created it.
+	// AlreadyExists is tolerated for fixtures left behind by earlier suite tests;
+	// any other create error fails the test immediately.
+	createFixture := func(obj client.Object, desc string) {
+		err := o.Client.Create(ctx, obj)
+		if apierrors.IsAlreadyExists(err) {
+			return
+		}
+		suite.Require().NoError(err, "create %s", desc)
+		suite.T().Cleanup(func() {
+			err := o.Client.Delete(ctx, obj)
+			suite.True(err == nil || apierrors.IsNotFound(err), "cleanup %s", desc)
+		})
+	}
+
+	// Create mock multicluster engine. No MCE CSV is created, simulating an OLM v1 install
+	// where ClusterServiceVersion objects do not exist in the cluster.
+	//
+	// TestEnableHypershiftCLIDownloadNoConsole (which runs before this test) does not clean up
+	// the MCE/addon deployment/clusterRole it creates, so tolerate them already existing here.
+	createFixture(getTestMCE("multiclusterengine", "multicluster-engine"), "test MCE")
+	createFixture(getTestAddonDeployment(), "addon deployment")
+	createFixture(getTestClusterRole(), "addon clusterRole")
+	createFixture(getTestOCCLIDownload(), "oc cli ConsoleCLIDownload")
+
+	const overrideImage = "registry.example/hypershift-cli:test"
+	suite.T().Setenv(HypershiftCLIImageEnvVar, overrideImage)
+
+	err := EnableHypershiftCLIDownload(ctx, o.Client, o.log)
+	suite.Require().NoError(err, "EnableHypershiftCLIDownload should succeed with image env var override")
+
+	cliDeployment := &appsv1.Deployment{}
+	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
+	err = o.Client.Get(ctx, cliDeploymentNN, cliDeployment)
+	suite.Require().NoError(err, "hypershift CLI download deployment should exist")
+	suite.Equal(overrideImage, cliDeployment.Spec.Template.Spec.Containers[0].Image,
+		"Deployment must use HYPERSHIFT_CLI_IMAGE_NAME override so OLM v1 installs get the correct hcp CLI image")
+	suite.T().Cleanup(func() {
+		err := o.Client.Delete(ctx, cliDeployment)
+		suite.True(err == nil || apierrors.IsNotFound(err), "cleanup CLI deployment")
+	})
+
+	cliService := &corev1.Service{}
+	cliServiceNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
+	err = o.Client.Get(ctx, cliServiceNN, cliService)
+	suite.Require().NoError(err, "hypershift CLI download service should exist")
+	suite.T().Cleanup(func() {
+		err := o.Client.Delete(ctx, cliService)
+		suite.True(err == nil || apierrors.IsNotFound(err), "cleanup CLI service")
+	})
+
+	cliRoute := &routev1.Route{}
+	cliRouteNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
+	err = o.Client.Get(ctx, cliRouteNN, cliRoute)
+	suite.Require().NoError(err, "hypershift CLI download route should exist")
+	suite.T().Cleanup(func() {
+		err := o.Client.Delete(ctx, cliRoute)
+		suite.True(err == nil || apierrors.IsNotFound(err), "cleanup CLI route")
+	})
+
+	cliDownload := &consolev1.ConsoleCLIDownload{}
+	cliDownloadNN := types.NamespacedName{Name: NewCLIDownloadResourceName}
+	err = o.Client.Get(ctx, cliDownloadNN, cliDownload)
+	suite.Require().NoError(err, "hypershift CLI download ConsoleCLIDownload should exist")
+	suite.deleteCLIDownload(cliDownload.Name)
+}
+
+// TestEnableHypershiftCLIDownloadXCSVLookupError verifies that EnableHypershiftCLIDownload
+// surfaces a wrapped error when the MCE CSV cannot be found and the retry loop's context is
+// cancelled, instead of exhausting all 5 attempts (which would otherwise take several minutes
+// of real wall-clock time due to the 2 minute retry interval).
+//
+// Named to sort alphabetically after TestEnableHypershiftCLIDownloadWithImageEnvVarOverride so
+// it doesn't disturb the existing suite test ordering.
+func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadXCSVLookupError() {
+	o := &override{
+		Client: suite.testKubeClient,
+		log:    suite.log,
+	}
+
+	// No HYPERSHIFT_CLI_IMAGE_NAME override, so the CSV lookup path is exercised.
+	suite.T().Setenv(HypershiftCLIImageEnvVar, "")
+
+	// Remove any CSVs left over from earlier suite tests so the lookup fails and the retry
+	// loop is entered.
+	csvList := &operatorsv1alpha1.ClusterServiceVersionList{}
+	suite.Require().NoError(o.Client.List(context.Background(), csvList), "must list CSVs to clear fixtures before exercising the CSV-lookup-failure path")
+	for i := range csvList.Items {
+		suite.Require().NoError(o.Client.Delete(context.Background(), &csvList.Items[i]), "must delete leftover CSV so no MCE CSV exists for this test")
+	}
+
+	// Expire the context before calling in, so the retry loop's ctx.Done() case fires
+	// immediately instead of sleeping for 2 minutes between attempts.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	time.Sleep(5 * time.Millisecond)
+
+	err := EnableHypershiftCLIDownload(ctx, o.Client, o.log)
+	suite.Require().Error(err, "EnableHypershiftCLIDownload should fail when the MCE CSV lookup is cancelled")
+	suite.Contains(err.Error(), "get MCE CSV", "error should be wrapped with context about the failing operation")
+	suite.True(errors.Is(err, context.DeadlineExceeded), "error should wrap context.DeadlineExceeded via %%w so callers can check it with errors.Is")
+}
+
+// TestEnableHypershiftCLIDownloadXSkipsWithoutImage verifies that EnableHypershiftCLIDownload
+// returns nil without attempting to deploy anything when neither the env var override nor the
+// MCE CSV provide an hcp CLI image (the upstream build case).
+//
+// Named to sort alphabetically after TestEnableHypershiftCLIDownloadXCSVLookupError so it
+// doesn't disturb the existing suite test ordering.
+func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadXSkipsWithoutImage() {
+	o := &override{
+		Client: suite.testKubeClient,
+		log:    suite.log,
+	}
+	ctx := context.Background()
+
+	suite.T().Setenv(HypershiftCLIImageEnvVar, "")
+
+	// Leave only an upstream CSV (no hypershift_cli related image) in place, so the CSV lookup
+	// succeeds but getHypershiftCLIDownloadImage still returns "".
+	csvList := &operatorsv1alpha1.ClusterServiceVersionList{}
+	suite.Require().NoError(o.Client.List(ctx, csvList), "must list CSVs to clear fixtures before leaving only the upstream CSV in place")
+	for i := range csvList.Items {
+		suite.Require().NoError(o.Client.Delete(ctx, &csvList.Items[i]), "must delete leftover CSV so only the upstream CSV created below is present")
+	}
+	upstreamCSV := getTestMCECSV("v2.1.0", false)
+	suite.Require().NoError(o.Client.Create(ctx, upstreamCSV))
+	suite.T().Cleanup(func() {
+		err := o.Client.Delete(ctx, upstreamCSV)
+		suite.True(err == nil || apierrors.IsNotFound(err), "cleanup upstream CSV")
+	})
+
+	err := EnableHypershiftCLIDownload(ctx, o.Client, o.log)
+	suite.Require().NoError(err, "EnableHypershiftCLIDownload should skip enabling the hcp CLI download without failing when no image is available")
+
+	// Nothing should have been deployed.
+	cliDeployment := &appsv1.Deployment{}
+	cliDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: NewCLIDownloadResourceName}
+	err = o.Client.Get(ctx, cliDeploymentNN, cliDeployment)
+	suite.True(apierrors.IsNotFound(err), "hcp CLI download deployment should not be created without an image")
+}
+
+// TestEnableHypershiftCLIDownloadXDeployError verifies that EnableHypershiftCLIDownload wraps
+// and returns the error when deployHCPCLIDownload fails, here because the hypershift-addon-manager
+// deployment that the hcp CLI download resources are owned by cannot be found.
+//
+// Named to sort alphabetically after TestEnableHypershiftCLIDownloadXSkipsWithoutImage so it
+// doesn't disturb the existing suite test ordering.
+func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadXDeployError() {
+	o := &override{
+		Client: suite.testKubeClient,
+		log:    suite.log,
+	}
+	ctx := context.Background()
+
+	// Skip the CSV lookup so this test is isolated from CSV state left over from earlier tests.
+	suite.T().Setenv(HypershiftCLIImageEnvVar, "registry.example/hypershift-cli:deploy-error-test")
+
+	// deployHCPCLIDownload only attempts to deploy anything when at least one ConsoleCLIDownload
+	// resource already exists; earlier tests clean theirs up, so create one here.
+	occli := getTestOCCLIDownload()
+	err := o.Client.Create(ctx, occli)
+	if !apierrors.IsAlreadyExists(err) {
+		suite.Require().NoError(err, "create oc cli ConsoleCLIDownload")
+		suite.T().Cleanup(func() {
+			err := o.Client.Delete(ctx, occli)
+			suite.True(err == nil || apierrors.IsNotFound(err), "cleanup oc cli ConsoleCLIDownload")
+		})
+	}
+
+	// Temporarily remove the hypershift-addon-manager deployment so getOwnerRef() fails and
+	// deployHCPCLIDownload returns an error for EnableHypershiftCLIDownload to wrap.
+	addonDeployment := &appsv1.Deployment{}
+	addonDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hypershift-addon-manager"}
+	suite.Require().NoError(o.Client.Get(ctx, addonDeploymentNN, addonDeployment), "hypershift-addon-manager deployment should exist from earlier tests")
+	suite.Require().NoError(o.Client.Delete(ctx, addonDeployment))
+	suite.T().Cleanup(func() {
+		err := o.Client.Create(ctx, getTestAddonDeployment())
+		suite.True(err == nil || apierrors.IsAlreadyExists(err), "restore hypershift-addon-manager deployment")
+	})
+
+	err = EnableHypershiftCLIDownload(ctx, o.Client, o.log)
+	suite.Require().Error(err, "EnableHypershiftCLIDownload should fail when the addon manager deployment used for the owner reference is missing")
+	suite.Contains(err.Error(), "deploy HypershiftCLIDownload", "error should be wrapped with context about the failing operation")
+	suite.Contains(err.Error(), "hypershift-addon-manager", "error should surface the missing owning deployment")
+}
+
 func (suite *CLIDownloadTestSuite) TestRetryCSV() {
 	controllerContext := &controllercmd.ControllerContext{}
 	client, sch := initCSVErrorClient()
@@ -491,7 +700,7 @@ func (suite *CLIDownloadTestSuite) deleteCLIDownload(name string) {
 		suite.Eventually(func() bool {
 			cliDownloadToDelete := &consolev1.ConsoleCLIDownload{}
 			err := suite.testKubeClient.Get(context.TODO(), hcNN, cliDownloadToDelete)
-			return err != nil && errors.IsNotFound(err)
+			return err != nil && apierrors.IsNotFound(err)
 		}, 5*time.Second, 500*time.Millisecond)
 	}
 }
