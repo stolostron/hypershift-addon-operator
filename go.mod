@@ -180,6 +180,9 @@ require (
 	go.yaml.in/yaml/v2 v2.4.3 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
+	// golang.org/x/exp has no stable tagged releases (Go team publishes it as
+	// an always-latest pseudo-version module); pinning a reproducible
+	// pseudo-version here is an approved exception to the tagged-release policy.
 	golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b // indirect
 	golang.org/x/mod v0.37.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
@@ -191,6 +194,10 @@ require (
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.47.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
+	// google.golang.org/genproto has no stable tagged releases (maintainers
+	// intentionally do not tag semver releases); pinning reproducible
+	// pseudo-versions for the two genproto submodules below is an approved
+	// exception to the tagged-release policy.
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/grpc v1.83.0 // indirect
