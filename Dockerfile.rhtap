@@ -16,9 +16,10 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     go build -mod=readonly -o bin/hypershift-addon cmd/main.go
 
-# Use distroless as minimal base image to package the manager binary
-# Refer to https://github.com/GoogleContainerTools/distroless for more details
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+# PQC-enabled UBI9 runtime (OpenSSL DEFAULT:PQ) for ACM 5.0 / MCE 5.0.
+# The image is published on registry.redhat.io (same as backplane-operator ACM-41650);
+# it is not available on registry.access.redhat.com or registry.ci.openshift.org.
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest
 
 # Add the binaries
 COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/hypershift-addon .
@@ -33,3 +34,5 @@ LABEL com.redhat.component="multicluster-engine-hypershift-addon-operator-contai
       io.k8s.display-name="multicluster-engine-hypershift-addon-operator" \
       io.k8s.description="MultiCluster Engine hypershift addon operator" \
       description="multicluster-engine-hypershift-addon-operator"
+
+USER 65532:65532
