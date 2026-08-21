@@ -149,6 +149,138 @@ func TestIsReservedInstallFlag(t *testing.T) {
 	}
 }
 
+// TestIsApprovedImageRegistry verifies that only images from the approved
+// registries are accepted, and that lookalike registry names are rejected.
+func TestIsApprovedImageRegistry(t *testing.T) {
+	tests := []struct {
+		image    string
+		expected bool
+	}{
+		{"registry.redhat.io/openshift4/ose-kube-rbac-proxy:v4.10", true},
+		{"quay.io/openshift-release-dev/ocp-release:4.15.0", true},
+		{"quay.io/stolostron/hypershift-operator:latest", true},
+		{"quay.io/hypershift/hypershift-operator:latest", true},
+		{"quay.io/stolostron/hypershift-operator@sha256:eedb58e7b9c4d9e49c6c53d1b5b97dfddcdffe839bbffd4fb950760715d24244", true},
+		// Lookalike registries/repos must not match on a bare prefix.
+		{"quay.io/stolostronevil/hypershift-operator:latest", false},
+		{"registry.redhat.io.evil.com/openshift4/foo:latest", false},
+		{"quay.io/evil/hypershift-operator:latest", false},
+		{"docker.io/library/hypershift-operator:latest", false},
+		{"", false},
+	}
+
+	for _, tc := range tests {
+		assert.Equal(t, tc.expected, isApprovedImageRegistry(tc.image), "unexpected result for image %q", tc.image)
+	}
+}
+
+// TestIsImageBearingFlag verifies the heuristic used to identify install flags
+// that carry a container image reference, in both the "--flag" and
+// "--flag=value" forms.
+func TestIsImageBearingFlag(t *testing.T) {
+	tests := []struct {
+		flag     string
+		expected bool
+	}{
+		{"--control-plane-operator-image", true},
+		{"--control-plane-operator-image=quay.io/evil/foo:latest", true},
+		{"--IMAGE-override", true},
+		{"--exclude-etcd", false},
+		{"--platform-monitoring", false},
+	}
+
+	for _, tc := range tests {
+		assert.Equal(t, tc.expected, isImageBearingFlag(tc.flag), "unexpected result for flag %q", tc.flag)
+	}
+}
+
+// TestBuildOtherInstallFlagsBlocksUnapprovedImageRegistry verifies that a
+// non-reserved, image-bearing flag supplied via the installFlagsToAdd configmap
+// is rejected when its value does not reference an approved registry, in both
+// the "--flag value" and "--flag=value" forms.
+func TestBuildOtherInstallFlagsBlocksUnapprovedImageRegistry(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		log: zapr.NewLogger(zapLog),
+	}
+
+	installFlagsCM := corev1.ConfigMap{
+		Data: map[string]string{
+			"installFlagsToAdd": "--control-plane-operator-image quay.io/evil/cpo:latest --exclude-etcd",
+		},
+	}
+
+	args := aCtrl.buildOtherInstallFlags(installFlagsCM)
+
+	assert.NotContains(t, args, "--control-plane-operator-image", "image-bearing flag with an unapproved registry must be rejected")
+	assert.NotContains(t, args, "quay.io/evil/cpo:latest")
+	assert.Contains(t, args, "--exclude-etcd", "non-image flags should still be honored")
+}
+
+// TestBuildOtherInstallFlagsAllowsApprovedImageRegistry verifies that a
+// non-reserved, image-bearing flag is honored when its value references an
+// approved registry.
+func TestBuildOtherInstallFlagsAllowsApprovedImageRegistry(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		log: zapr.NewLogger(zapLog),
+	}
+
+	installFlagsCM := corev1.ConfigMap{
+		Data: map[string]string{
+			"installFlagsToAdd": "--control-plane-operator-image=quay.io/stolostron/cpo:latest",
+		},
+	}
+
+	args := aCtrl.buildOtherInstallFlags(installFlagsCM)
+
+	assert.Contains(t, args, "--control-plane-operator-image=quay.io/stolostron/cpo:latest", "image-bearing flag with an approved registry should be honored")
+}
+
+// TestGetUpdatedImageStreamRejectsUnapprovedRegistry verifies that
+// getUpdatedImageStream, which applies overrides supplied via the
+// hypershift-override-images configmap, only applies overrides whose image
+// value references an approved registry and leaves the original image in
+// place otherwise.
+func TestGetUpdatedImageStreamRejectsUnapprovedRegistry(t *testing.T) {
+	zapLog, _ := zap.NewDevelopment()
+	aCtrl := &UpgradeController{
+		log: zapr.NewLogger(zapLog),
+	}
+
+	originalHsImage := "quay.io/stolostron/hypershift-operator@sha256:122a59aaf2fa72d1e3c0befb0de61df2aeea848676b0f41055b07ca0e6291391"
+	originalCapiImage := "quay.io/stolostron/cluster-api:v1.0.0"
+
+	ims := &imageapi.ImageStream{}
+	ims.Spec.Tags = []imageapi.TagReference{
+		{Name: util.ImageStreamHypershiftOperator, From: &corev1.ObjectReference{Name: originalHsImage}},
+		{Name: util.ImageStreamClusterApi, From: &corev1.ObjectReference{Name: originalCapiImage}},
+	}
+	im, err := yaml.Marshal(ims)
+	assert.Nil(t, err, "expected Marshal to succeed: %s", err)
+
+	upgradeImagesMap := map[string]string{
+		util.ImageStreamHypershiftOperator: "quay.io/evil/hypershift-operator:latest",
+		util.ImageStreamClusterApi:         "quay.io/stolostron/cluster-api:v1.1.0",
+	}
+
+	updatedIm, err := aCtrl.getUpdatedImageStream(im, upgradeImagesMap)
+	assert.Nil(t, err, "expected getUpdatedImageStream to succeed: %s", err)
+
+	updatedObj := &imageapi.ImageStream{}
+	err = yaml.Unmarshal(updatedIm, updatedObj)
+	assert.Nil(t, err, "expected Unmarshal to succeed: %s", err)
+
+	for _, tag := range updatedObj.Spec.Tags {
+		switch tag.Name {
+		case util.ImageStreamHypershiftOperator:
+			assert.Equal(t, originalHsImage, tag.From.Name, "override from an unapproved registry must be ignored")
+		case util.ImageStreamClusterApi:
+			assert.Equal(t, "quay.io/stolostron/cluster-api:v1.1.0", tag.From.Name, "override from an approved registry should be applied")
+		}
+	}
+}
+
 func initDeployObj() *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{

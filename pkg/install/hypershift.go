@@ -485,6 +485,12 @@ func (c *UpgradeController) buildOtherInstallFlags(installFlagsCM corev1.ConfigM
 				c.log.Info(fmt.Sprintf("install flag [ %s ] is reserved and cannot be set via the %s configmap, ignoring it", flag, util.HypershiftInstallFlagsCM))
 				continue
 			}
+			if isImageBearingFlag(flag) {
+				if val := imageBearingFlagValue(flagsToAdd, flag); val != "" && !isApprovedImageRegistry(val) {
+					c.log.Info(fmt.Sprintf("install flag [ %s ] references an image outside the approved registries and cannot be set via the %s configmap, ignoring it", flag, util.HypershiftInstallFlagsCM))
+					continue
+				}
+			}
 			flagVal := getParamValue(flagsToAdd, flag)
 			flagArgs := []string{flag}
 			if flagVal != "" {
@@ -517,6 +523,58 @@ func isReservedInstallFlag(flag string) bool {
 	}
 
 	return reservedInstallFlags[flag]
+}
+
+// approvedImageRegistries are the container registries that hypershift operator
+// component images are permitted to come from. Values supplied via the
+// hypershift-override-images configmap, or via an installFlagsToAdd flag, that
+// reference a registry outside this list are rejected. Without this check, a
+// hub-cluster namespace admin with write access to those configmaps could point
+// the privileged hypershift install Job (or the operator's component images) at
+// an arbitrary image, achieving cluster-admin execution on the spoke cluster.
+var approvedImageRegistries = []string{
+	"registry.redhat.io/",
+	"quay.io/openshift-release-dev/",
+	"quay.io/stolostron/",
+	"quay.io/hypershift/",
+}
+
+// isApprovedImageRegistry reports whether image references one of the
+// approvedImageRegistries. Matching is done on the registry host plus
+// repository path prefix (including the trailing "/"), so a lookalike such as
+// "quay.io/stolostronevil/foo" is correctly rejected.
+func isApprovedImageRegistry(image string) bool {
+	for _, registry := range approvedImageRegistries {
+		if strings.HasPrefix(image, registry) {
+			return true
+		}
+	}
+	return false
+}
+
+// isImageBearingFlag reports whether flag looks like it sets a container image
+// reference (e.g. "--control-plane-operator-image"). Values supplied for such
+// flags via the installFlagsToAdd configmap must reference an approved registry;
+// see isApprovedImageRegistry.
+func isImageBearingFlag(flag string) bool {
+	name := flag
+	if i := strings.Index(name, "="); i > 0 {
+		name = name[:i]
+	}
+
+	return strings.Contains(strings.ToLower(name), "image")
+}
+
+// imageBearingFlagValue returns the value that would be supplied for flag, so it
+// can be checked with isApprovedImageRegistry. It handles both the
+// "--flag=value" and "--flag value" forms, since pflag treats them as
+// equivalent on the real hypershift install CLI.
+func imageBearingFlagValue(flagsToAdd []string, flag string) string {
+	if i := strings.Index(flag, "="); i > 0 {
+		return flag[i+1:]
+	}
+
+	return getParamValue(flagsToAdd, flag)
 }
 
 func contains(theList []string, flagToFind string) bool {
@@ -771,6 +829,10 @@ func (c *UpgradeController) getUpdatedImageStream(im []byte, upgradeImagesMap ma
 	}
 
 	for k, v := range upgradeImagesMap {
+		if !isApprovedImageRegistry(v) {
+			c.log.Info(fmt.Sprintf("image override for %s (%s) is not from an approved registry, ignoring it", k, v))
+			continue
+		}
 		c.log.Info(fmt.Sprintf("upgrade image %s:%s", k, v))
 		overrideImageInImageStream(imObj, k, v)
 	}
