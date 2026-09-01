@@ -836,8 +836,15 @@ func extraObjectCollectionAPIPath(ns string, gvk schema.GroupVersionKind) (strin
 	if err != nil {
 		return "", fmt.Errorf("extra object apiVersion: %w", err)
 	}
-	gvr, _ := meta.UnsafeGuessKindToResource(gvk)
-	resource, err := sanitizeProxyName(gvr.Resource)
+	gvr, listGVR := meta.UnsafeGuessKindToResource(gvk)
+	resourceName := gvr.Resource
+	if resourceName == "" {
+		resourceName = listGVR.Resource
+	}
+	if resourceName == "" {
+		return "", fmt.Errorf("cannot guess resource name for kind %q", gvk.Kind)
+	}
+	resource, err := sanitizeProxyName(resourceName)
 	if err != nil {
 		return "", fmt.Errorf("extra object resource: %w", err)
 	}
@@ -957,9 +964,9 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		return
 	}
 
-	extraObjs, err := decodeExtraObjects(req.ExtraObjects)
-	if err != nil {
-		writeJSONError(w, err.Error(), http.StatusBadRequest)
+	extraObjs, extraErr := decodeExtraObjects(req.ExtraObjects)
+	if extraErr != nil {
+		writeJSONError(w, extraErr.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -1021,9 +1028,9 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		obj.SetNamespace(ns)
 		obj.SetLabels(addProxyLabels(obj.GetLabels()))
 		ident := obj.GetKind() + "/" + obj.GetName()
-		if err := p.createUnstructuredOnSpoke(ctx, hcpClient, spokeName, ns, obj); err != nil && !isAlreadyExists(err) {
-			p.log.Error(err, "failed to create extra object", "object", ident, "spoke", spokeName)
-			writeJSONError(w, "failed to create extra object "+ident+": "+err.Error(), http.StatusInternalServerError)
+		if extraErr := p.createUnstructuredOnSpoke(ctx, hcpClient, spokeName, ns, obj); extraErr != nil && !isAlreadyExists(extraErr) {
+			p.log.Error(extraErr, "failed to create extra object", "object", ident, "spoke", spokeName)
+			writeJSONError(w, "failed to create extra object "+ident+": "+extraErr.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
@@ -1080,7 +1087,9 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 
 	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(bundle)
+	if err := json.NewEncoder(w).Encode(bundle); err != nil {
+		p.log.Error(err, "failed to encode create response")
+	}
 }
 
 // handleDelete deletes the HostedCluster and all associated NodePools from the spoke.

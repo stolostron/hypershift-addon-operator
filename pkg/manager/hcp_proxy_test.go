@@ -1185,7 +1185,8 @@ func Test_handleCreate_WhenExtraObjectMissingKind_ItShouldReturn400(t *testing.T
 	r.Header.Set("X-Remote-User", "alice")
 	p.handleCreate(w, r, "clusters", "spoke-1")
 
-	assert.Equal(t, http.StatusBadRequest, w.Code, "extra objects without apiVersion/kind must be rejected before spoke writes")
+	assert.Equal(t, http.StatusBadRequest, w.Code,
+		"extra objects without apiVersion/kind must be rejected before spoke writes")
 	assert.Contains(t, w.Body.String(), "Kind", "error must explain the ExtraObjects contract")
 }
 
