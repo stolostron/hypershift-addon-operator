@@ -41,7 +41,11 @@ const (
 	hcpProxyServiceName = "hypershift-addon-hcp-proxy"
 	hcpProxyAPIGroup    = "hcp.ocm.io"
 	hcpProxyAPIVersion  = "v1alpha1"
-	hcpProxyResource    = "hostedclusters"
+	// Same plural as hypershift.openshift.io HostedCluster. Unqualified
+	// `oc get hostedclusters` is steered to the native CRD by setting the
+	// APIService groupPriorityMinimum below the CRD default (1000). Callers
+	// that want this proxy must use hostedclusters.hcp.ocm.io.
+	hcpProxyResource = "hostedclusters"
 
 	// In-cluster Service names/ports.
 	// cluster-proxy: operator pod namespace (POD_NAMESPACE / backplane-operator).
@@ -1308,12 +1312,40 @@ func (p *hcpProxy) fetchNodePoolsForHC(
 	return out
 }
 
-// writeJSONError writes a JSON-encoded error response {"error": "<msg>"} with the given HTTP status code.
+// writeJSONError writes a Kubernetes Status object so oc/kubectl can decode
+// the error (kind, apiVersion, status, reason, message, code).
 func writeJSONError(w http.ResponseWriter, msg string, code int) {
+	status := metav1.Status{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "v1",
+			Kind:       "Status",
+		},
+		Status:  metav1.StatusFailure,
+		Message: msg,
+		Reason:  statusReasonForCode(code),
+		Code:    int32(code),
+	}
 	w.Header().Set(headerContentType, contentTypeJSON)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	_ = json.NewEncoder(w).Encode(status)
+}
+
+func statusReasonForCode(code int) metav1.StatusReason {
+	switch code {
+	case http.StatusBadRequest:
+		return metav1.StatusReasonBadRequest
+	case http.StatusForbidden:
+		return metav1.StatusReasonForbidden
+	case http.StatusNotFound:
+		return metav1.StatusReasonNotFound
+	case http.StatusMethodNotAllowed:
+		return metav1.StatusReasonMethodNotAllowed
+	case http.StatusServiceUnavailable:
+		return metav1.StatusReasonServiceUnavailable
+	default:
+		return metav1.StatusReasonInternalError
+	}
 }
 
 // buildNamespace constructs a Namespace stamped with the created-via label.
