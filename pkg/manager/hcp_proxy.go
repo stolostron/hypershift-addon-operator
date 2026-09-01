@@ -43,7 +43,7 @@ const (
 	hcpProxyAPIVersion  = "v1alpha1"
 	// Same plural as hypershift.openshift.io HostedCluster. Unqualified
 	// `oc get hostedclusters` is steered to the native CRD by setting the
-	// APIService groupPriorityMinimum below the CRD default (1000). Callers
+	// APIService groupPriorityMinimum to 1 (CRD default is 1000). Callers
 	// that want this proxy must use hostedclusters.hcp.ocm.io.
 	hcpProxyResource = "hostedclusters"
 
