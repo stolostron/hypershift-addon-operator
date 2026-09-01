@@ -1044,6 +1044,177 @@ func Test_handleCreate_WhenCreated_ItShouldStampCreatedViaLabel(t *testing.T) {
 	assert.Equal(t, labelCreatedViaValue, postedNP.Labels[labelCreatedVia])
 }
 
+func Test_handleCreate_WhenExtraObjectsProvided_ItShouldPostThemBeforeHostedCluster(t *testing.T) {
+	var posted []struct {
+		path string
+		body []byte
+	}
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		posted = append(posted, struct {
+			path string
+			body []byte
+		}{r.URL.Path, body})
+		w.Header().Set(headerContentType, contentTypeJSON)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer spokeSrv.Close()
+
+	mc := availableManagedCluster("spoke-1")
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
+
+	body, _ := json.Marshal(CreateRequest{
+		HostedCluster: &hypershiftv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+		},
+		ExtraObjects: []runtime.RawExtension{
+			mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
+			mustRawObject(t, "v1", "ConfigMap", "user-ca-bundle"),
+		},
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleCreate(w, r, "clusters", "spoke-1")
+
+	require.Equal(t, http.StatusCreated, w.Code, "create with extra objects must succeed")
+	require.Len(t, posted, 4, "namespace + Role + ConfigMap + HostedCluster")
+	assert.Contains(t, posted[0].path, "/api/v1/namespaces", "Namespace must be created first")
+	assert.Contains(t, posted[1].path, "/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles",
+		"Role extra object must be posted to the namespaced RBAC collection")
+	assert.Contains(t, posted[2].path, "/api/v1/namespaces/clusters/configmaps",
+		"ConfigMap extra object must be posted to the namespaced core collection")
+	assert.Contains(t, posted[3].path, "/hostedclusters", "HostedCluster must be created after extra objects")
+
+	var role unstructured.Unstructured
+	require.NoError(t, json.Unmarshal(posted[1].body, &role), "Role body must be unstructured JSON")
+	assert.Equal(t, "clusters", role.GetNamespace(), "extra objects must be pinned to the HostedCluster namespace")
+	assert.Equal(t, labelCreatedViaValue, role.GetLabels()[labelCreatedVia], "Role must be stamped created-via")
+	assert.Equal(t, "my-hc", role.GetLabels()[labelHostedCluster], "Role must be stamped with HostedCluster name")
+
+	var cm unstructured.Unstructured
+	require.NoError(t, json.Unmarshal(posted[2].body, &cm), "ConfigMap body must be unstructured JSON")
+	assert.Equal(t, labelCreatedViaValue, cm.GetLabels()[labelCreatedVia], "ConfigMap must be stamped created-via")
+	assert.Equal(t, "my-hc", cm.GetLabels()[labelHostedCluster], "ConfigMap must be stamped with HostedCluster name")
+}
+
+func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/roles") {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"reason":"Forbidden"}`)
+			return
+		}
+		w.Header().Set(headerContentType, contentTypeJSON)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer spokeSrv.Close()
+
+	mc := availableManagedCluster("spoke-1")
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
+
+	body, _ := json.Marshal(CreateRequest{
+		HostedCluster: &hypershiftv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+		},
+		ExtraObjects: []runtime.RawExtension{
+			mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
+		},
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleCreate(w, r, "clusters", "spoke-1")
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code, "RBAC denial applying extra objects must fail the create")
+	assert.Contains(t, w.Body.String(), "capi-provider-role", "error must name the extra object that failed")
+	assert.Contains(t, w.Body.String(), "403", "error must include the spoke HTTP status")
+}
+
+func Test_handleCreate_WhenExtraObjectAlreadyExists_ItShouldContinue(t *testing.T) {
+	var hostedClusterPosted bool
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/roles") {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = io.WriteString(w, `{"reason":"AlreadyExists"}`)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/hostedclusters") {
+			hostedClusterPosted = true
+		}
+		w.Header().Set(headerContentType, contentTypeJSON)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer spokeSrv.Close()
+
+	mc := availableManagedCluster("spoke-1")
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
+
+	body, _ := json.Marshal(CreateRequest{
+		HostedCluster: &hypershiftv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+		},
+		ExtraObjects: []runtime.RawExtension{
+			mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
+		},
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleCreate(w, r, "clusters", "spoke-1")
+
+	require.Equal(t, http.StatusCreated, w.Code, "409 on extra objects must be treated as already exists")
+	assert.True(t, hostedClusterPosted, "HostedCluster must still be created after extra-object 409")
+}
+
+func Test_handleCreate_WhenExtraObjectMissingKind_ItShouldReturn400(t *testing.T) {
+	p := newTestProxy(t, availableManagedCluster("spoke-1"))
+	body, _ := json.Marshal(CreateRequest{
+		HostedCluster: &hypershiftv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+		},
+		ExtraObjects: []runtime.RawExtension{
+			{Raw: []byte(`{"metadata":{"name":"no-kind"}}`)},
+		},
+	})
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleCreate(w, r, "clusters", "spoke-1")
+
+	assert.Equal(t, http.StatusBadRequest, w.Code, "extra objects without apiVersion/kind must be rejected before spoke writes")
+	assert.Contains(t, w.Body.String(), "Kind", "error must explain the ExtraObjects contract")
+}
+
+func Test_extraObjectCollectionAPIPath_WhenRoleAndConfigMap_ItShouldBuildNamespacedPaths(t *testing.T) {
+	rolePath, err := extraObjectCollectionAPIPath("clusters", schema.GroupVersionKind{
+		Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role",
+	})
+	require.NoError(t, err, "Role GVK must map to a namespaced collection path")
+	assert.Equal(t, "/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles", rolePath)
+
+	cmPath, err := extraObjectCollectionAPIPath("clusters", schema.GroupVersionKind{
+		Version: "v1", Kind: "ConfigMap",
+	})
+	require.NoError(t, err, "ConfigMap GVK must map to a namespaced collection path")
+	assert.Equal(t, "/api/v1/namespaces/clusters/configmaps", cmPath)
+}
+
+func Test_decodeExtraObjects_WhenDedicatedKind_ItShouldSkip(t *testing.T) {
+	objs, err := decodeExtraObjects([]runtime.RawExtension{
+		mustRawObject(t, "v1", "Secret", "pull-secret"),
+		mustRawObject(t, "v1", "ConfigMap", "user-ca-bundle"),
+		{Raw: []byte{}},
+	})
+	require.NoError(t, err, "valid extra objects must decode")
+	require.Len(t, objs, 1, "Secret is a dedicated CreateRequest field and must be skipped")
+	assert.Equal(t, "ConfigMap", objs[0].GetKind())
+	assert.Equal(t, "user-ca-bundle", objs[0].GetName())
+}
+
 // --- handleGetResources ---
 
 func Test_handleGetResources_WhenSpokeHasAllResources_ItShouldReturnBundle(t *testing.T) {
@@ -1805,6 +1976,17 @@ func availableManagedCluster(name string) *clusterv1.ManagedCluster {
 			},
 		},
 	}
+}
+
+func mustRawObject(t *testing.T, apiVersion, kind, name string) runtime.RawExtension {
+	t.Helper()
+	raw, err := json.Marshal(map[string]interface{}{
+		"apiVersion": apiVersion,
+		"kind":       kind,
+		"metadata":   map[string]interface{}{"name": name},
+	})
+	require.NoError(t, err, "marshal extra object fixture")
+	return runtime.RawExtension{Raw: raw}
 }
 
 // newTestProxyWithSpokeURL sets clusterProxyURL to the mock server so all spoke
