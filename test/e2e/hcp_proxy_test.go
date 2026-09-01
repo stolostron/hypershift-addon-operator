@@ -204,6 +204,27 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusServiceUnavailable))
 		})
 
+		ginkgo.It("should return 400 when extraObjects omit apiVersion or kind", func() {
+			// handleCreate rejects ExtraObjects before any spoke writes.
+			client := insecureHTTPClient()
+			url := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+
+				"/namespaces/clusters/hostedclusters?hostingCluster="+defaultManagedCluster)
+			body := []byte(`{
+			  "hostedCluster": {"metadata": {"name": "e2e-hc"}},
+			  "extraObjects": [{"metadata": {"name": "no-kind"}}]
+			}`)
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Remote-User", "e2e-test-user")
+			resp, err := client.Do(req)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			defer resp.Body.Close()
+			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusBadRequest))
+			respBody, _ := io.ReadAll(resp.Body)
+			gomega.Expect(string(respBody)).To(gomega.ContainSubstring("Kind"))
+		})
+
 		ginkgo.It("should return 400 when POST body omits hostedCluster", func() {
 			// On kind, clusterview is absent so permission check is skipped;
 			// local-cluster is Available and handleCreate rejects the empty body.
@@ -320,6 +341,136 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			gomega.Eventually(func() error {
 				_, err := dynamicClient.Resource(hcGVR).Namespace(hcNS).Get(ctx, hcName, metav1.GetOptions{})
 				return err
+			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred())
+		})
+
+		ginkgo.It("should create Role and ConfigMap extraObjects via POST through cluster-proxy", func() {
+			ginkgo.By("Ensuring OCM cluster-proxy user Service is present")
+			_, err := kubeClient.CoreV1().Services(clusterProxyNamespace).Get(
+				ctx, "cluster-proxy-addon-user", metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				ginkgo.Skip("cluster-proxy-addon-user Service missing; run make deploy-cluster-proxy")
+			}
+			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+
+			hcNS := fmt.Sprintf("e2e-hcp-proxy-extra-%d", time.Now().UnixNano())
+			const hcName = "e2e-hc-extra"
+			const roleName = "capi-provider-role"
+			const cmName = "user-ca-bundle"
+			ginkgo.DeferCleanup(func() {
+				_ = kubeClient.CoreV1().Namespaces().Delete(ctx, hcNS, metav1.DeleteOptions{})
+			})
+
+			body := []byte(fmt.Sprintf(`{
+			  "hostedCluster": {
+			    "apiVersion": "hypershift.openshift.io/v1beta1",
+			    "kind": "HostedCluster",
+			    "metadata": {"name": %q, "namespace": %q},
+			    "spec": {
+			      "release": {"image": "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64"},
+			      "pullSecret": {"name": "%s-pull-secret"},
+			      "sshKey": {"name": "%s-ssh-key"},
+			      "platform": {"type": "None"},
+			      "networking": {"networkType": "OVNKubernetes"},
+			      "services": [],
+			      "etcd": {"managementType": "Managed"},
+			      "infraID": %q
+			    }
+			  },
+			  "secrets": [
+			    {
+			      "apiVersion": "v1",
+			      "kind": "Secret",
+			      "metadata": {"name": "%s-pull-secret"},
+			      "type": "kubernetes.io/dockerconfigjson",
+			      "data": {".dockerconfigjson": "eyJhdXRocyI6e319"}
+			    },
+			    {
+			      "apiVersion": "v1",
+			      "kind": "Secret",
+			      "metadata": {"name": "%s-ssh-key"},
+			      "data": {"id_rsa.pub": "c3NoLXJzYSBBQUFB"}
+			    }
+			  ],
+			  "extraObjects": [
+			    {
+			      "apiVersion": "rbac.authorization.k8s.io/v1",
+			      "kind": "Role",
+			      "metadata": {"name": %q},
+			      "rules": [{"apiGroups": ["agent-install.openshift.io"], "resources": ["agents"], "verbs": ["get", "list", "watch"]}]
+			    },
+			    {
+			      "apiVersion": "v1",
+			      "kind": "ConfigMap",
+			      "metadata": {"name": %q},
+			      "data": {"ca-bundle.crt": "test-ca"}
+			    }
+			  ]
+			}`, hcName, hcNS, hcName, hcName, hcName, hcName, hcName, roleName, cmName))
+
+			ginkgo.By("Waiting for ManagedClusterAddOn cluster-proxy Available")
+			gomega.Eventually(func() bool {
+				addon, err := addonClient.AddonV1alpha1().ManagedClusterAddOns(defaultManagedCluster).
+					Get(ctx, "cluster-proxy", metav1.GetOptions{})
+				if err != nil {
+					return false
+				}
+				for _, c := range addon.Status.Conditions {
+					if c.Type == "Available" && c.Status == metav1.ConditionTrue {
+						return true
+					}
+				}
+				return false
+			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue())
+
+			client := insecureHTTPClient()
+			url := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+
+				"/namespaces/"+hcNS+"/hostedclusters?hostingCluster="+defaultManagedCluster)
+
+			ginkgo.By("POST create HostedCluster with Role and ConfigMap extraObjects")
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Remote-User", "e2e-test-user")
+			req.Header.Set("X-Remote-Group", "system:masters")
+			resp, err := client.Do(req)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			defer resp.Body.Close()
+			respBody, _ := io.ReadAll(resp.Body)
+			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusCreated),
+				"POST create response: %s", string(respBody))
+
+			ginkgo.By("Verifying capi-provider-role exists on the hosting cluster")
+			gomega.Eventually(func() error {
+				role, err := kubeClient.RbacV1().Roles(hcNS).Get(ctx, roleName, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				if role.Labels["hcp.ocm.io/created-via"] != "hcp-from-hub" {
+					return fmt.Errorf("Role missing created-via label")
+				}
+				if role.Labels["hcp.ocm.io/hostedcluster"] != hcName {
+					return fmt.Errorf("Role missing hostedcluster label")
+				}
+				return nil
+			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred())
+
+			ginkgo.By("Verifying user-ca-bundle ConfigMap exists on the hosting cluster")
+			gomega.Eventually(func() error {
+				cm, err := kubeClient.CoreV1().ConfigMaps(hcNS).Get(ctx, cmName, metav1.GetOptions{})
+				if err != nil {
+					return err
+				}
+				if cm.Labels["hcp.ocm.io/created-via"] != "hcp-from-hub" {
+					return fmt.Errorf("ConfigMap missing created-via label")
+				}
+				if cm.Labels["hcp.ocm.io/hostedcluster"] != hcName {
+					return fmt.Errorf("ConfigMap missing hostedcluster label")
+				}
+				if cm.Data["ca-bundle.crt"] != "test-ca" {
+					return fmt.Errorf("ConfigMap data mismatch")
+				}
+				return nil
 			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred())
 		})
 	})
