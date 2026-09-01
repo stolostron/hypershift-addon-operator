@@ -18,7 +18,6 @@ NAMESPACE=${CLUSTER_PROXY_NAMESPACE:-open-cluster-management-addon}
 RELEASE=${CLUSTER_PROXY_RELEASE:-cluster-proxy}
 MANAGED_CLUSTER=${MANAGED_CLUSTER_NAME:-local-cluster}
 TIMEOUT=${CLUSTER_PROXY_TIMEOUT:-300s}
-INSTALL_NS=${CLUSTER_PROXY_AGENT_NAMESPACE:-open-cluster-management-agent-addon}
 
 if ! command -v "${HELM}" >/dev/null 2>&1; then
   echo "ERROR: helm is required to install OCM cluster-proxy" >&2
@@ -51,26 +50,57 @@ done
 ${KUBECTL} get svc -n "${NAMESPACE}" cluster-proxy-addon-user
 ${KUBECTL} rollout status -n "${NAMESPACE}" deployment/cluster-proxy-addon-user --timeout="${TIMEOUT}"
 
-# Chart installStrategy is Placement-based; addon-manager creates the
-# ManagedClusterAddOn asynchronously. kubectl wait fails immediately with
-# NotFound if the object is missing, which races right after OCM join.
-# Ensure the MCA exists (idempotent) before waiting for Available.
-echo "Ensuring ManagedClusterAddOn cluster-proxy on ${MANAGED_CLUSTER}..."
-${KUBECTL} apply -f - <<EOF
-apiVersion: addon.open-cluster-management.io/v1alpha1
-kind: ManagedClusterAddOn
+# The chart's ClusterManagementAddOn uses installStrategy Placements with
+# Placement cluster-proxy-placement (clusterSets: [global]) in ${NAMESPACE}.
+# Without a ManagedClusterSetBinding in that namespace, the PlacementDecision
+# is empty and addon-manager deletes any ManagedClusterAddOn we create.
+echo "Binding global ManagedClusterSet to ${NAMESPACE} for cluster-proxy-placement..."
+binding_applied=0
+if ${KUBECTL} apply -f - <<EOF
+apiVersion: cluster.open-cluster-management.io/v1beta2
+kind: ManagedClusterSetBinding
 metadata:
-  name: cluster-proxy
-  namespace: ${MANAGED_CLUSTER}
+  name: global
+  namespace: ${NAMESPACE}
 spec:
-  installNamespace: ${INSTALL_NS}
+  clusterSet: global
 EOF
+then
+  binding_applied=1
+fi
+if [[ "${binding_applied}" != "1" ]]; then
+  ${KUBECTL} apply -f - <<EOF
+apiVersion: cluster.open-cluster-management.io/v1beta1
+kind: ManagedClusterSetBinding
+metadata:
+  name: global
+  namespace: ${NAMESPACE}
+spec:
+  clusterSet: global
+EOF
+fi
 
+# kubectl wait fails immediately with NotFound if the MCA is missing (or was
+# just deleted). Poll until Available=True instead of creating the MCA by
+# hand — addon-manager owns it once placement selects local-cluster.
 echo "Waiting for ManagedClusterAddOn cluster-proxy Available on ${MANAGED_CLUSTER}..."
-${KUBECTL} wait --for=condition=Available=True \
-  "managedclusteraddon/cluster-proxy" \
-  -n "${MANAGED_CLUSTER}" \
-  --timeout="${TIMEOUT}"
+available=""
+for _ in $(seq 1 150); do
+  available=$(${KUBECTL} get managedclusteraddon cluster-proxy -n "${MANAGED_CLUSTER}" \
+    -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || true)
+  if [[ "${available}" == "True" ]]; then
+    break
+  fi
+  sleep 2
+done
+if [[ "${available}" != "True" ]]; then
+  echo "ERROR: cluster-proxy ManagedClusterAddOn not Available on ${MANAGED_CLUSTER}" >&2
+  ${KUBECTL} get managedclustersetbinding -n "${NAMESPACE}" -o yaml || true
+  ${KUBECTL} get placement,placementdecision -n "${NAMESPACE}" -o yaml || true
+  ${KUBECTL} get clustermanagementaddon cluster-proxy -o yaml || true
+  ${KUBECTL} get managedclusteraddon -A -o yaml || true
+  exit 1
+fi
 
 echo "cluster-proxy ready (namespace=${NAMESPACE}, cluster=${MANAGED_CLUSTER})"
 ${KUBECTL} get managedclusteraddon -n "${MANAGED_CLUSTER}" cluster-proxy
