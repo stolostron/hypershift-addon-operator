@@ -16,6 +16,7 @@ import (
 	"github.com/openshift/library-go/pkg/crypto"
 	"github.com/spf13/cobra"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -175,7 +176,7 @@ func NewManagerCommand(componentName string, log logr.Logger) *cobra.Command {
 			}
 		}()
 
-		go startHCPProxy(managerCtx, profileSpec, controllerContext.KubeConfig, hubClient, log)
+		go startHCPProxy(managerCtx, profileSpec, controllerContext.KubeConfig, hubClient, customMgr.GetRESTMapper(), log)
 
 		err = EnableHypershiftCLIDownload(ctx, hubClient, log)
 		if err != nil {
@@ -318,9 +319,10 @@ func startHCPProxy(
 	profileSpec configv1.TLSProfileSpec,
 	kubeConfig *rest.Config,
 	hubClient client.Client,
+	restMapper meta.RESTMapper,
 	log logr.Logger,
 ) {
-	err := StartHCPProxy(ctx, profileSpec, kubeConfig, hubClient, log.WithName("hcp-proxy"))
+	err := StartHCPProxy(ctx, profileSpec, kubeConfig, hubClient, restMapper, log.WithName("hcp-proxy"))
 	if err != nil && !errors.Is(err, context.Canceled) {
 		log.Error(err, "HCP proxy stopped unexpectedly")
 	}

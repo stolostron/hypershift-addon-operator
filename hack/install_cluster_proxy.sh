@@ -19,6 +19,17 @@ RELEASE=${CLUSTER_PROXY_RELEASE:-cluster-proxy}
 MANAGED_CLUSTER=${MANAGED_CLUSTER_NAME:-local-cluster}
 TIMEOUT=${CLUSTER_PROXY_TIMEOUT:-300s}
 
+# Parse CLUSTER_PROXY_TIMEOUT (kubectl duration, e.g. 300s) for polling loops.
+timeout_seconds="${TIMEOUT%s}"
+if ! [[ "${timeout_seconds}" =~ ^[0-9]+$ ]]; then
+  timeout_seconds=300
+fi
+poll_interval=2
+poll_iterations=$(( timeout_seconds / poll_interval ))
+if [[ poll_iterations -lt 1 ]]; then
+  poll_iterations=1
+fi
+
 if ! command -v "${HELM}" >/dev/null 2>&1; then
   echo "ERROR: helm is required to install OCM cluster-proxy" >&2
   exit 1
@@ -40,12 +51,12 @@ else
 fi
 
 echo "Waiting for cluster-proxy-addon-user Service and Deployment..."
-for _ in $(seq 1 150); do
+for _ in $(seq 1 "${poll_iterations}"); do
   if ${KUBECTL} get svc -n "${NAMESPACE}" cluster-proxy-addon-user >/dev/null 2>&1 && \
      ${KUBECTL} get deploy -n "${NAMESPACE}" cluster-proxy-addon-user >/dev/null 2>&1; then
     break
   fi
-  sleep 2
+  sleep "${poll_interval}"
 done
 ${KUBECTL} get svc -n "${NAMESPACE}" cluster-proxy-addon-user
 ${KUBECTL} rollout status -n "${NAMESPACE}" deployment/cluster-proxy-addon-user --timeout="${TIMEOUT}"
@@ -85,20 +96,22 @@ fi
 # hand — addon-manager owns it once placement selects local-cluster.
 echo "Waiting for ManagedClusterAddOn cluster-proxy Available on ${MANAGED_CLUSTER}..."
 available=""
-for _ in $(seq 1 150); do
+for _ in $(seq 1 "${poll_iterations}"); do
   available=$(${KUBECTL} get managedclusteraddon cluster-proxy -n "${MANAGED_CLUSTER}" \
     -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || true)
   if [[ "${available}" == "True" ]]; then
     break
   fi
-  sleep 2
+  sleep "${poll_interval}"
 done
 if [[ "${available}" != "True" ]]; then
   echo "ERROR: cluster-proxy ManagedClusterAddOn not Available on ${MANAGED_CLUSTER}" >&2
-  ${KUBECTL} get managedclustersetbinding -n "${NAMESPACE}" -o yaml || true
-  ${KUBECTL} get placement,placementdecision -n "${NAMESPACE}" -o yaml || true
-  ${KUBECTL} get clustermanagementaddon cluster-proxy -o yaml || true
-  ${KUBECTL} get managedclusteraddon -A -o yaml || true
+  ${KUBECTL} get managedclustersetbinding -n "${NAMESPACE}" || true
+  ${KUBECTL} get placement,placementdecision -n "${NAMESPACE}" || true
+  ${KUBECTL} get clustermanagementaddon cluster-proxy \
+    -o jsonpath='{.spec.addOnConfiguration}{"\n"}' || true
+  ${KUBECTL} get managedclusteraddon cluster-proxy -n "${MANAGED_CLUSTER}" \
+    -o jsonpath='{range .status.conditions[*]}{.type}={.status}{" "}{.message}{"\n"}{end}' || true
   exit 1
 fi
 

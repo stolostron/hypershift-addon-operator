@@ -254,7 +254,8 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			hcNS := fmt.Sprintf("e2e-hcp-proxy-%d", time.Now().UnixNano())
 			const hcName = "e2e-hc"
 			ginkgo.DeferCleanup(func() {
-				_ = kubeClient.CoreV1().Namespaces().Delete(ctx, hcNS, metav1.DeleteOptions{})
+				gomega.Expect(kubeClient.CoreV1().Namespaces().Delete(ctx, hcNS, metav1.DeleteOptions{})).
+					To(gomega.Succeed(), "delete test namespace %s", hcNS)
 			})
 
 			// system:masters so spoke impersonation can create Namespace/Secret/HostedCluster.
@@ -358,7 +359,8 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			const roleName = "capi-provider-role"
 			const cmName = "user-ca-bundle"
 			ginkgo.DeferCleanup(func() {
-				_ = kubeClient.CoreV1().Namespaces().Delete(ctx, hcNS, metav1.DeleteOptions{})
+				gomega.Expect(kubeClient.CoreV1().Namespaces().Delete(ctx, hcNS, metav1.DeleteOptions{})).
+					To(gomega.Succeed(), "delete test namespace %s", hcNS)
 			})
 
 			body := []byte(fmt.Sprintf(`{

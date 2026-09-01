@@ -26,12 +26,14 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
@@ -54,6 +56,65 @@ func tlsCertToPEM(c tls.Certificate) (certPEM, keyPEM []byte, err error) {
 	}
 	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 	return certPEM, keyPEM, nil
+}
+
+// newTestRESTMapper returns a discovery-backed mapper with the API groups used in
+// extra-object unit tests (core, RBAC, networking, HyperShift).
+func newTestRESTMapper() meta.RESTMapper {
+	groups := []*restmapper.APIGroupResources{
+		{
+			Group: metav1.APIGroup{
+				Name:             "",
+				Versions:         []metav1.GroupVersionForDiscovery{{Version: "v1"}},
+				PreferredVersion: metav1.GroupVersionForDiscovery{Version: "v1"},
+			},
+			VersionedResources: map[string][]metav1.APIResource{
+				"v1": {
+					{Name: "configmaps", Namespaced: true, Kind: "ConfigMap"},
+					{Name: "secrets", Namespaced: true, Kind: "Secret"},
+					{Name: "namespaces", Namespaced: false, Kind: "Namespace"},
+				},
+			},
+		},
+		{
+			Group: metav1.APIGroup{
+				Name:             "rbac.authorization.k8s.io",
+				Versions:         []metav1.GroupVersionForDiscovery{{Version: "v1"}},
+				PreferredVersion: metav1.GroupVersionForDiscovery{Version: "v1"},
+			},
+			VersionedResources: map[string][]metav1.APIResource{
+				"v1": {
+					{Name: "roles", Namespaced: true, Kind: "Role"},
+				},
+			},
+		},
+		{
+			Group: metav1.APIGroup{
+				Name:             "networking.k8s.io",
+				Versions:         []metav1.GroupVersionForDiscovery{{Version: "v1"}},
+				PreferredVersion: metav1.GroupVersionForDiscovery{Version: "v1"},
+			},
+			VersionedResources: map[string][]metav1.APIResource{
+				"v1": {
+					{Name: "networkpolicies", Namespaced: true, Kind: "NetworkPolicy"},
+				},
+			},
+		},
+		{
+			Group: metav1.APIGroup{
+				Name:             hypershiftv1beta1.GroupVersion.Group,
+				Versions:         []metav1.GroupVersionForDiscovery{{Version: hypershiftv1beta1.GroupVersion.Version}},
+				PreferredVersion: metav1.GroupVersionForDiscovery{Version: hypershiftv1beta1.GroupVersion.Version},
+			},
+			VersionedResources: map[string][]metav1.APIResource{
+				hypershiftv1beta1.GroupVersion.Version: {
+					{Name: "hostedclusters", Namespaced: true, Kind: "HostedCluster"},
+					{Name: "nodepools", Namespaced: true, Kind: "NodePool"},
+				},
+			},
+		},
+	}
+	return restmapper.NewDiscoveryRESTMapper(groups)
 }
 
 // newTestProxy creates a minimal hcpProxy wired to the provided fake client.
@@ -84,6 +145,7 @@ func newTestProxy(t *testing.T, objs ...runtime.Object) *hcpProxy {
 		hubConfig:         cfg,
 		hubClient:         hubClient,
 		hubDynClient:      hubDynClient,
+		restMapper:        newTestRESTMapper(),
 		operatorNamespace: "multicluster-engine",
 		profileSpec:       defaultProfile,
 		log:               zapr.NewLogger(zapLog),
@@ -1191,17 +1253,29 @@ func Test_handleCreate_WhenExtraObjectMissingKind_ItShouldReturn400(t *testing.T
 }
 
 func Test_extraObjectCollectionAPIPath_WhenRoleAndConfigMap_ItShouldBuildNamespacedPaths(t *testing.T) {
-	rolePath, err := extraObjectCollectionAPIPath("clusters", schema.GroupVersionKind{
+	mapper := newTestRESTMapper()
+	rolePath, err := extraObjectCollectionAPIPath(mapper, "clusters", schema.GroupVersionKind{
 		Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role",
 	})
 	require.NoError(t, err, "Role GVK must map to a namespaced collection path")
 	assert.Equal(t, "/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles", rolePath)
 
-	cmPath, err := extraObjectCollectionAPIPath("clusters", schema.GroupVersionKind{
+	cmPath, err := extraObjectCollectionAPIPath(mapper, "clusters", schema.GroupVersionKind{
 		Version: "v1", Kind: "ConfigMap",
 	})
 	require.NoError(t, err, "ConfigMap GVK must map to a namespaced collection path")
 	assert.Equal(t, "/api/v1/namespaces/clusters/configmaps", cmPath)
+}
+
+func Test_extraObjectCollectionAPIPath_WhenNetworkPolicy_ItShouldUseCorrectPlural(t *testing.T) {
+	mapper := newTestRESTMapper()
+	path, err := extraObjectCollectionAPIPath(mapper, "clusters", schema.GroupVersionKind{
+		Group:   "networking.k8s.io",
+		Version: "v1",
+		Kind:    "NetworkPolicy",
+	})
+	require.NoError(t, err, "NetworkPolicy GVK must map via discovery-backed REST mapping")
+	assert.Equal(t, "/apis/networking.k8s.io/v1/namespaces/clusters/networkpolicies", path)
 }
 
 func Test_decodeExtraObjects_WhenDedicatedKind_ItShouldSkip(t *testing.T) {
@@ -1214,6 +1288,21 @@ func Test_decodeExtraObjects_WhenDedicatedKind_ItShouldSkip(t *testing.T) {
 	require.Len(t, objs, 1, "Secret is a dedicated CreateRequest field and must be skipped")
 	assert.Equal(t, "ConfigMap", objs[0].GetKind())
 	assert.Equal(t, "user-ca-bundle", objs[0].GetName())
+}
+
+func Test_decodeExtraObjects_WhenCustomSecretKind_ItShouldNotSkip(t *testing.T) {
+	raw, err := json.Marshal(map[string]interface{}{
+		"apiVersion": "example.com/v1",
+		"kind":       "Secret",
+		"metadata":   map[string]interface{}{"name": "custom-secret"},
+	})
+	require.NoError(t, err, "marshal custom Secret fixture")
+	objs, err := decodeExtraObjects([]runtime.RawExtension{{Raw: raw}})
+	require.NoError(t, err, "non-core Secret kind must not be filtered as dedicated")
+	require.Len(t, objs, 1, "custom Secret CRD must pass through generic extra-object handling")
+	assert.Equal(t, "example.com/v1", objs[0].GetAPIVersion())
+	assert.Equal(t, "Secret", objs[0].GetKind())
+	assert.Equal(t, "custom-secret", objs[0].GetName())
 }
 
 // --- handleGetResources ---
@@ -1872,7 +1961,7 @@ func Test_StartHCPProxy_WhenContextCancelled_ItShouldShutdownCleanly(t *testing.
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- StartHCPProxy(ctx, profile, hubConfig, hubClient, log)
+		errCh <- StartHCPProxy(ctx, profile, hubConfig, hubClient, newTestRESTMapper(), log)
 	}()
 
 	// Give the TLS server a moment to bind, then cancel for graceful shutdown.

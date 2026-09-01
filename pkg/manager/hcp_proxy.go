@@ -77,6 +77,11 @@ const (
 	resourceNodePools      = "nodepools"
 	resourceHostedClusters = "hostedclusters"
 	resourceSecrets        = "secrets"
+
+	// Bounds for CreateRequest decoding — prevents unbounded memory use on large payloads.
+	maxCreateRequestBytes = 4 * 1024 * 1024 // 4 MiB total body
+	maxExtraObjects       = 64
+	maxExtraObjectBytes   = 256 * 1024 // 256 KiB per object
 )
 
 // Overridable in tests.
@@ -125,6 +130,7 @@ type hcpProxy struct {
 	hubConfig         *rest.Config
 	hubClient         client.Client
 	hubDynClient      dynamic.Interface // operator-identity client for permission probe; cached at startup
+	restMapper        meta.RESTMapper   // discovery-backed mapping for extra object API paths
 	operatorNamespace string
 	clusterProxyURL   string                  // resolved at startup; overridable in tests
 	profileSpec       configv1.TLSProfileSpec // cluster TLS profile applied to server + outbound clients
@@ -137,6 +143,7 @@ func StartHCPProxy(
 	profileSpec configv1.TLSProfileSpec,
 	hubConfig *rest.Config,
 	hubClient client.Client,
+	restMapper meta.RESTMapper,
 	log logr.Logger,
 ) error {
 	operatorNamespace := resolveOperatorNamespace(ctx, hubClient, log)
@@ -152,6 +159,7 @@ func StartHCPProxy(
 		hubConfig:         hubConfig,
 		hubClient:         hubClient,
 		hubDynClient:      hubDynClient,
+		restMapper:        restMapper,
 		operatorNamespace: operatorNamespace,
 		clusterProxyURL:   clusterProxyURL,
 		profileSpec:       profileSpec,
@@ -824,34 +832,37 @@ func hsCollectionAPIPath(ns, resource string) (string, error) {
 	return apiPathHSNamespaces + "/" + ns + "/" + resource, nil
 }
 
-// extraObjectCollectionAPIPath builds a namespaced collection path from GVK.
-// Extra objects are always pinned to the HostedCluster namespace (Role,
-// ConfigMap, …). Group/version/resource segments are sanitized.
-func extraObjectCollectionAPIPath(ns string, gvk schema.GroupVersionKind) (string, error) {
+// extraObjectCollectionAPIPath builds a namespaced collection path from GVK using
+// discovery-backed REST mapping so irregular plurals (e.g. networkpolicies) resolve
+// correctly. Cluster-scoped resources are rejected.
+func extraObjectCollectionAPIPath(restMapper meta.RESTMapper, ns string, gvk schema.GroupVersionKind) (string, error) {
+	if restMapper == nil {
+		return "", fmt.Errorf("REST mapper not configured")
+	}
 	ns, err := sanitizeProxyName(ns)
 	if err != nil {
 		return "", err
 	}
-	version, err := sanitizeProxyName(gvk.Version)
+	mapping, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return "", fmt.Errorf("map GVK %s: %w", gvk.String(), err)
+	}
+	if mapping.Scope.Name() != meta.RESTScopeNameNamespace {
+		return "", fmt.Errorf("extra object %s is cluster-scoped", gvk.Kind)
+	}
+	gvr := mapping.Resource
+	version, err := sanitizeProxyName(gvr.Version)
 	if err != nil {
 		return "", fmt.Errorf("extra object apiVersion: %w", err)
 	}
-	gvr, listGVR := meta.UnsafeGuessKindToResource(gvk)
-	resourceName := gvr.Resource
-	if resourceName == "" {
-		resourceName = listGVR.Resource
-	}
-	if resourceName == "" {
-		return "", fmt.Errorf("cannot guess resource name for kind %q", gvk.Kind)
-	}
-	resource, err := sanitizeProxyName(resourceName)
+	resource, err := sanitizeProxyName(gvr.Resource)
 	if err != nil {
 		return "", fmt.Errorf("extra object resource: %w", err)
 	}
-	if gvk.Group == "" {
+	if gvr.Group == "" {
 		return "/api/" + version + "/namespaces/" + ns + "/" + resource, nil
 	}
-	group, err := sanitizeProxyName(gvk.Group)
+	group, err := sanitizeProxyName(gvr.Group)
 	if err != nil {
 		return "", fmt.Errorf("extra object apiGroup: %w", err)
 	}
@@ -954,6 +965,7 @@ func (t *impersonatingTransport) RoundTrip(req *http.Request) (*http.Response, e
 // The response is the full ResourceBundle so the caller gets every created object
 // in one shot without a follow-up GET /resources round-trip.
 func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spokeName string) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCreateRequestBytes)
 	var req CreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		p.writeJSONError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
@@ -1248,8 +1260,11 @@ func (p *hcpProxy) putOnSpoke(
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("spoke returned %d: %s", resp.StatusCode, string(respBody))
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("read spoke response for PUT %s: %w", apiPath, readErr)
+		}
+		return spokeHTTPError(resp.StatusCode, apiPath, respBody)
 	}
 	return nil
 }
@@ -1335,8 +1350,15 @@ func (p *hcpProxy) fetchHostedCluster(
 		return nil, http.StatusNotFound, "HostedCluster not found"
 	}
 	if hcResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(hcResp.Body)
-		return nil, http.StatusBadGateway, fmt.Sprintf("spoke returned %d: %s", hcResp.StatusCode, string(body))
+		body, readErr := io.ReadAll(hcResp.Body)
+		if readErr != nil {
+			return nil, http.StatusInternalServerError, "failed to read HostedCluster response: " + readErr.Error()
+		}
+		msg := spokeHTTPStatusMessage(body)
+		if msg != "" {
+			return nil, http.StatusBadGateway, fmt.Sprintf("spoke returned %d: %s", hcResp.StatusCode, msg)
+		}
+		return nil, http.StatusBadGateway, fmt.Sprintf("spoke returned %d for HostedCluster", hcResp.StatusCode)
 	}
 	var hc hypershiftv1beta1.HostedCluster
 	if err := json.NewDecoder(hcResp.Body).Decode(&hc); err != nil {
@@ -1512,7 +1534,7 @@ func (p *hcpProxy) createUnstructuredOnSpoke(
 	spokeName, ns string,
 	obj *unstructured.Unstructured,
 ) error {
-	apiPath, err := extraObjectCollectionAPIPath(ns, obj.GroupVersionKind())
+	apiPath, err := extraObjectCollectionAPIPath(p.restMapper, ns, obj.GroupVersionKind())
 	if err != nil {
 		return err
 	}
@@ -1544,20 +1566,53 @@ func (p *hcpProxy) postOnSpoke(
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode == http.StatusConflict {
-			return fmt.Errorf("%w: spoke returned 409 for %s: %s", errSpokeConflict, what, string(respBody))
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("read spoke response for %s: %w", what, readErr)
 		}
-		return fmt.Errorf("spoke returned %d for %s: %s", resp.StatusCode, what, string(respBody))
+		return spokeHTTPErrorForWhat(resp.StatusCode, what, respBody)
 	}
 	return nil
+}
+
+// spokeHTTPStatusMessage extracts a Kubernetes Status message from a spoke error
+// body without logging or returning the raw payload (may contain customer data).
+func spokeHTTPStatusMessage(respBody []byte) string {
+	if len(respBody) == 0 {
+		return ""
+	}
+	var status metav1.Status
+	if err := json.Unmarshal(respBody, &status); err == nil && status.Message != "" {
+		return status.Message
+	}
+	return ""
+}
+
+func spokeHTTPError(statusCode int, resourcePath string, respBody []byte) error {
+	if msg := spokeHTTPStatusMessage(respBody); msg != "" {
+		return fmt.Errorf("spoke returned %d for %s: %s", statusCode, resourcePath, msg)
+	}
+	return fmt.Errorf("spoke returned %d for %s", statusCode, resourcePath)
+}
+
+func spokeHTTPErrorForWhat(statusCode int, what string, respBody []byte) error {
+	if statusCode == http.StatusConflict {
+		return fmt.Errorf("%w: spoke returned 409 for %s", errSpokeConflict, what)
+	}
+	return spokeHTTPError(statusCode, what, respBody)
 }
 
 // decodeExtraObjects unmarshals ExtraObjects entries, skipping empty payloads
 // and kinds that already have dedicated CreateRequest fields.
 func decodeExtraObjects(raws []runtime.RawExtension) ([]*unstructured.Unstructured, error) {
+	if len(raws) > maxExtraObjects {
+		return nil, fmt.Errorf("extraObjects exceeds maximum of %d", maxExtraObjects)
+	}
 	out := make([]*unstructured.Unstructured, 0, len(raws))
 	for i, raw := range raws {
+		if len(raw.Raw) > maxExtraObjectBytes {
+			return nil, fmt.Errorf("extraObjects[%d]: object exceeds maximum size of %d bytes", i, maxExtraObjectBytes)
+		}
 		if len(raw.Raw) == 0 {
 			continue
 		}
@@ -1569,7 +1624,7 @@ func decodeExtraObjects(raws []runtime.RawExtension) ([]*unstructured.Unstructur
 		if gvk.Kind == "" || gvk.Version == "" {
 			return nil, fmt.Errorf("extraObjects[%d]: missing apiVersion or kind", i)
 		}
-		if isDedicatedCreateKind(gvk.Kind) {
+		if isDedicatedCreateGVK(gvk) {
 			continue
 		}
 		if _, err := sanitizeProxyName(obj.GetName()); err != nil {
@@ -1580,9 +1635,12 @@ func decodeExtraObjects(raws []runtime.RawExtension) ([]*unstructured.Unstructur
 	return out, nil
 }
 
-func isDedicatedCreateKind(kind string) bool {
-	switch strings.ToLower(kind) {
-	case "secret", "hostedcluster", "nodepool", "namespace":
+func isDedicatedCreateGVK(gvk schema.GroupVersionKind) bool {
+	switch gvk {
+	case schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"},
+		schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"},
+		hypershiftv1beta1.GroupVersion.WithKind("HostedCluster"),
+		hypershiftv1beta1.GroupVersion.WithKind("NodePool"):
 		return true
 	default:
 		return false
