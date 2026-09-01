@@ -978,7 +978,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 
 	extraObjs, extraErr := decodeExtraObjects(req.ExtraObjects)
 	if extraErr != nil {
-		writeJSONError(w, extraErr.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, extraErr.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -1042,7 +1042,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		ident := obj.GetKind() + "/" + obj.GetName()
 		if extraErr := p.createUnstructuredOnSpoke(ctx, hcpClient, spokeName, ns, obj); extraErr != nil && !isAlreadyExists(extraErr) {
 			p.log.Error(extraErr, "failed to create extra object", "object", ident, "spoke", spokeName)
-			writeJSONError(w, "failed to create extra object "+ident+": "+extraErr.Error(), http.StatusInternalServerError)
+			p.writeJSONError(w, "failed to create extra object "+ident+": "+extraErr.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
@@ -1100,7 +1100,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(bundle); err != nil {
-		p.log.Error(err, "failed to encode create response")
+		p.log.Error(fmt.Errorf("encode create response: %w", err), "failed to write create response")
 	}
 }
 
@@ -1297,7 +1297,9 @@ func (p *hcpProxy) handleGetResources(w http.ResponseWriter, r *http.Request, ns
 	bundle.NodePools = p.fetchNodePoolsForHC(ctx, hcpClient, ns, name, spokeName)
 
 	w.Header().Set(headerContentType, contentTypeJSON)
-	_ = json.NewEncoder(w).Encode(bundle)
+	if err := json.NewEncoder(w).Encode(bundle); err != nil {
+		p.log.Error(fmt.Errorf("encode get resources response: %w", err), "failed to write get resources response")
+	}
 }
 
 func (p *hcpProxy) fetchNamespaceBestEffort(
@@ -1588,6 +1590,8 @@ func spokeHTTPStatusMessage(respBody []byte) string {
 	return ""
 }
 
+// spokeHTTPError formats a spoke HTTP failure using status code and an optional
+// Kubernetes Status message — never the raw response body.
 func spokeHTTPError(statusCode int, resourcePath string, respBody []byte) error {
 	if msg := spokeHTTPStatusMessage(respBody); msg != "" {
 		return fmt.Errorf("spoke returned %d for %s: %s", statusCode, resourcePath, msg)
@@ -1595,6 +1599,7 @@ func spokeHTTPError(statusCode int, resourcePath string, respBody []byte) error 
 	return fmt.Errorf("spoke returned %d for %s", statusCode, resourcePath)
 }
 
+// spokeHTTPErrorForWhat formats a spoke POST failure, mapping 409 to errSpokeConflict.
 func spokeHTTPErrorForWhat(statusCode int, what string, respBody []byte) error {
 	if statusCode == http.StatusConflict {
 		return fmt.Errorf("%w: spoke returned 409 for %s", errSpokeConflict, what)
@@ -1635,6 +1640,8 @@ func decodeExtraObjects(raws []runtime.RawExtension) ([]*unstructured.Unstructur
 	return out, nil
 }
 
+// isDedicatedCreateGVK reports whether gvk is represented by a dedicated CreateRequest
+// field rather than extraObjects (core Secret/Namespace, HyperShift HC/NodePool).
 func isDedicatedCreateGVK(gvk schema.GroupVersionKind) bool {
 	switch gvk {
 	case schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"},

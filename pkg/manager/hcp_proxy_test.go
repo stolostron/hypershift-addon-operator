@@ -1065,7 +1065,7 @@ func Test_handleCreate_WhenCreated_ItShouldStampCreatedViaLabel(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{}`)
 	}))
-	defer spokeSrv.Close()
+	t.Cleanup(spokeSrv.Close)
 
 	mc := availableManagedCluster("spoke-1")
 	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
@@ -1080,7 +1080,7 @@ func Test_handleCreate_WhenCreated_ItShouldStampCreatedViaLabel(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "my-hc-us-east-1a"},
 		Spec:       hypershiftv1beta1.NodePoolSpec{ClusterName: "my-hc"},
 	}
-	body, _ := json.Marshal(CreateRequest{
+	body, err := json.Marshal(CreateRequest{
 		HostedCluster: hc,
 		NodePools:     []*hypershiftv1beta1.NodePool{np},
 		Secrets: []corev1.Secret{
@@ -1088,6 +1088,7 @@ func Test_handleCreate_WhenCreated_ItShouldStampCreatedViaLabel(t *testing.T) {
 				Data: map[string][]byte{".dockerconfigjson": []byte(`{}`)}},
 		},
 	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
 	r.Header.Set("X-Remote-User", "alice")
@@ -1121,12 +1122,12 @@ func Test_handleCreate_WhenExtraObjectsProvided_ItShouldPostThemBeforeHostedClus
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{}`)
 	}))
-	defer spokeSrv.Close()
+	t.Cleanup(spokeSrv.Close)
 
 	mc := availableManagedCluster("spoke-1")
 	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
 
-	body, _ := json.Marshal(CreateRequest{
+	body, err := json.Marshal(CreateRequest{
 		HostedCluster: &hypershiftv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
 		},
@@ -1135,6 +1136,7 @@ func Test_handleCreate_WhenExtraObjectsProvided_ItShouldPostThemBeforeHostedClus
 			mustRawObject(t, "v1", "ConfigMap", "user-ca-bundle"),
 		},
 	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
 	r.Header.Set("X-Remote-User", "alice")
@@ -1172,12 +1174,12 @@ func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{}`)
 	}))
-	defer spokeSrv.Close()
+	t.Cleanup(spokeSrv.Close)
 
 	mc := availableManagedCluster("spoke-1")
 	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
 
-	body, _ := json.Marshal(CreateRequest{
+	body, err := json.Marshal(CreateRequest{
 		HostedCluster: &hypershiftv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
 		},
@@ -1185,6 +1187,7 @@ func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
 			mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
 		},
 	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
 	r.Header.Set("X-Remote-User", "alice")
@@ -1210,12 +1213,12 @@ func Test_handleCreate_WhenExtraObjectAlreadyExists_ItShouldContinue(t *testing.
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{}`)
 	}))
-	defer spokeSrv.Close()
+	t.Cleanup(spokeSrv.Close)
 
 	mc := availableManagedCluster("spoke-1")
 	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
 
-	body, _ := json.Marshal(CreateRequest{
+	body, err := json.Marshal(CreateRequest{
 		HostedCluster: &hypershiftv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
 		},
@@ -1223,6 +1226,7 @@ func Test_handleCreate_WhenExtraObjectAlreadyExists_ItShouldContinue(t *testing.
 			mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
 		},
 	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
 	r.Header.Set("X-Remote-User", "alice")
@@ -1234,7 +1238,7 @@ func Test_handleCreate_WhenExtraObjectAlreadyExists_ItShouldContinue(t *testing.
 
 func Test_handleCreate_WhenExtraObjectMissingKind_ItShouldReturn400(t *testing.T) {
 	p := newTestProxy(t, availableManagedCluster("spoke-1"))
-	body, _ := json.Marshal(CreateRequest{
+	body, err := json.Marshal(CreateRequest{
 		HostedCluster: &hypershiftv1beta1.HostedCluster{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
 		},
@@ -1242,6 +1246,7 @@ func Test_handleCreate_WhenExtraObjectMissingKind_ItShouldReturn400(t *testing.T
 			{Raw: []byte(`{"metadata":{"name":"no-kind"}}`)},
 		},
 	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
 	r.Header.Set("X-Remote-User", "alice")

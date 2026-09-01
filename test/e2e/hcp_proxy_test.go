@@ -214,11 +214,11 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			  "extraObjects": [{"metadata": {"name": "no-kind"}}]
 			}`)
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build POST request for extraObjects validation")
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Remote-User", "e2e-test-user")
 			resp, err := client.Do(req)
-			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy for extraObjects validation")
 			defer resp.Body.Close()
 			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusBadRequest))
 			respBody, _ := io.ReadAll(resp.Body)
@@ -249,7 +249,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			if apierrors.IsNotFound(err) {
 				ginkgo.Skip("cluster-proxy-addon-user Service missing; run make deploy-cluster-proxy")
 			}
-			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "cluster-proxy-addon-user Service must exist for HCP proxy e2e")
 
 			hcNS := fmt.Sprintf("e2e-hcp-proxy-%d", time.Now().UnixNano())
 			const hcName = "e2e-hc"
@@ -352,7 +352,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			if apierrors.IsNotFound(err) {
 				ginkgo.Skip("cluster-proxy-addon-user Service missing; run make deploy-cluster-proxy")
 			}
-			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "cluster-proxy-addon-user Service must exist for extraObjects e2e")
 
 			hcNS := fmt.Sprintf("e2e-hcp-proxy-extra-%d", time.Now().UnixNano())
 			const hcName = "e2e-hc-extra"
@@ -431,12 +431,12 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 
 			ginkgo.By("POST create HostedCluster with Role and ConfigMap extraObjects")
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build POST create request with extraObjects")
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Remote-User", "e2e-test-user")
 			req.Header.Set("X-Remote-Group", "system:masters")
 			resp, err := client.Do(req)
-			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy create with extraObjects")
 			defer resp.Body.Close()
 			respBody, _ := io.ReadAll(resp.Body)
 			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusCreated),
@@ -455,7 +455,8 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 					return fmt.Errorf("Role missing hostedcluster label")
 				}
 				return nil
-			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred())
+			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred(),
+				"Role %s must exist in namespace %s with proxy labels", roleName, hcNS)
 
 			ginkgo.By("Verifying user-ca-bundle ConfigMap exists on the hosting cluster")
 			gomega.Eventually(func() error {
@@ -473,7 +474,8 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 					return fmt.Errorf("ConfigMap data mismatch")
 				}
 				return nil
-			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred())
+			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred(),
+				"ConfigMap %s must exist in namespace %s with proxy labels and data", cmName, hcNS)
 		})
 	})
 
