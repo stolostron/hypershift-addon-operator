@@ -1512,13 +1512,13 @@ func (w failWriter) Write([]byte) (int, error) {
 }
 
 func Test_statusReasonForCode_WhenMapped_ItShouldReturnKubernetesReasons(t *testing.T) {
-	assert.Equal(t, metav1.StatusReasonBadRequest, statusReasonForCode(http.StatusBadRequest), "HTTP 400")
-	assert.Equal(t, metav1.StatusReasonForbidden, statusReasonForCode(http.StatusForbidden), "HTTP 403")
-	assert.Equal(t, metav1.StatusReasonNotFound, statusReasonForCode(http.StatusNotFound), "HTTP 404")
-	assert.Equal(t, metav1.StatusReasonMethodNotAllowed, statusReasonForCode(http.StatusMethodNotAllowed), "HTTP 405")
-	assert.Equal(t, metav1.StatusReasonServiceUnavailable, statusReasonForCode(http.StatusServiceUnavailable), "HTTP 503")
-	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusBadGateway), "HTTP 502")
-	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusInternalServerError), "HTTP 500")
+	assert.Equal(t, metav1.StatusReasonBadRequest, statusReasonForCode(http.StatusBadRequest), "HTTP 400 must map to StatusReasonBadRequest")
+	assert.Equal(t, metav1.StatusReasonForbidden, statusReasonForCode(http.StatusForbidden), "HTTP 403 must map to StatusReasonForbidden")
+	assert.Equal(t, metav1.StatusReasonNotFound, statusReasonForCode(http.StatusNotFound), "HTTP 404 must map to StatusReasonNotFound")
+	assert.Equal(t, metav1.StatusReasonMethodNotAllowed, statusReasonForCode(http.StatusMethodNotAllowed), "HTTP 405 must map to StatusReasonMethodNotAllowed")
+	assert.Equal(t, metav1.StatusReasonServiceUnavailable, statusReasonForCode(http.StatusServiceUnavailable), "HTTP 503 must map to StatusReasonServiceUnavailable")
+	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusBadGateway), "HTTP 502 must map to StatusReasonInternalError")
+	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusInternalServerError), "HTTP 500 must map to StatusReasonInternalError")
 }
 
 func assertStatusError(t *testing.T, w *httptest.ResponseRecorder, code int, msgContains string) {
