@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -412,11 +413,7 @@ func Test_handleRoute_WhenWatchRequested_ItShouldReturn405(t *testing.T) {
 	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters?watch=true"
 	r := httptest.NewRequest(http.MethodGet, path, nil)
 	p.handleRoute(w, r)
-	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
-
-	var doc map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
-	assert.Contains(t, doc["error"], "watch is not supported")
+	assertStatusError(t, w, http.StatusMethodNotAllowed, "watch is not supported")
 }
 
 func Test_handleRoute_WhenMissingHostingCluster_OnNamedEndpoint_ItShouldReturn400(t *testing.T) {
@@ -425,7 +422,7 @@ func Test_handleRoute_WhenMissingHostingCluster_OnNamedEndpoint_ItShouldReturn40
 	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters/my-hc"
 	r := httptest.NewRequest(http.MethodGet, path, nil) // no ?hostingCluster
 	p.handleRoute(w, r)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assertStatusError(t, w, http.StatusBadRequest, "hostingCluster query parameter is required")
 }
 
 func Test_handleRoute_WhenMissingHostingCluster_OnCollectionGET_ItShouldReturnEmptyList(t *testing.T) {
@@ -1487,15 +1484,53 @@ func Test_createOrUpdateSecretOnSpoke_WhenCreateSucceeds_ItShouldNotPut(t *testi
 
 // --- helpers / middleware / URL defaults ---
 
-func Test_writeJSONError_WhenCalled_ItShouldSetNoSniffHeader(t *testing.T) {
+func Test_writeJSONError_WhenCalled_ItShouldWriteKubernetesStatus(t *testing.T) {
 	w := httptest.NewRecorder()
-	writeJSONError(w, "something went wrong", http.StatusBadRequest)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Equal(t, contentTypeJSON, w.Header().Get(headerContentType))
-	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
-	var body map[string]string
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Equal(t, "something went wrong", body["error"])
+	err := writeJSONError(w, "something went wrong", http.StatusBadRequest)
+	require.NoError(t, err, "encoding a metav1.Status must succeed so oc can decode the error")
+	assert.Equal(t, contentTypeJSON, w.Header().Get(headerContentType), "Status responses must be application/json")
+	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"), "error responses must set X-Content-Type-Options")
+	assertStatusError(t, w, http.StatusBadRequest, "something went wrong")
+	var status metav1.Status
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status), "response body must be a metav1.Status JSON object")
+	assert.Equal(t, metav1.StatusReasonBadRequest, status.Reason, "HTTP 400 must map to StatusReasonBadRequest")
+}
+
+func Test_writeJSONError_WhenWriteFails_ItShouldReturnError(t *testing.T) {
+	w := failWriter{ResponseWriter: httptest.NewRecorder()}
+	err := writeJSONError(w, "something went wrong", http.StatusBadRequest)
+	require.Error(t, err, "a failed Write must be returned so the caller can log it")
+	assert.Contains(t, err.Error(), "write Status error response", "error must wrap the write failure")
+}
+
+type failWriter struct {
+	http.ResponseWriter
+}
+
+func (w failWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
+}
+
+func Test_statusReasonForCode_WhenMapped_ItShouldReturnKubernetesReasons(t *testing.T) {
+	assert.Equal(t, metav1.StatusReasonBadRequest, statusReasonForCode(http.StatusBadRequest), "HTTP 400 must map to StatusReasonBadRequest")
+	assert.Equal(t, metav1.StatusReasonForbidden, statusReasonForCode(http.StatusForbidden), "HTTP 403 must map to StatusReasonForbidden")
+	assert.Equal(t, metav1.StatusReasonNotFound, statusReasonForCode(http.StatusNotFound), "HTTP 404 must map to StatusReasonNotFound")
+	assert.Equal(t, metav1.StatusReasonMethodNotAllowed, statusReasonForCode(http.StatusMethodNotAllowed), "HTTP 405 must map to StatusReasonMethodNotAllowed")
+	assert.Equal(t, metav1.StatusReasonServiceUnavailable, statusReasonForCode(http.StatusServiceUnavailable), "HTTP 503 must map to StatusReasonServiceUnavailable")
+	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusBadGateway), "HTTP 502 must map to StatusReasonInternalError")
+	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusInternalServerError), "HTTP 500 must map to StatusReasonInternalError")
+}
+
+func assertStatusError(t *testing.T, w *httptest.ResponseRecorder, code int, msgContains string) {
+	t.Helper()
+	assert.Equal(t, code, w.Code, "HTTP status code on the Status error response")
+	var status metav1.Status
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status), "error body must unmarshal as metav1.Status")
+	assert.Equal(t, "Status", status.Kind, "kind must be Status so oc/kubectl can decode the error")
+	assert.Equal(t, "v1", status.APIVersion, "apiVersion must be v1")
+	assert.Equal(t, metav1.StatusFailure, status.Status, "status field must be Failure")
+	assert.Equal(t, int32(code), status.Code, "Status.code must match the HTTP status")
+	assert.Contains(t, status.Message, msgContains, "Status.message must include the error detail")
 }
 
 func Test_handleDelete_WhenSpokeResponds_ItShouldForwardContentType(t *testing.T) {
