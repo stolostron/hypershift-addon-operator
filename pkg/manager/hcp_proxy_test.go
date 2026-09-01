@@ -412,11 +412,7 @@ func Test_handleRoute_WhenWatchRequested_ItShouldReturn405(t *testing.T) {
 	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters?watch=true"
 	r := httptest.NewRequest(http.MethodGet, path, nil)
 	p.handleRoute(w, r)
-	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
-
-	var doc map[string]interface{}
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
-	assert.Contains(t, doc["error"], "watch is not supported")
+	assertStatusError(t, w, http.StatusMethodNotAllowed, "watch is not supported")
 }
 
 func Test_handleRoute_WhenMissingHostingCluster_OnNamedEndpoint_ItShouldReturn400(t *testing.T) {
@@ -425,7 +421,7 @@ func Test_handleRoute_WhenMissingHostingCluster_OnNamedEndpoint_ItShouldReturn40
 	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters/my-hc"
 	r := httptest.NewRequest(http.MethodGet, path, nil) // no ?hostingCluster
 	p.handleRoute(w, r)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assertStatusError(t, w, http.StatusBadRequest, "hostingCluster query parameter is required")
 }
 
 func Test_handleRoute_WhenMissingHostingCluster_OnCollectionGET_ItShouldReturnEmptyList(t *testing.T) {
@@ -1487,15 +1483,37 @@ func Test_createOrUpdateSecretOnSpoke_WhenCreateSucceeds_ItShouldNotPut(t *testi
 
 // --- helpers / middleware / URL defaults ---
 
-func Test_writeJSONError_WhenCalled_ItShouldSetNoSniffHeader(t *testing.T) {
+func Test_writeJSONError_WhenCalled_ItShouldWriteKubernetesStatus(t *testing.T) {
 	w := httptest.NewRecorder()
 	writeJSONError(w, "something went wrong", http.StatusBadRequest)
-	assert.Equal(t, http.StatusBadRequest, w.Code)
 	assert.Equal(t, contentTypeJSON, w.Header().Get(headerContentType))
 	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
-	var body map[string]string
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
-	assert.Equal(t, "something went wrong", body["error"])
+	assertStatusError(t, w, http.StatusBadRequest, "something went wrong")
+	var status metav1.Status
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status))
+	assert.Equal(t, metav1.StatusReasonBadRequest, status.Reason)
+}
+
+func Test_statusReasonForCode_WhenMapped_ItShouldReturnKubernetesReasons(t *testing.T) {
+	assert.Equal(t, metav1.StatusReasonBadRequest, statusReasonForCode(http.StatusBadRequest))
+	assert.Equal(t, metav1.StatusReasonForbidden, statusReasonForCode(http.StatusForbidden))
+	assert.Equal(t, metav1.StatusReasonNotFound, statusReasonForCode(http.StatusNotFound))
+	assert.Equal(t, metav1.StatusReasonMethodNotAllowed, statusReasonForCode(http.StatusMethodNotAllowed))
+	assert.Equal(t, metav1.StatusReasonServiceUnavailable, statusReasonForCode(http.StatusServiceUnavailable))
+	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusBadGateway))
+	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusInternalServerError))
+}
+
+func assertStatusError(t *testing.T, w *httptest.ResponseRecorder, code int, msgContains string) {
+	t.Helper()
+	assert.Equal(t, code, w.Code)
+	var status metav1.Status
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status))
+	assert.Equal(t, "Status", status.Kind)
+	assert.Equal(t, "v1", status.APIVersion)
+	assert.Equal(t, metav1.StatusFailure, status.Status)
+	assert.Equal(t, int32(code), status.Code)
+	assert.Contains(t, status.Message, msgContains)
 }
 
 func Test_handleDelete_WhenSpokeResponds_ItShouldForwardContentType(t *testing.T) {
