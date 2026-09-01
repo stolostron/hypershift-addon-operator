@@ -449,7 +449,7 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 	// Watch is not supported — the proxy is a stateless pass-through and
 	// cannot maintain long-lived event streams across spoke clusters.
 	if r.URL.Query().Get("watch") == "true" {
-		writeJSONError(w, "watch is not supported by the HCP proxy", http.StatusMethodNotAllowed)
+		p.writeJSONError(w, "watch is not supported by the HCP proxy", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -476,20 +476,20 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 
 	hostingCluster, err := sanitizeProxyName(hostingClusterParam)
 	if err != nil {
-		writeJSONError(w,
+		p.writeJSONError(w,
 			"hostingCluster query parameter is required and must be a valid DNS-1123 subdomain",
 			http.StatusBadRequest)
 		return
 	}
 
 	if err := p.checkSpokeHealth(r.Context(), hostingCluster); err != nil {
-		writeJSONError(w, err.Error(), http.StatusServiceUnavailable)
+		p.writeJSONError(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
 
 	username, groups := whoIsTheCaller(r)
 	if err := p.checkHubPermission(r.Context(), username, groups, hostingCluster); err != nil {
-		writeJSONError(w, err.Error(), http.StatusForbidden)
+		p.writeJSONError(w, err.Error(), http.StatusForbidden)
 		return
 	}
 
@@ -507,32 +507,32 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSONError(w, "not found", http.StatusNotFound)
+	p.writeJSONError(w, "not found", http.StatusNotFound)
 }
 
 func (p *hcpProxy) dispatchCollection(w http.ResponseWriter, r *http.Request, nsRaw, hostingCluster string) {
 	ns, err := sanitizeProxyName(nsRaw)
 	if err != nil {
-		writeJSONError(w, "invalid namespace: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, "invalid namespace: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
 	case http.MethodPost:
 		p.handleCreate(w, r, ns, hostingCluster)
 	default:
-		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		p.writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
 func (p *hcpProxy) dispatchNamed(w http.ResponseWriter, r *http.Request, nsRaw, nameRaw, hostingCluster string) {
 	ns, err := sanitizeProxyName(nsRaw)
 	if err != nil {
-		writeJSONError(w, "invalid namespace: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, "invalid namespace: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	name, err := sanitizeProxyName(nameRaw)
 	if err != nil {
-		writeJSONError(w, "invalid name: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, "invalid name: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
@@ -543,7 +543,7 @@ func (p *hcpProxy) dispatchNamed(w http.ResponseWriter, r *http.Request, nsRaw, 
 	case http.MethodDelete:
 		p.handleDelete(w, r, ns, name, hostingCluster)
 	default:
-		writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		p.writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -911,11 +911,11 @@ func (t *impersonatingTransport) RoundTrip(req *http.Request) (*http.Response, e
 func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spokeName string) {
 	var req CreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeJSONError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 	if req.HostedCluster == nil {
-		writeJSONError(w, "hostedCluster is required", http.StatusBadRequest)
+		p.writeJSONError(w, "hostedCluster is required", http.StatusBadRequest)
 		return
 	}
 
@@ -931,7 +931,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	hcpClient, err := p.spokeHTTPClient(username, groups)
 	if err != nil {
 		p.log.Error(err, "failed to build spoke client", "spoke", spokeName)
-		writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
+		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -953,7 +953,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	nsObj := buildNamespace(ns, hcName)
 	if err := p.createOnSpoke(ctx, hcpClient, spokeName, ns, "namespaces", nsObj); err != nil && !isAlreadyExists(err) {
 		p.log.Error(err, "failed to ensure namespace", "namespace", ns, "spoke", spokeName)
-		writeJSONError(w, "failed to ensure namespace: "+err.Error(), http.StatusInternalServerError)
+		p.writeJSONError(w, "failed to ensure namespace: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -965,7 +965,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		req.Secrets[i].Labels = addProxyLabels(req.Secrets[i].Labels)
 		if err := p.createOrUpdateSecretOnSpoke(ctx, hcpClient, spokeName, ns, &req.Secrets[i]); err != nil {
 			p.log.Error(err, "failed to create/update secret", "spoke", spokeName)
-			writeJSONError(w, "failed to create secret: "+err.Error(), http.StatusInternalServerError)
+			p.writeJSONError(w, "failed to create secret: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
@@ -979,7 +979,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	req.HostedCluster.Labels = addProxyLabels(req.HostedCluster.Labels)
 	if err := p.createOnSpoke(ctx, hcpClient, spokeName, ns, resourceHostedClusters, req.HostedCluster); err != nil {
 		p.log.Error(err, "failed to create HostedCluster", "name", hcName, "spoke", spokeName)
-		writeJSONError(w, "failed to create HostedCluster: "+err.Error(), http.StatusInternalServerError)
+		p.writeJSONError(w, "failed to create HostedCluster: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1030,7 +1030,7 @@ func (p *hcpProxy) handleDelete(w http.ResponseWriter, r *http.Request, ns, name
 	username, groups := whoIsTheCaller(r)
 	hcpClient, err := p.spokeHTTPClient(username, groups)
 	if err != nil {
-		writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
+		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1040,17 +1040,17 @@ func (p *hcpProxy) handleDelete(w http.ResponseWriter, r *http.Request, ns, name
 	// Delete HostedCluster
 	delPath, err := hsNamedAPIPath(ns, resourceHostedClusters, name)
 	if err != nil {
-		writeJSONError(w, err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	delReq, err := p.newSpokeRequest(ctx, http.MethodDelete, spokeName, delPath, nil)
 	if err != nil {
-		writeJSONError(w, "failed to build delete request: "+err.Error(), http.StatusInternalServerError)
+		p.writeJSONError(w, "failed to build delete request: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	resp, err := doSpokeHTTP(hcpClient, delReq)
 	if err != nil {
-		writeJSONError(w, "spoke request failed: "+err.Error(), http.StatusBadGateway)
+		p.writeJSONError(w, "spoke request failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
@@ -1110,14 +1110,14 @@ func (p *hcpProxy) deleteNodePool(
 func (p *hcpProxy) handlePatchResources(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	var bundle ResourceBundle
 	if err := json.NewDecoder(r.Body).Decode(&bundle); err != nil {
-		writeJSONError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	username, groups := whoIsTheCaller(r)
 	hcpClient, err := p.spokeHTTPClient(username, groups)
 	if err != nil {
-		writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
+		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1128,11 +1128,11 @@ func (p *hcpProxy) handlePatchResources(w http.ResponseWriter, r *http.Request, 
 		bundle.HostedCluster.Namespace = ns
 		hcPath, pathErr := hsNamedAPIPath(ns, resourceHostedClusters, name)
 		if pathErr != nil {
-			writeJSONError(w, pathErr.Error(), http.StatusBadRequest)
+			p.writeJSONError(w, pathErr.Error(), http.StatusBadRequest)
 			return
 		}
 		if err := p.putOnSpoke(ctx, hcpClient, spokeName, hcPath, bundle.HostedCluster); err != nil {
-			writeJSONError(w, "HostedCluster update failed: "+err.Error(), http.StatusBadGateway)
+			p.writeJSONError(w, "HostedCluster update failed: "+err.Error(), http.StatusBadGateway)
 			return
 		}
 	}
@@ -1146,11 +1146,11 @@ func (p *hcpProxy) handlePatchResources(w http.ResponseWriter, r *http.Request, 
 		np.Namespace = ns
 		npPath, pathErr := hsNamedAPIPath(ns, resourceNodePools, np.Name)
 		if pathErr != nil {
-			writeJSONError(w, fmt.Sprintf("NodePool %q: %s", np.Name, pathErr.Error()), http.StatusBadRequest)
+			p.writeJSONError(w, fmt.Sprintf("NodePool %q: %s", np.Name, pathErr.Error()), http.StatusBadRequest)
 			return
 		}
 		if err := p.putOnSpoke(ctx, hcpClient, spokeName, npPath, np); err != nil {
-			writeJSONError(w, fmt.Sprintf("NodePool %q update failed: %s", np.Name, err.Error()), http.StatusBadGateway)
+			p.writeJSONError(w, fmt.Sprintf("NodePool %q update failed: %s", np.Name, err.Error()), http.StatusBadGateway)
 			return
 		}
 	}
@@ -1197,7 +1197,7 @@ func (p *hcpProxy) handleGetResources(w http.ResponseWriter, r *http.Request, ns
 	username, groups := whoIsTheCaller(r)
 	hcpClient, err := p.spokeHTTPClient(username, groups)
 	if err != nil {
-		writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
+		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -1208,7 +1208,7 @@ func (p *hcpProxy) handleGetResources(w http.ResponseWriter, r *http.Request, ns
 
 	hc, status, errMsg := p.fetchHostedCluster(ctx, hcpClient, ns, name, spokeName)
 	if status != http.StatusOK {
-		writeJSONError(w, errMsg, status)
+		p.writeJSONError(w, errMsg, status)
 		return
 	}
 	bundle.HostedCluster = hc
@@ -1312,9 +1312,11 @@ func (p *hcpProxy) fetchNodePoolsForHC(
 	return out
 }
 
-// writeJSONError writes a Kubernetes Status object so oc/kubectl can decode
-// the error (kind, apiVersion, status, reason, message, code).
-func writeJSONError(w http.ResponseWriter, msg string, code int) {
+// writeJSONError marshals a Kubernetes Status body before committing the HTTP
+// status so a marshal failure cannot leave a truncated response. Callers that
+// have an hcpProxy should use (*hcpProxy).writeJSONError so encode/write
+// errors are logged.
+func writeJSONError(w http.ResponseWriter, msg string, code int) error {
 	status := metav1.Status{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "v1",
@@ -1325,12 +1327,30 @@ func writeJSONError(w http.ResponseWriter, msg string, code int) {
 		Reason:  statusReasonForCode(code),
 		Code:    int32(code),
 	}
+	body, err := json.Marshal(status)
 	w.Header().Set(headerContentType, contentTypeJSON)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return fmt.Errorf("marshal Status error response: %w", err)
+	}
 	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(status)
+	if _, err := w.Write(body); err != nil {
+		return fmt.Errorf("write Status error response: %w", err)
+	}
+	return nil
 }
 
+// writeJSONError writes a Kubernetes Status error and logs marshal/write
+// failures so HTTP handlers can stay one-liners.
+func (p *hcpProxy) writeJSONError(w http.ResponseWriter, msg string, code int) {
+	if err := writeJSONError(w, msg, code); err != nil {
+		p.log.Error(err, "failed to write Status error response")
+	}
+}
+
+// statusReasonForCode maps an HTTP status code to the Kubernetes StatusReason
+// oc/kubectl expect when decoding a Status error body.
 func statusReasonForCode(code int) metav1.StatusReason {
 	switch code {
 	case http.StatusBadRequest:

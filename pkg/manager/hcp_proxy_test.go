@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -1485,35 +1486,51 @@ func Test_createOrUpdateSecretOnSpoke_WhenCreateSucceeds_ItShouldNotPut(t *testi
 
 func Test_writeJSONError_WhenCalled_ItShouldWriteKubernetesStatus(t *testing.T) {
 	w := httptest.NewRecorder()
-	writeJSONError(w, "something went wrong", http.StatusBadRequest)
-	assert.Equal(t, contentTypeJSON, w.Header().Get(headerContentType))
-	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
+	err := writeJSONError(w, "something went wrong", http.StatusBadRequest)
+	require.NoError(t, err, "encoding a metav1.Status must succeed so oc can decode the error")
+	assert.Equal(t, contentTypeJSON, w.Header().Get(headerContentType), "Status responses must be application/json")
+	assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"), "error responses must set X-Content-Type-Options")
 	assertStatusError(t, w, http.StatusBadRequest, "something went wrong")
 	var status metav1.Status
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status))
-	assert.Equal(t, metav1.StatusReasonBadRequest, status.Reason)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status), "response body must be a metav1.Status JSON object")
+	assert.Equal(t, metav1.StatusReasonBadRequest, status.Reason, "HTTP 400 must map to StatusReasonBadRequest")
+}
+
+func Test_writeJSONError_WhenWriteFails_ItShouldReturnError(t *testing.T) {
+	w := failWriter{ResponseWriter: httptest.NewRecorder()}
+	err := writeJSONError(w, "something went wrong", http.StatusBadRequest)
+	require.Error(t, err, "a failed Write must be returned so the caller can log it")
+	assert.Contains(t, err.Error(), "write Status error response", "error must wrap the write failure")
+}
+
+type failWriter struct {
+	http.ResponseWriter
+}
+
+func (w failWriter) Write([]byte) (int, error) {
+	return 0, errors.New("write failed")
 }
 
 func Test_statusReasonForCode_WhenMapped_ItShouldReturnKubernetesReasons(t *testing.T) {
-	assert.Equal(t, metav1.StatusReasonBadRequest, statusReasonForCode(http.StatusBadRequest))
-	assert.Equal(t, metav1.StatusReasonForbidden, statusReasonForCode(http.StatusForbidden))
-	assert.Equal(t, metav1.StatusReasonNotFound, statusReasonForCode(http.StatusNotFound))
-	assert.Equal(t, metav1.StatusReasonMethodNotAllowed, statusReasonForCode(http.StatusMethodNotAllowed))
-	assert.Equal(t, metav1.StatusReasonServiceUnavailable, statusReasonForCode(http.StatusServiceUnavailable))
-	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusBadGateway))
-	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusInternalServerError))
+	assert.Equal(t, metav1.StatusReasonBadRequest, statusReasonForCode(http.StatusBadRequest), "HTTP 400")
+	assert.Equal(t, metav1.StatusReasonForbidden, statusReasonForCode(http.StatusForbidden), "HTTP 403")
+	assert.Equal(t, metav1.StatusReasonNotFound, statusReasonForCode(http.StatusNotFound), "HTTP 404")
+	assert.Equal(t, metav1.StatusReasonMethodNotAllowed, statusReasonForCode(http.StatusMethodNotAllowed), "HTTP 405")
+	assert.Equal(t, metav1.StatusReasonServiceUnavailable, statusReasonForCode(http.StatusServiceUnavailable), "HTTP 503")
+	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusBadGateway), "HTTP 502")
+	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusInternalServerError), "HTTP 500")
 }
 
 func assertStatusError(t *testing.T, w *httptest.ResponseRecorder, code int, msgContains string) {
 	t.Helper()
-	assert.Equal(t, code, w.Code)
+	assert.Equal(t, code, w.Code, "HTTP status code on the Status error response")
 	var status metav1.Status
-	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status))
-	assert.Equal(t, "Status", status.Kind)
-	assert.Equal(t, "v1", status.APIVersion)
-	assert.Equal(t, metav1.StatusFailure, status.Status)
-	assert.Equal(t, int32(code), status.Code)
-	assert.Contains(t, status.Message, msgContains)
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status), "error body must unmarshal as metav1.Status")
+	assert.Equal(t, "Status", status.Kind, "kind must be Status so oc/kubectl can decode the error")
+	assert.Equal(t, "v1", status.APIVersion, "apiVersion must be v1")
+	assert.Equal(t, metav1.StatusFailure, status.Status, "status field must be Failure")
+	assert.Equal(t, int32(code), status.Code, "Status.code must match the HTTP status")
+	assert.Contains(t, status.Message, msgContains, "Status.message must include the error detail")
 }
 
 func Test_handleDelete_WhenSpokeResponds_ItShouldForwardContentType(t *testing.T) {
