@@ -1193,12 +1193,16 @@ func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
 	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/roles") {
 			w.WriteHeader(http.StatusForbidden)
-			_, _ = io.WriteString(w, fmt.Sprintf(`{"message":%q}`, sensitiveMsg))
+			if _, writeErr := io.WriteString(w, fmt.Sprintf(`{"message":%q}`, sensitiveMsg)); writeErr != nil {
+				require.NoError(t, fmt.Errorf("write forbidden role response: %w", writeErr))
+			}
 			return
 		}
 		w.Header().Set(headerContentType, contentTypeJSON)
 		w.WriteHeader(http.StatusCreated)
-		_, _ = io.WriteString(w, `{}`)
+		if _, writeErr := io.WriteString(w, `{}`); writeErr != nil {
+			require.NoError(t, fmt.Errorf("write default created response: %w", writeErr))
+		}
 	}))
 	t.Cleanup(spokeSrv.Close)
 
