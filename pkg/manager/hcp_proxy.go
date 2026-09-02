@@ -25,8 +25,10 @@ import (
 	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
@@ -75,6 +77,11 @@ const (
 	resourceNodePools      = "nodepools"
 	resourceHostedClusters = "hostedclusters"
 	resourceSecrets        = "secrets"
+
+	// Bounds for CreateRequest decoding — prevents unbounded memory use on large payloads.
+	maxCreateRequestBytes = 4 * 1024 * 1024 // 4 MiB total body
+	maxExtraObjects       = 64
+	maxExtraObjectBytes   = 256 * 1024 // 256 KiB per object
 )
 
 // Overridable in tests.
@@ -98,6 +105,14 @@ type CreateRequest struct {
 	// and (for cloud platforms) any STS/credential secrets.
 	// Each Secret is created on the spoke before the HostedCluster.
 	Secrets []corev1.Secret `json:"secrets,omitempty"`
+
+	// ExtraObjects holds non-secret resources from `hcp create cluster --render`
+	// that are not HostedCluster/NodePool/Secret (e.g. Agent capi-provider-role
+	// Role, --additional-trust-bundle ConfigMap). Applied on the spoke after
+	// Secrets and before the HostedCluster so the hypershift-operator can
+	// reference them immediately. Created as the impersonated caller; spoke
+	// RBAC is the user's, not the manager ServiceAccount.
+	ExtraObjects []runtime.RawExtension `json:"extraObjects,omitempty"`
 }
 
 // ResourceBundle is the response body for GET/POST/PUT .../hostedclusters/{name}/resources.
@@ -107,6 +122,7 @@ type ResourceBundle struct {
 	Namespace     *corev1.Namespace                `json:"namespace,omitempty"`
 	HostedCluster *hypershiftv1beta1.HostedCluster `json:"hostedCluster"`
 	NodePools     []hypershiftv1beta1.NodePool     `json:"nodePools,omitempty"`
+	ExtraObjects  []runtime.RawExtension           `json:"extraObjects,omitempty"`
 	Warnings      []string                         `json:"warnings,omitempty"`
 }
 
@@ -115,6 +131,7 @@ type hcpProxy struct {
 	hubConfig         *rest.Config
 	hubClient         client.Client
 	hubDynClient      dynamic.Interface // operator-identity client for permission probe; cached at startup
+	restMapper        meta.RESTMapper   // discovery-backed mapping for extra object API paths
 	operatorNamespace string
 	clusterProxyURL   string                  // resolved at startup; overridable in tests
 	profileSpec       configv1.TLSProfileSpec // cluster TLS profile applied to server + outbound clients
@@ -127,6 +144,7 @@ func StartHCPProxy(
 	profileSpec configv1.TLSProfileSpec,
 	hubConfig *rest.Config,
 	hubClient client.Client,
+	restMapper meta.RESTMapper,
 	log logr.Logger,
 ) error {
 	operatorNamespace := resolveOperatorNamespace(ctx, hubClient, log)
@@ -142,6 +160,7 @@ func StartHCPProxy(
 		hubConfig:         hubConfig,
 		hubClient:         hubClient,
 		hubDynClient:      hubDynClient,
+		restMapper:        restMapper,
 		operatorNamespace: operatorNamespace,
 		clusterProxyURL:   clusterProxyURL,
 		profileSpec:       profileSpec,
@@ -237,6 +256,7 @@ func resolveClusterProxyURL(
 	return url
 }
 
+// defaultClusterProxyURL returns the in-cluster cluster-proxy user server URL for MCE.
 func defaultClusterProxyURL() string {
 	return inClusterServiceURL(clusterProxyServiceName, clusterProxyNamespace(""), clusterProxyServicePort, "")
 }
@@ -510,6 +530,7 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 	p.writeJSONError(w, "not found", http.StatusNotFound)
 }
 
+// dispatchCollection routes collection-scoped /namespaces/{ns}/hostedclusters requests.
 func (p *hcpProxy) dispatchCollection(w http.ResponseWriter, r *http.Request, nsRaw, hostingCluster string) {
 	ns, err := sanitizeProxyName(nsRaw)
 	if err != nil {
@@ -524,6 +545,7 @@ func (p *hcpProxy) dispatchCollection(w http.ResponseWriter, r *http.Request, ns
 	}
 }
 
+// dispatchNamed routes named /namespaces/{ns}/hostedclusters/{name} requests.
 func (p *hcpProxy) dispatchNamed(w http.ResponseWriter, r *http.Request, nsRaw, nameRaw, hostingCluster string) {
 	ns, err := sanitizeProxyName(nsRaw)
 	if err != nil {
@@ -762,6 +784,7 @@ type cancelOnClose struct {
 	cancel context.CancelFunc
 }
 
+// Close cancels the in-flight spoke HTTP request when the response body is closed.
 func (c *cancelOnClose) Close() error {
 	err := c.ReadCloser.Close()
 	c.cancel()
@@ -790,6 +813,7 @@ func doSpokeHTTP(client *http.Client, req *http.Request) (*http.Response, error)
 	return rt.RoundTrip(req)
 }
 
+// coreNamespaceAPIPath returns the cluster-scoped Namespace API path for ns.
 func coreNamespaceAPIPath(ns string) (string, error) {
 	ns, err := sanitizeProxyName(ns)
 	if err != nil {
@@ -798,6 +822,7 @@ func coreNamespaceAPIPath(ns string) (string, error) {
 	return apiPathCoreNamespaces + "/" + ns, nil
 }
 
+// hsCollectionAPIPath returns the HyperShift collection API path for ns and resource.
 func hsCollectionAPIPath(ns, resource string) (string, error) {
 	ns, err := sanitizeProxyName(ns)
 	if err != nil {
@@ -814,6 +839,57 @@ func hsCollectionAPIPath(ns, resource string) (string, error) {
 	return apiPathHSNamespaces + "/" + ns + "/" + resource, nil
 }
 
+// extraObjectCollectionAPIPath builds a namespaced collection path from GVK using
+// discovery-backed REST mapping so irregular plurals (e.g. networkpolicies) resolve
+// correctly. Cluster-scoped resources are rejected.
+func extraObjectCollectionAPIPath(restMapper meta.RESTMapper, ns string, gvk schema.GroupVersionKind) (string, error) {
+	if restMapper == nil {
+		return "", fmt.Errorf("REST mapper not configured")
+	}
+	ns, err := sanitizeProxyName(ns)
+	if err != nil {
+		return "", err
+	}
+	mapping, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return "", fmt.Errorf("map GVK %s: %w", gvk.String(), err)
+	}
+	if mapping.Scope.Name() != meta.RESTScopeNameNamespace {
+		return "", fmt.Errorf("extra object %s is cluster-scoped", gvk.Kind)
+	}
+	gvr := mapping.Resource
+	version, err := sanitizeProxyName(gvr.Version)
+	if err != nil {
+		return "", fmt.Errorf("extra object apiVersion: %w", err)
+	}
+	resource, err := sanitizeProxyName(gvr.Resource)
+	if err != nil {
+		return "", fmt.Errorf("extra object resource: %w", err)
+	}
+	if gvr.Group == "" {
+		return "/api/" + version + "/namespaces/" + ns + "/" + resource, nil
+	}
+	group, err := sanitizeProxyName(gvr.Group)
+	if err != nil {
+		return "", fmt.Errorf("extra object apiGroup: %w", err)
+	}
+	return apiPathPrefix + group + "/" + version + "/namespaces/" + ns + "/" + resource, nil
+}
+
+// extraObjectNamedAPIPath builds a namespaced named-resource path from GVK and name.
+func extraObjectNamedAPIPath(restMapper meta.RESTMapper, ns string, obj *unstructured.Unstructured) (string, error) {
+	base, err := extraObjectCollectionAPIPath(restMapper, ns, obj.GroupVersionKind())
+	if err != nil {
+		return "", err
+	}
+	name, err := sanitizeProxyName(obj.GetName())
+	if err != nil {
+		return "", err
+	}
+	return base + "/" + name, nil
+}
+
+// hsNamedAPIPath returns the HyperShift named-resource API path for ns, resource, and name.
 func hsNamedAPIPath(ns, resource, name string) (string, error) {
 	base, err := hsCollectionAPIPath(ns, resource)
 	if err != nil {
@@ -887,6 +963,7 @@ type impersonatingTransport struct {
 	groups   []string
 }
 
+// RoundTrip adds Impersonate-User/Group headers before delegating to the base transport.
 func (t *impersonatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req = req.Clone(req.Context())
 	if t.username != "" {
@@ -901,14 +978,16 @@ func (t *impersonatingTransport) RoundTrip(req *http.Request) (*http.Response, e
 // handleCreate applies the full set of resources that `hcp create cluster --render`
 // produces to the spoke, in the correct dependency order:
 //
-//  0. Namespace    (auto-created, idempotent — 409 is silently ignored)
-//  1. Secrets      (pull-secret, ssh-key, any cloud-provider STS secrets, ...)
-//  2. HostedCluster (stamped with labelCreatedVia; spec.pullSecret already set by caller)
-//  3. NodePool(s)  (each stamped with labelCreatedVia)
+//  0. Namespace     (auto-created, idempotent — 409 is silently ignored)
+//  1. Secrets       (pull-secret, ssh-key, any cloud-provider STS secrets, ...)
+//  2. ExtraObjects  (Roles, ConfigMaps, …; 409 ignored; other failures abort)
+//  3. HostedCluster (stamped with labelCreatedVia; spec.pullSecret already set by caller)
+//  4. NodePool(s)   (each stamped with labelCreatedVia)
 //
 // The response is the full ResourceBundle so the caller gets every created object
 // in one shot without a follow-up GET /resources round-trip.
 func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spokeName string) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxCreateRequestBytes)
 	var req CreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		p.writeJSONError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
@@ -919,11 +998,18 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		return
 	}
 
+	extraObjs, extraErr := decodeExtraObjects(req.ExtraObjects)
+	if extraErr != nil {
+		p.writeJSONError(w, extraErr.Error(), http.StatusBadRequest)
+		return
+	}
+
 	p.log.Info("creating HostedCluster on spoke",
 		"name", req.HostedCluster.Name,
 		"namespace", ns,
 		"spoke", spokeName,
 		"secrets", len(req.Secrets),
+		"extraObjects", len(extraObjs),
 		"nodePools", len(req.NodePools),
 	)
 
@@ -952,7 +1038,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	// 0. Ensure Namespace (idempotent — 409 means it already exists)
 	nsObj := buildNamespace(ns, hcName)
 	if err := p.createOnSpoke(ctx, hcpClient, spokeName, ns, "namespaces", nsObj); err != nil && !isAlreadyExists(err) {
-		p.log.Error(err, "failed to ensure namespace", "namespace", ns, "spoke", spokeName)
+		p.logSpokeHTTPFailure("failed to ensure namespace", "namespace", ns, "spoke", spokeName)
 		p.writeJSONError(w, "failed to ensure namespace: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -964,13 +1050,43 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		req.Secrets[i].Namespace = ns
 		req.Secrets[i].Labels = addProxyLabels(req.Secrets[i].Labels)
 		if err := p.createOrUpdateSecretOnSpoke(ctx, hcpClient, spokeName, ns, &req.Secrets[i]); err != nil {
-			p.log.Error(err, "failed to create/update secret", "spoke", spokeName)
+			p.logSpokeHTTPFailure("failed to create/update secret", "secret", req.Secrets[i].Name, "spoke", spokeName)
 			p.writeJSONError(w, "failed to create secret: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}
 
-	// 2. Create HostedCluster
+	// 2. Extra objects (Role, ConfigMap, …) before HostedCluster so HO can
+	// reference them (e.g. capi-provider-role) as soon as the HC exists.
+	var createdExtraObjs []*unstructured.Unstructured
+	var appliedExtraObjs []*unstructured.Unstructured
+	for _, obj := range extraObjs {
+		obj.SetNamespace(ns)
+		obj.SetLabels(addProxyLabels(obj.GetLabels()))
+		ident := obj.GetKind() + "/" + obj.GetName()
+		extraErr := p.createUnstructuredOnSpoke(ctx, hcpClient, spokeName, ns, obj)
+		if extraErr != nil {
+			if isAlreadyExists(extraErr) {
+				appliedExtraObjs = append(appliedExtraObjs, obj.DeepCopy())
+				continue
+			}
+			p.logSpokeHTTPFailure("failed to create extra object", "object", ident, "spoke", spokeName)
+			p.rollbackExtraObjectsOnSpoke(ctx, hcpClient, spokeName, ns, createdExtraObjs)
+			p.writeJSONError(w, "failed to create extra object "+ident+": "+extraErr.Error(), http.StatusInternalServerError)
+			return
+		}
+		createdExtraObjs = append(createdExtraObjs, obj.DeepCopy())
+		appliedExtraObjs = append(appliedExtraObjs, obj.DeepCopy())
+	}
+	extraObjectsRaw, marshalErr := extraObjectsToRaw(appliedExtraObjs)
+	if marshalErr != nil {
+		p.logSpokeHTTPFailure("failed to marshal extra objects for response", "spoke", spokeName)
+		p.rollbackExtraObjectsOnSpoke(ctx, hcpClient, spokeName, ns, createdExtraObjs)
+		p.writeJSONError(w, "failed to marshal extra objects: "+marshalErr.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// 3. Create HostedCluster
 	//    spec.pullSecret.name / spec.sshKey.name are already set by the caller
 	//    (same as --render output) — the proxy does NOT construct those names.
 	req.HostedCluster.Namespace = ns
@@ -978,12 +1094,13 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	req.HostedCluster.Kind = "HostedCluster"
 	req.HostedCluster.Labels = addProxyLabels(req.HostedCluster.Labels)
 	if err := p.createOnSpoke(ctx, hcpClient, spokeName, ns, resourceHostedClusters, req.HostedCluster); err != nil {
-		p.log.Error(err, "failed to create HostedCluster", "name", hcName, "spoke", spokeName)
+		p.logSpokeHTTPFailure("failed to create HostedCluster", "name", hcName, "spoke", spokeName)
+		p.rollbackExtraObjectsOnSpoke(ctx, hcpClient, spokeName, ns, createdExtraObjs)
 		p.writeJSONError(w, "failed to create HostedCluster: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// 3. Create NodePool(s)
+	// 4. Create NodePool(s)
 	var createdNodePools []hypershiftv1beta1.NodePool
 	var warnings []string
 	for i := range req.NodePools {
@@ -999,7 +1116,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		}
 		np.Labels = addProxyLabels(np.Labels)
 		if err := p.createOnSpoke(ctx, hcpClient, spokeName, ns, resourceNodePools, np); err != nil {
-			p.log.Error(err, "failed to create NodePool", "name", np.Name)
+			p.logSpokeHTTPFailure("failed to create NodePool", "name", np.Name, "spoke", spokeName)
 			warnings = append(warnings, fmt.Sprintf("NodePool %q creation failed: %s", np.Name, err.Error()))
 			continue
 		}
@@ -1010,6 +1127,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		Namespace:     nsObj,
 		HostedCluster: req.HostedCluster,
 		NodePools:     createdNodePools,
+		ExtraObjects:  extraObjectsRaw,
 		Warnings:      warnings,
 	}
 
@@ -1022,7 +1140,9 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 
 	w.Header().Set(headerContentType, contentTypeJSON)
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(bundle)
+	if err := json.NewEncoder(w).Encode(bundle); err != nil {
+		p.log.Error(fmt.Errorf("encode create response: %w", err), "failed to write create response")
+	}
 }
 
 // handleDelete deletes the HostedCluster and all associated NodePools from the spoke.
@@ -1181,8 +1301,11 @@ func (p *hcpProxy) putOnSpoke(
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("spoke returned %d: %s", resp.StatusCode, string(respBody))
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("read spoke response for PUT %s: %w", apiPath, readErr)
+		}
+		return spokeHTTPError(resp.StatusCode, apiPath, respBody)
 	}
 	return nil
 }
@@ -1215,9 +1338,12 @@ func (p *hcpProxy) handleGetResources(w http.ResponseWriter, r *http.Request, ns
 	bundle.NodePools = p.fetchNodePoolsForHC(ctx, hcpClient, ns, name, spokeName)
 
 	w.Header().Set(headerContentType, contentTypeJSON)
-	_ = json.NewEncoder(w).Encode(bundle)
+	if err := json.NewEncoder(w).Encode(bundle); err != nil {
+		p.log.Error(fmt.Errorf("encode get resources response: %w", err), "failed to write get resources response")
+	}
 }
 
+// fetchNamespaceBestEffort GETs the Namespace from the spoke; returns nil if missing.
 func (p *hcpProxy) fetchNamespaceBestEffort(
 	ctx context.Context,
 	hcpClient *http.Client,
@@ -1246,6 +1372,7 @@ func (p *hcpProxy) fetchNamespaceBestEffort(
 	return &namespace
 }
 
+// fetchHostedCluster GETs a HostedCluster from the spoke by namespace and name.
 func (p *hcpProxy) fetchHostedCluster(
 	ctx context.Context,
 	hcpClient *http.Client,
@@ -1268,8 +1395,15 @@ func (p *hcpProxy) fetchHostedCluster(
 		return nil, http.StatusNotFound, "HostedCluster not found"
 	}
 	if hcResp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(hcResp.Body)
-		return nil, http.StatusBadGateway, fmt.Sprintf("spoke returned %d: %s", hcResp.StatusCode, string(body))
+		body, readErr := io.ReadAll(hcResp.Body)
+		if readErr != nil {
+			return nil, http.StatusInternalServerError, "failed to read HostedCluster response: " + readErr.Error()
+		}
+		msg := spokeHTTPStatusMessage(body)
+		if msg != "" {
+			return nil, http.StatusBadGateway, fmt.Sprintf("spoke returned %d: %s", hcResp.StatusCode, msg)
+		}
+		return nil, http.StatusBadGateway, fmt.Sprintf("spoke returned %d for HostedCluster", hcResp.StatusCode)
 	}
 	var hc hypershiftv1beta1.HostedCluster
 	if err := json.NewDecoder(hcResp.Body).Decode(&hc); err != nil {
@@ -1278,6 +1412,7 @@ func (p *hcpProxy) fetchHostedCluster(
 	return &hc, http.StatusOK, ""
 }
 
+// fetchNodePoolsForHC lists NodePools in ns whose spec.clusterName matches hcName.
 func (p *hcpProxy) fetchNodePoolsForHC(
 	ctx context.Context,
 	hcpClient *http.Client,
@@ -1345,7 +1480,7 @@ func writeJSONError(w http.ResponseWriter, msg string, code int) error {
 // failures so HTTP handlers can stay one-liners.
 func (p *hcpProxy) writeJSONError(w http.ResponseWriter, msg string, code int) {
 	if err := writeJSONError(w, msg, code); err != nil {
-		p.log.Error(err, "failed to write Status error response")
+		p.log.Error(fmt.Errorf("write Status error response: %w", err), "failed to write Status error response")
 	}
 }
 
@@ -1384,6 +1519,15 @@ func buildNamespace(name, hcName string) *corev1.Namespace {
 
 // errSpokeConflict is returned by createOnSpoke when the spoke responds with 409.
 var errSpokeConflict = errors.New("spoke conflict")
+
+// errSpokeLogged is the stable error value for spoke HTTP failures in logs. Callers
+// must not pass spoke Status.Message-bearing errors to log.Error (customer data).
+var errSpokeLogged = errors.New("spoke HTTP request failed")
+
+// logSpokeHTTPFailure records a spoke operation failure without untrusted error text.
+func (p *hcpProxy) logSpokeHTTPFailure(msg string, keysAndValues ...interface{}) {
+	p.log.Error(errSpokeLogged, msg, keysAndValues...)
+}
 
 // isAlreadyExists reports whether a createOnSpoke error means the resource
 // already exists on the spoke (HTTP 409 Conflict).
@@ -1434,10 +1578,87 @@ func (p *hcpProxy) createOnSpoke(
 	default:
 		return fmt.Errorf("unknown resource type: %s", resource)
 	}
+	return p.postOnSpoke(ctx, httpClient, spokeName, resource, apiPath, obj)
+}
 
+// createUnstructuredOnSpoke POSTs a generic namespaced object (Role, ConfigMap, …)
+// to the spoke kube-apiserver via cluster-proxy.
+func (p *hcpProxy) createUnstructuredOnSpoke(
+	ctx context.Context,
+	httpClient *http.Client,
+	spokeName, ns string,
+	obj *unstructured.Unstructured,
+) error {
+	apiPath, err := extraObjectCollectionAPIPath(p.restMapper, ns, obj.GroupVersionKind())
+	if err != nil {
+		return err
+	}
+	what := obj.GetKind() + "/" + obj.GetName()
+	return p.postOnSpoke(ctx, httpClient, spokeName, what, apiPath, obj)
+}
+
+// deleteUnstructuredOnSpoke DELETEs a generic namespaced object from the spoke.
+// NotFound is treated as success (idempotent rollback).
+func (p *hcpProxy) deleteUnstructuredOnSpoke(
+	ctx context.Context,
+	httpClient *http.Client,
+	spokeName, ns string,
+	obj *unstructured.Unstructured,
+) error {
+	apiPath, err := extraObjectNamedAPIPath(p.restMapper, ns, obj)
+	if err != nil {
+		return err
+	}
+	what := obj.GetKind() + "/" + obj.GetName()
+	req, err := p.newSpokeRequest(ctx, http.MethodDelete, spokeName, apiPath, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := doSpokeHTTP(httpClient, req)
+	if err != nil {
+		return fmt.Errorf("DELETE %s: %w", what, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode >= 300 {
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("read spoke response for DELETE %s: %w", what, readErr)
+		}
+		return spokeHTTPError(resp.StatusCode, what, respBody)
+	}
+	return nil
+}
+
+// rollbackExtraObjectsOnSpoke best-effort deletes extra objects created during a
+// failed create, in reverse order. Errors are logged but not returned.
+func (p *hcpProxy) rollbackExtraObjectsOnSpoke(
+	ctx context.Context,
+	httpClient *http.Client,
+	spokeName, ns string,
+	created []*unstructured.Unstructured,
+) {
+	for i := len(created) - 1; i >= 0; i-- {
+		obj := created[i]
+		ident := obj.GetKind() + "/" + obj.GetName()
+		if err := p.deleteUnstructuredOnSpoke(ctx, httpClient, spokeName, ns, obj); err != nil {
+			p.logSpokeHTTPFailure("failed to rollback extra object", "object", ident, "spoke", spokeName)
+		}
+	}
+}
+
+// postOnSpoke POSTs a JSON-encoded object to apiPath on the spoke.
+func (p *hcpProxy) postOnSpoke(
+	ctx context.Context,
+	httpClient *http.Client,
+	spokeName, what, apiPath string,
+	obj interface{},
+) error {
 	body, err := json.Marshal(obj)
 	if err != nil {
-		return fmt.Errorf("marshal %s: %w", resource, err)
+		return fmt.Errorf("marshal %s: %w", what, err)
 	}
 
 	req, err := p.newSpokeRequest(ctx, http.MethodPost, spokeName, apiPath, bytes.NewReader(body))
@@ -1448,15 +1669,108 @@ func (p *hcpProxy) createOnSpoke(
 
 	resp, err := doSpokeHTTP(httpClient, req)
 	if err != nil {
-		return fmt.Errorf("POST %s: %w", resource, err)
+		return fmt.Errorf("POST %s: %w", what, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		respBody, _ := io.ReadAll(resp.Body)
-		if resp.StatusCode == http.StatusConflict {
-			return fmt.Errorf("%w: spoke returned 409 for %s: %s", errSpokeConflict, resource, string(respBody))
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("read spoke response for %s: %w", what, readErr)
 		}
-		return fmt.Errorf("spoke returned %d for %s: %s", resp.StatusCode, resource, string(respBody))
+		return spokeHTTPErrorForWhat(resp.StatusCode, what, respBody)
 	}
 	return nil
+}
+
+// spokeHTTPStatusMessage extracts a Kubernetes Status message from a spoke error
+// body without logging or returning the raw payload (may contain customer data).
+func spokeHTTPStatusMessage(respBody []byte) string {
+	if len(respBody) == 0 {
+		return ""
+	}
+	var status metav1.Status
+	if err := json.Unmarshal(respBody, &status); err == nil && status.Message != "" {
+		return status.Message
+	}
+	return ""
+}
+
+// spokeHTTPError formats a spoke HTTP failure using status code and an optional
+// Kubernetes Status message — never the raw response body.
+func spokeHTTPError(statusCode int, resourcePath string, respBody []byte) error {
+	if msg := spokeHTTPStatusMessage(respBody); msg != "" {
+		return fmt.Errorf("spoke returned %d for %s: %s", statusCode, resourcePath, msg)
+	}
+	return fmt.Errorf("spoke returned %d for %s", statusCode, resourcePath)
+}
+
+// spokeHTTPErrorForWhat formats a spoke POST failure, mapping 409 to errSpokeConflict.
+func spokeHTTPErrorForWhat(statusCode int, what string, respBody []byte) error {
+	if statusCode == http.StatusConflict {
+		return fmt.Errorf("%w: spoke returned 409 for %s", errSpokeConflict, what)
+	}
+	return spokeHTTPError(statusCode, what, respBody)
+}
+
+// decodeExtraObjects unmarshals ExtraObjects entries, skipping empty payloads
+// and kinds that already have dedicated CreateRequest fields.
+func decodeExtraObjects(raws []runtime.RawExtension) ([]*unstructured.Unstructured, error) {
+	if len(raws) > maxExtraObjects {
+		return nil, fmt.Errorf("extraObjects exceeds maximum of %d", maxExtraObjects)
+	}
+	out := make([]*unstructured.Unstructured, 0, len(raws))
+	for i, raw := range raws {
+		if len(raw.Raw) > maxExtraObjectBytes {
+			return nil, fmt.Errorf("extraObjects[%d]: object exceeds maximum size of %d bytes", i, maxExtraObjectBytes)
+		}
+		if len(raw.Raw) == 0 {
+			continue
+		}
+		obj := &unstructured.Unstructured{}
+		if err := obj.UnmarshalJSON(raw.Raw); err != nil {
+			return nil, fmt.Errorf("extraObjects[%d]: invalid object: %w", i, err)
+		}
+		gvk := obj.GroupVersionKind()
+		if gvk.Kind == "" || gvk.Version == "" {
+			return nil, fmt.Errorf("extraObjects[%d]: missing apiVersion or kind", i)
+		}
+		if isDedicatedCreateGVK(gvk) {
+			continue
+		}
+		if _, err := sanitizeProxyName(obj.GetName()); err != nil {
+			return nil, fmt.Errorf("extraObjects[%d]: %w", i, err)
+		}
+		out = append(out, obj)
+	}
+	return out, nil
+}
+
+// extraObjectsToRaw marshals unstructured extra objects for ResourceBundle responses.
+func extraObjectsToRaw(objs []*unstructured.Unstructured) ([]runtime.RawExtension, error) {
+	if len(objs) == 0 {
+		return nil, nil
+	}
+	out := make([]runtime.RawExtension, 0, len(objs))
+	for i, obj := range objs {
+		raw, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, fmt.Errorf("extraObjects[%d]: %w", i, err)
+		}
+		out = append(out, runtime.RawExtension{Raw: raw})
+	}
+	return out, nil
+}
+
+// isDedicatedCreateGVK reports whether gvk is represented by a dedicated CreateRequest
+// field rather than extraObjects (core Secret/Namespace, HyperShift HC/NodePool).
+func isDedicatedCreateGVK(gvk schema.GroupVersionKind) bool {
+	switch gvk {
+	case schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"},
+		schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"},
+		hypershiftv1beta1.GroupVersion.WithKind("HostedCluster"),
+		hypershiftv1beta1.GroupVersion.WithKind("NodePool"):
+		return true
+	default:
+		return false
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -26,15 +28,40 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/restmapper"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+// recordingLogSink captures errors passed to log.Error for assertions.
+type recordingLogSink struct {
+	errors []error
+}
+
+func (s *recordingLogSink) Init(logr.RuntimeInfo) {}
+func (s *recordingLogSink) Enabled(level int) bool { return true }
+func (s *recordingLogSink) Info(level int, msg string, keysAndValues ...any) {}
+func (s *recordingLogSink) Error(err error, msg string, keysAndValues ...any) {
+	s.errors = append(s.errors, err)
+}
+func (s *recordingLogSink) WithValues(keysAndValues ...any) logr.LogSink { return s }
+func (s *recordingLogSink) WithName(name string) logr.LogSink            { return s }
+
+func Test_logSpokeHTTPFailure_DoesNotLogSpokeErrorText(t *testing.T) {
+	sink := &recordingLogSink{}
+	p := &hcpProxy{log: logr.New(sink)}
+	p.logSpokeHTTPFailure("failed to create extra object", "object", "Role/foo", "spoke", "spoke-1")
+	require.Len(t, sink.errors, 1)
+	assert.Equal(t, errSpokeLogged, sink.errors[0])
+	assert.NotContains(t, sink.errors[0].Error(), "user@evil.com")
+}
 
 // setCertPaths overrides the package-level cert/key file paths for testing.
 func setCertPaths(cert, key string) {
@@ -54,6 +81,65 @@ func tlsCertToPEM(c tls.Certificate) (certPEM, keyPEM []byte, err error) {
 	}
 	keyPEM = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
 	return certPEM, keyPEM, nil
+}
+
+// newTestRESTMapper returns a discovery-backed mapper with the API groups used in
+// extra-object unit tests (core, RBAC, networking, HyperShift).
+func newTestRESTMapper() meta.RESTMapper {
+	groups := []*restmapper.APIGroupResources{
+		{
+			Group: metav1.APIGroup{
+				Name:             "",
+				Versions:         []metav1.GroupVersionForDiscovery{{Version: "v1"}},
+				PreferredVersion: metav1.GroupVersionForDiscovery{Version: "v1"},
+			},
+			VersionedResources: map[string][]metav1.APIResource{
+				"v1": {
+					{Name: "configmaps", Namespaced: true, Kind: "ConfigMap"},
+					{Name: "secrets", Namespaced: true, Kind: "Secret"},
+					{Name: "namespaces", Namespaced: false, Kind: "Namespace"},
+				},
+			},
+		},
+		{
+			Group: metav1.APIGroup{
+				Name:             "rbac.authorization.k8s.io",
+				Versions:         []metav1.GroupVersionForDiscovery{{Version: "v1"}},
+				PreferredVersion: metav1.GroupVersionForDiscovery{Version: "v1"},
+			},
+			VersionedResources: map[string][]metav1.APIResource{
+				"v1": {
+					{Name: "roles", Namespaced: true, Kind: "Role"},
+				},
+			},
+		},
+		{
+			Group: metav1.APIGroup{
+				Name:             "networking.k8s.io",
+				Versions:         []metav1.GroupVersionForDiscovery{{Version: "v1"}},
+				PreferredVersion: metav1.GroupVersionForDiscovery{Version: "v1"},
+			},
+			VersionedResources: map[string][]metav1.APIResource{
+				"v1": {
+					{Name: "networkpolicies", Namespaced: true, Kind: "NetworkPolicy"},
+				},
+			},
+		},
+		{
+			Group: metav1.APIGroup{
+				Name:             hypershiftv1beta1.GroupVersion.Group,
+				Versions:         []metav1.GroupVersionForDiscovery{{Version: hypershiftv1beta1.GroupVersion.Version}},
+				PreferredVersion: metav1.GroupVersionForDiscovery{Version: hypershiftv1beta1.GroupVersion.Version},
+			},
+			VersionedResources: map[string][]metav1.APIResource{
+				hypershiftv1beta1.GroupVersion.Version: {
+					{Name: "hostedclusters", Namespaced: true, Kind: "HostedCluster"},
+					{Name: "nodepools", Namespaced: true, Kind: "NodePool"},
+				},
+			},
+		},
+	}
+	return restmapper.NewDiscoveryRESTMapper(groups)
 }
 
 // newTestProxy creates a minimal hcpProxy wired to the provided fake client.
@@ -84,6 +170,7 @@ func newTestProxy(t *testing.T, objs ...runtime.Object) *hcpProxy {
 		hubConfig:         cfg,
 		hubClient:         hubClient,
 		hubDynClient:      hubDynClient,
+		restMapper:        newTestRESTMapper(),
 		operatorNamespace: "multicluster-engine",
 		profileSpec:       defaultProfile,
 		log:               zapr.NewLogger(zapLog),
@@ -1003,7 +1090,7 @@ func Test_handleCreate_WhenCreated_ItShouldStampCreatedViaLabel(t *testing.T) {
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{}`)
 	}))
-	defer spokeSrv.Close()
+	t.Cleanup(spokeSrv.Close)
 
 	mc := availableManagedCluster("spoke-1")
 	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
@@ -1018,7 +1105,7 @@ func Test_handleCreate_WhenCreated_ItShouldStampCreatedViaLabel(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "my-hc-us-east-1a"},
 		Spec:       hypershiftv1beta1.NodePoolSpec{ClusterName: "my-hc"},
 	}
-	body, _ := json.Marshal(CreateRequest{
+	body, err := json.Marshal(CreateRequest{
 		HostedCluster: hc,
 		NodePools:     []*hypershiftv1beta1.NodePool{np},
 		Secrets: []corev1.Secret{
@@ -1026,6 +1113,7 @@ func Test_handleCreate_WhenCreated_ItShouldStampCreatedViaLabel(t *testing.T) {
 				Data: map[string][]byte{".dockerconfigjson": []byte(`{}`)}},
 		},
 	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
 	w := httptest.NewRecorder()
 	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
 	r.Header.Set("X-Remote-User", "alice")
@@ -1042,6 +1130,281 @@ func Test_handleCreate_WhenCreated_ItShouldStampCreatedViaLabel(t *testing.T) {
 	var postedNP hypershiftv1beta1.NodePool
 	require.NoError(t, json.Unmarshal(postedBodies[3], &postedNP))
 	assert.Equal(t, labelCreatedViaValue, postedNP.Labels[labelCreatedVia])
+}
+
+func Test_handleCreate_WhenExtraObjectsProvided_ItShouldPostThemBeforeHostedCluster(t *testing.T) {
+	var posted []struct {
+		path string
+		body []byte
+	}
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		posted = append(posted, struct {
+			path string
+			body []byte
+		}{r.URL.Path, body})
+		w.Header().Set(headerContentType, contentTypeJSON)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(spokeSrv.Close)
+
+	mc := availableManagedCluster("spoke-1")
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
+
+	body, err := json.Marshal(CreateRequest{
+		HostedCluster: &hypershiftv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+		},
+		ExtraObjects: []runtime.RawExtension{
+			mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
+			mustRawObject(t, "v1", "ConfigMap", "user-ca-bundle"),
+		},
+	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleCreate(w, r, "clusters", "spoke-1")
+
+	require.Equal(t, http.StatusCreated, w.Code, "create with extra objects must succeed")
+	require.Len(t, posted, 4, "namespace + Role + ConfigMap + HostedCluster")
+	assert.Contains(t, posted[0].path, "/api/v1/namespaces", "Namespace must be created first")
+	assert.Contains(t, posted[1].path, "/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles",
+		"Role extra object must be posted to the namespaced RBAC collection")
+	assert.Contains(t, posted[2].path, "/api/v1/namespaces/clusters/configmaps",
+		"ConfigMap extra object must be posted to the namespaced core collection")
+	assert.Contains(t, posted[3].path, "/hostedclusters", "HostedCluster must be created after extra objects")
+
+	var role unstructured.Unstructured
+	require.NoError(t, json.Unmarshal(posted[1].body, &role), "Role body must be unstructured JSON")
+	assert.Equal(t, "clusters", role.GetNamespace(), "extra objects must be pinned to the HostedCluster namespace")
+	assert.Equal(t, labelCreatedViaValue, role.GetLabels()[labelCreatedVia], "Role must be stamped created-via")
+	assert.Equal(t, "my-hc", role.GetLabels()[labelHostedCluster], "Role must be stamped with HostedCluster name")
+
+	var cm unstructured.Unstructured
+	require.NoError(t, json.Unmarshal(posted[2].body, &cm), "ConfigMap body must be unstructured JSON")
+	assert.Equal(t, labelCreatedViaValue, cm.GetLabels()[labelCreatedVia], "ConfigMap must be stamped created-via")
+	assert.Equal(t, "my-hc", cm.GetLabels()[labelHostedCluster], "ConfigMap must be stamped with HostedCluster name")
+
+	var bundle ResourceBundle
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &bundle), "create response must be a ResourceBundle")
+	require.Len(t, bundle.ExtraObjects, 2, "response must echo applied extra objects")
+}
+
+func Test_handleCreate_WhenExtraObjectFailsMidway_ItShouldRollbackCreatedObjects(t *testing.T) {
+	var methods []string
+	var paths []string
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method)
+		paths = append(paths, r.URL.Path)
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/roles"):
+			w.Header().Set(headerContentType, contentTypeJSON)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{}`)
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/configmaps"):
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"message":"forbidden"}`)
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/roles/capi-provider-role"):
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.Header().Set(headerContentType, contentTypeJSON)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{}`)
+		}
+	}))
+	t.Cleanup(spokeSrv.Close)
+
+	mc := availableManagedCluster("spoke-1")
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
+
+	body, err := json.Marshal(CreateRequest{
+		HostedCluster: &hypershiftv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+		},
+		ExtraObjects: []runtime.RawExtension{
+			mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
+			mustRawObject(t, "v1", "ConfigMap", "user-ca-bundle"),
+		},
+	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleCreate(w, r, "clusters", "spoke-1")
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code, "midway extra-object failure must fail the create")
+	assert.Contains(t, methods, http.MethodDelete, "created extra objects must be rolled back on failure")
+	rolledBack := false
+	for i, path := range paths {
+		if methods[i] == http.MethodDelete && strings.Contains(path, "/roles/capi-provider-role") {
+			rolledBack = true
+			break
+		}
+	}
+	assert.True(t, rolledBack, "rollback must DELETE the Role created before the failure; paths=%v methods=%v", paths, methods)
+}
+
+func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
+	const sensitiveMsg = "user@evil.com is not allowed to create roles"
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/roles") {
+			w.WriteHeader(http.StatusForbidden)
+			if _, writeErr := io.WriteString(w, fmt.Sprintf(`{"message":%q}`, sensitiveMsg)); writeErr != nil {
+				require.NoError(t, fmt.Errorf("write forbidden role response: %w", writeErr))
+			}
+			return
+		}
+		w.Header().Set(headerContentType, contentTypeJSON)
+		w.WriteHeader(http.StatusCreated)
+		if _, writeErr := io.WriteString(w, `{}`); writeErr != nil {
+			require.NoError(t, fmt.Errorf("write default created response: %w", writeErr))
+		}
+	}))
+	t.Cleanup(spokeSrv.Close)
+
+	mc := availableManagedCluster("spoke-1")
+	sink := &recordingLogSink{}
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
+	p.log = logr.New(sink)
+
+	body, err := json.Marshal(CreateRequest{
+		HostedCluster: &hypershiftv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+		},
+		ExtraObjects: []runtime.RawExtension{
+			mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
+		},
+	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleCreate(w, r, "clusters", "spoke-1")
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code, "RBAC denial applying extra objects must fail the create")
+	assert.Contains(t, w.Body.String(), "capi-provider-role", "error must name the extra object that failed")
+	assert.Contains(t, w.Body.String(), "403", "error must include the spoke HTTP status")
+	for _, loggedErr := range sink.errors {
+		assert.NotContains(t, loggedErr.Error(), "user@evil.com", "logs must not contain spoke Status.Message")
+		assert.NotContains(t, loggedErr.Error(), sensitiveMsg, "logs must not contain spoke Status.Message")
+	}
+}
+
+func Test_handleCreate_WhenExtraObjectAlreadyExists_ItShouldContinue(t *testing.T) {
+	var hostedClusterPosted bool
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/roles") {
+			w.WriteHeader(http.StatusConflict)
+			_, _ = io.WriteString(w, `{"reason":"AlreadyExists"}`)
+			return
+		}
+		if strings.Contains(r.URL.Path, "/hostedclusters") {
+			hostedClusterPosted = true
+		}
+		w.Header().Set(headerContentType, contentTypeJSON)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	t.Cleanup(spokeSrv.Close)
+
+	mc := availableManagedCluster("spoke-1")
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
+
+	body, err := json.Marshal(CreateRequest{
+		HostedCluster: &hypershiftv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+		},
+		ExtraObjects: []runtime.RawExtension{
+			mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
+		},
+	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleCreate(w, r, "clusters", "spoke-1")
+
+	require.Equal(t, http.StatusCreated, w.Code, "409 on extra objects must be treated as already exists")
+	assert.True(t, hostedClusterPosted, "HostedCluster must still be created after extra-object 409")
+}
+
+func Test_handleCreate_WhenExtraObjectMissingKind_ItShouldReturn400(t *testing.T) {
+	p := newTestProxy(t, availableManagedCluster("spoke-1"))
+	body, err := json.Marshal(CreateRequest{
+		HostedCluster: &hypershiftv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+		},
+		ExtraObjects: []runtime.RawExtension{
+			{Raw: []byte(`{"metadata":{"name":"no-kind"}}`)},
+		},
+	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleCreate(w, r, "clusters", "spoke-1")
+
+	assert.Equal(t, http.StatusBadRequest, w.Code,
+		"extra objects without apiVersion/kind must be rejected before spoke writes")
+	assert.Contains(t, w.Body.String(), "Kind", "error must explain the ExtraObjects contract")
+}
+
+func Test_extraObjectCollectionAPIPath_WhenRoleAndConfigMap_ItShouldBuildNamespacedPaths(t *testing.T) {
+	mapper := newTestRESTMapper()
+	rolePath, err := extraObjectCollectionAPIPath(mapper, "clusters", schema.GroupVersionKind{
+		Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role",
+	})
+	require.NoError(t, err, "Role GVK must map to a namespaced collection path")
+	assert.Equal(t, "/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles", rolePath,
+		"Role must POST to the discovery-backed roles collection path")
+
+	cmPath, err := extraObjectCollectionAPIPath(mapper, "clusters", schema.GroupVersionKind{
+		Version: "v1", Kind: "ConfigMap",
+	})
+	require.NoError(t, err, "ConfigMap GVK must map to a namespaced collection path")
+	assert.Equal(t, "/api/v1/namespaces/clusters/configmaps", cmPath,
+		"ConfigMap must POST to the core configmaps collection path")
+}
+
+func Test_extraObjectCollectionAPIPath_WhenNetworkPolicy_ItShouldUseCorrectPlural(t *testing.T) {
+	mapper := newTestRESTMapper()
+	path, err := extraObjectCollectionAPIPath(mapper, "clusters", schema.GroupVersionKind{
+		Group:   "networking.k8s.io",
+		Version: "v1",
+		Kind:    "NetworkPolicy",
+	})
+	require.NoError(t, err, "NetworkPolicy GVK must map via discovery-backed REST mapping")
+	assert.Equal(t, "/apis/networking.k8s.io/v1/namespaces/clusters/networkpolicies", path,
+		"NetworkPolicy plural must be networkpolicies, not an UnsafeGuessKind plural")
+}
+
+func Test_decodeExtraObjects_WhenDedicatedKind_ItShouldSkip(t *testing.T) {
+	objs, err := decodeExtraObjects([]runtime.RawExtension{
+		mustRawObject(t, "v1", "Secret", "pull-secret"),
+		mustRawObject(t, "v1", "ConfigMap", "user-ca-bundle"),
+		{Raw: []byte{}},
+	})
+	require.NoError(t, err, "valid extra objects must decode")
+	require.Len(t, objs, 1, "Secret is a dedicated CreateRequest field and must be skipped")
+	assert.Equal(t, "ConfigMap", objs[0].GetKind(), "only non-dedicated kinds remain after filtering")
+	assert.Equal(t, "user-ca-bundle", objs[0].GetName(), "decoded ConfigMap name must match input")
+}
+
+func Test_decodeExtraObjects_WhenCustomSecretKind_ItShouldNotSkip(t *testing.T) {
+	raw, err := json.Marshal(map[string]interface{}{
+		"apiVersion": "example.com/v1",
+		"kind":       "Secret",
+		"metadata":   map[string]interface{}{"name": "custom-secret"},
+	})
+	require.NoError(t, err, "marshal custom Secret fixture")
+	objs, err := decodeExtraObjects([]runtime.RawExtension{{Raw: raw}})
+	require.NoError(t, err, "non-core Secret kind must not be filtered as dedicated")
+	require.Len(t, objs, 1, "custom Secret CRD must pass through generic extra-object handling")
+	assert.Equal(t, "example.com/v1", objs[0].GetAPIVersion(), "custom Secret must retain its API group")
+	assert.Equal(t, "Secret", objs[0].GetKind(), "custom Secret kind must not be filtered as core v1 Secret")
+	assert.Equal(t, "custom-secret", objs[0].GetName(), "custom Secret name must match input")
 }
 
 // --- handleGetResources ---
@@ -1700,7 +2063,7 @@ func Test_StartHCPProxy_WhenContextCancelled_ItShouldShutdownCleanly(t *testing.
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- StartHCPProxy(ctx, profile, hubConfig, hubClient, log)
+		errCh <- StartHCPProxy(ctx, profile, hubConfig, hubClient, newTestRESTMapper(), log)
 	}()
 
 	// Give the TLS server a moment to bind, then cancel for graceful shutdown.
@@ -1805,6 +2168,17 @@ func availableManagedCluster(name string) *clusterv1.ManagedCluster {
 			},
 		},
 	}
+}
+
+func mustRawObject(t *testing.T, apiVersion, kind, name string) runtime.RawExtension {
+	t.Helper()
+	raw, err := json.Marshal(map[string]interface{}{
+		"apiVersion": apiVersion,
+		"kind":       kind,
+		"metadata":   map[string]interface{}{"name": name},
+	})
+	require.NoError(t, err, "marshal extra object fixture")
+	return runtime.RawExtension{Raw: raw}
 }
 
 // newTestProxyWithSpokeURL sets clusterProxyURL to the mock server so all spoke
