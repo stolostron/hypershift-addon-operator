@@ -276,6 +276,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			        {"service": "Konnectivity", "servicePublishingStrategy": {"type": "None"}},
 			        {"service": "Ignition", "servicePublishingStrategy": {"type": "None"}}
 			      ],
+			      "etcd": {"managementType": "Managed"},
 			      "infraID": %q
 			    }
 			  },
@@ -385,6 +386,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			        {"service": "Konnectivity", "servicePublishingStrategy": {"type": "None"}},
 			        {"service": "Ignition", "servicePublishingStrategy": {"type": "None"}}
 			      ],
+			      "etcd": {"managementType": "Managed"},
 			      "infraID": %q
 			    }
 			  },
