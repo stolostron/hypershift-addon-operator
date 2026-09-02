@@ -314,6 +314,7 @@ func setupTLSProfileWatcher(
 	return nil
 }
 
+// startHCPProxy runs the HCP proxy HTTPS server until ctx is cancelled.
 func startHCPProxy(
 	ctx context.Context,
 	profileSpec configv1.TLSProfileSpec,

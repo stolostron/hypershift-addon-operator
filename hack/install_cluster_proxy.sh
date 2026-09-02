@@ -19,12 +19,34 @@ RELEASE=${CLUSTER_PROXY_RELEASE:-cluster-proxy}
 MANAGED_CLUSTER=${MANAGED_CLUSTER_NAME:-local-cluster}
 TIMEOUT=${CLUSTER_PROXY_TIMEOUT:-300s}
 
-# Parse CLUSTER_PROXY_TIMEOUT (kubectl duration, e.g. 300s) for polling loops.
-timeout_seconds="${TIMEOUT%s}"
-if ! [[ "${timeout_seconds}" =~ ^[0-9]+$ ]]; then
-  timeout_seconds=300
+# Parse CLUSTER_PROXY_TIMEOUT into seconds for polling loops (supports s, m, h, ms).
+parse_timeout_seconds() {
+  local raw="$1"
+  if [[ "${raw}" =~ ^([0-9]+)(ms|s|m|h)$ ]]; then
+    local n="${BASH_REMATCH[1]}"
+    local unit="${BASH_REMATCH[2]}"
+    case "${unit}" in
+      ms) echo $(( (n + 999) / 1000 )); return 0 ;;
+      s) echo "${n}"; return 0 ;;
+      m) echo $(( n * 60 )); return 0 ;;
+      h) echo $(( n * 3600 )); return 0 ;;
+    esac
+    return 1
+  fi
+  local stripped="${raw%s}"
+  if [[ "${stripped}" =~ ^[0-9]+$ ]]; then
+    echo "${stripped}"
+    return 0
+  fi
+  return 1
+}
+
+if ! timeout_seconds="$(parse_timeout_seconds "${TIMEOUT}")"; then
+  echo "ERROR: invalid CLUSTER_PROXY_TIMEOUT '${TIMEOUT}' (use e.g. 300s, 1m, 5m)" >&2
+  exit 1
 fi
 poll_interval=2
+KUBECTL_GET="${KUBECTL} --request-timeout=${TIMEOUT}"
 poll_iterations=$(( timeout_seconds / poll_interval ))
 if [[ poll_iterations -lt 1 ]]; then
   poll_iterations=1
@@ -52,8 +74,8 @@ fi
 
 echo "Waiting for cluster-proxy-addon-user Service and Deployment..."
 for _ in $(seq 1 "${poll_iterations}"); do
-  if ${KUBECTL} get svc -n "${NAMESPACE}" cluster-proxy-addon-user >/dev/null 2>&1 && \
-     ${KUBECTL} get deploy -n "${NAMESPACE}" cluster-proxy-addon-user >/dev/null 2>&1; then
+  if ${KUBECTL_GET} get svc -n "${NAMESPACE}" cluster-proxy-addon-user >/dev/null 2>&1 && \
+     ${KUBECTL_GET} get deploy -n "${NAMESPACE}" cluster-proxy-addon-user >/dev/null 2>&1; then
     break
   fi
   sleep "${poll_interval}"
@@ -97,7 +119,7 @@ fi
 echo "Waiting for ManagedClusterAddOn cluster-proxy Available on ${MANAGED_CLUSTER}..."
 available=""
 for _ in $(seq 1 "${poll_iterations}"); do
-  available=$(${KUBECTL} get managedclusteraddon cluster-proxy -n "${MANAGED_CLUSTER}" \
+  available=$(${KUBECTL_GET} get managedclusteraddon cluster-proxy -n "${MANAGED_CLUSTER}" \
     -o jsonpath='{.status.conditions[?(@.type=="Available")].status}' 2>/dev/null || true)
   if [[ "${available}" == "True" ]]; then
     break
@@ -106,12 +128,12 @@ for _ in $(seq 1 "${poll_iterations}"); do
 done
 if [[ "${available}" != "True" ]]; then
   echo "ERROR: cluster-proxy ManagedClusterAddOn not Available on ${MANAGED_CLUSTER}" >&2
-  ${KUBECTL} get managedclustersetbinding -n "${NAMESPACE}" || true
-  ${KUBECTL} get placement,placementdecision -n "${NAMESPACE}" || true
-  ${KUBECTL} get clustermanagementaddon cluster-proxy \
-    -o jsonpath='{.spec.addOnConfiguration}{"\n"}' || true
-  ${KUBECTL} get managedclusteraddon cluster-proxy -n "${MANAGED_CLUSTER}" \
-    -o jsonpath='{range .status.conditions[*]}{.type}={.status}{" "}{.message}{"\n"}{end}' || true
+  ${KUBECTL_GET} get managedclustersetbinding -n "${NAMESPACE}" || true
+  ${KUBECTL_GET} get placement,placementdecision -n "${NAMESPACE}" || true
+  ${KUBECTL_GET} get clustermanagementaddon cluster-proxy \
+    -o jsonpath='enableServiceProxy={.spec.addOnConfiguration.enableServiceProxy} enableUserServer={.spec.addOnConfiguration.enableUserServer}{"\n"}' || true
+  ${KUBECTL_GET} get managedclusteraddon cluster-proxy -n "${MANAGED_CLUSTER}" \
+    -o jsonpath='{range .status.conditions[*]}{.type}={.status}{"\n"}{end}' || true
   exit 1
 fi
 

@@ -255,6 +255,7 @@ func resolveClusterProxyURL(
 	return url
 }
 
+// defaultClusterProxyURL returns the in-cluster cluster-proxy user server URL for MCE.
 func defaultClusterProxyURL() string {
 	return inClusterServiceURL(clusterProxyServiceName, clusterProxyNamespace(""), clusterProxyServicePort, "")
 }
@@ -528,6 +529,7 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 	p.writeJSONError(w, "not found", http.StatusNotFound)
 }
 
+// dispatchCollection routes collection-scoped /namespaces/{ns}/hostedclusters requests.
 func (p *hcpProxy) dispatchCollection(w http.ResponseWriter, r *http.Request, nsRaw, hostingCluster string) {
 	ns, err := sanitizeProxyName(nsRaw)
 	if err != nil {
@@ -542,6 +544,7 @@ func (p *hcpProxy) dispatchCollection(w http.ResponseWriter, r *http.Request, ns
 	}
 }
 
+// dispatchNamed routes named /namespaces/{ns}/hostedclusters/{name} requests.
 func (p *hcpProxy) dispatchNamed(w http.ResponseWriter, r *http.Request, nsRaw, nameRaw, hostingCluster string) {
 	ns, err := sanitizeProxyName(nsRaw)
 	if err != nil {
@@ -780,6 +783,7 @@ type cancelOnClose struct {
 	cancel context.CancelFunc
 }
 
+// Close cancels the in-flight spoke HTTP request when the response body is closed.
 func (c *cancelOnClose) Close() error {
 	err := c.ReadCloser.Close()
 	c.cancel()
@@ -808,6 +812,7 @@ func doSpokeHTTP(client *http.Client, req *http.Request) (*http.Response, error)
 	return rt.RoundTrip(req)
 }
 
+// coreNamespaceAPIPath returns the cluster-scoped Namespace API path for ns.
 func coreNamespaceAPIPath(ns string) (string, error) {
 	ns, err := sanitizeProxyName(ns)
 	if err != nil {
@@ -816,6 +821,7 @@ func coreNamespaceAPIPath(ns string) (string, error) {
 	return apiPathCoreNamespaces + "/" + ns, nil
 }
 
+// hsCollectionAPIPath returns the HyperShift collection API path for ns and resource.
 func hsCollectionAPIPath(ns, resource string) (string, error) {
 	ns, err := sanitizeProxyName(ns)
 	if err != nil {
@@ -869,6 +875,7 @@ func extraObjectCollectionAPIPath(restMapper meta.RESTMapper, ns string, gvk sch
 	return apiPathPrefix + group + "/" + version + "/namespaces/" + ns + "/" + resource, nil
 }
 
+// hsNamedAPIPath returns the HyperShift named-resource API path for ns, resource, and name.
 func hsNamedAPIPath(ns, resource, name string) (string, error) {
 	base, err := hsCollectionAPIPath(ns, resource)
 	if err != nil {
@@ -942,6 +949,7 @@ type impersonatingTransport struct {
 	groups   []string
 }
 
+// RoundTrip adds Impersonate-User/Group headers before delegating to the base transport.
 func (t *impersonatingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	req = req.Clone(req.Context())
 	if t.username != "" {
@@ -1016,7 +1024,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	// 0. Ensure Namespace (idempotent — 409 means it already exists)
 	nsObj := buildNamespace(ns, hcName)
 	if err := p.createOnSpoke(ctx, hcpClient, spokeName, ns, "namespaces", nsObj); err != nil && !isAlreadyExists(err) {
-		p.log.Error(err, "failed to ensure namespace", "namespace", ns, "spoke", spokeName)
+		p.logSpokeHTTPFailure("failed to ensure namespace", "namespace", ns, "spoke", spokeName)
 		p.writeJSONError(w, "failed to ensure namespace: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1028,7 +1036,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		req.Secrets[i].Namespace = ns
 		req.Secrets[i].Labels = addProxyLabels(req.Secrets[i].Labels)
 		if err := p.createOrUpdateSecretOnSpoke(ctx, hcpClient, spokeName, ns, &req.Secrets[i]); err != nil {
-			p.log.Error(err, "failed to create/update secret", "spoke", spokeName)
+			p.logSpokeHTTPFailure("failed to create/update secret", "secret", req.Secrets[i].Name, "spoke", spokeName)
 			p.writeJSONError(w, "failed to create secret: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -1041,7 +1049,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		obj.SetLabels(addProxyLabels(obj.GetLabels()))
 		ident := obj.GetKind() + "/" + obj.GetName()
 		if extraErr := p.createUnstructuredOnSpoke(ctx, hcpClient, spokeName, ns, obj); extraErr != nil && !isAlreadyExists(extraErr) {
-			p.log.Error(extraErr, "failed to create extra object", "object", ident, "spoke", spokeName)
+			p.logSpokeHTTPFailure("failed to create extra object", "object", ident, "spoke", spokeName)
 			p.writeJSONError(w, "failed to create extra object "+ident+": "+extraErr.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -1055,7 +1063,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	req.HostedCluster.Kind = "HostedCluster"
 	req.HostedCluster.Labels = addProxyLabels(req.HostedCluster.Labels)
 	if err := p.createOnSpoke(ctx, hcpClient, spokeName, ns, resourceHostedClusters, req.HostedCluster); err != nil {
-		p.log.Error(err, "failed to create HostedCluster", "name", hcName, "spoke", spokeName)
+		p.logSpokeHTTPFailure("failed to create HostedCluster", "name", hcName, "spoke", spokeName)
 		p.writeJSONError(w, "failed to create HostedCluster: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1076,7 +1084,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		}
 		np.Labels = addProxyLabels(np.Labels)
 		if err := p.createOnSpoke(ctx, hcpClient, spokeName, ns, resourceNodePools, np); err != nil {
-			p.log.Error(err, "failed to create NodePool", "name", np.Name)
+			p.logSpokeHTTPFailure("failed to create NodePool", "name", np.Name, "spoke", spokeName)
 			warnings = append(warnings, fmt.Sprintf("NodePool %q creation failed: %s", np.Name, err.Error()))
 			continue
 		}
@@ -1302,6 +1310,7 @@ func (p *hcpProxy) handleGetResources(w http.ResponseWriter, r *http.Request, ns
 	}
 }
 
+// fetchNamespaceBestEffort GETs the Namespace from the spoke; returns nil if missing.
 func (p *hcpProxy) fetchNamespaceBestEffort(
 	ctx context.Context,
 	hcpClient *http.Client,
@@ -1330,6 +1339,7 @@ func (p *hcpProxy) fetchNamespaceBestEffort(
 	return &namespace
 }
 
+// fetchHostedCluster GETs a HostedCluster from the spoke by namespace and name.
 func (p *hcpProxy) fetchHostedCluster(
 	ctx context.Context,
 	hcpClient *http.Client,
@@ -1369,6 +1379,7 @@ func (p *hcpProxy) fetchHostedCluster(
 	return &hc, http.StatusOK, ""
 }
 
+// fetchNodePoolsForHC lists NodePools in ns whose spec.clusterName matches hcName.
 func (p *hcpProxy) fetchNodePoolsForHC(
 	ctx context.Context,
 	hcpClient *http.Client,
@@ -1436,7 +1447,7 @@ func writeJSONError(w http.ResponseWriter, msg string, code int) error {
 // failures so HTTP handlers can stay one-liners.
 func (p *hcpProxy) writeJSONError(w http.ResponseWriter, msg string, code int) {
 	if err := writeJSONError(w, msg, code); err != nil {
-		p.log.Error(err, "failed to write Status error response")
+		p.log.Error(fmt.Errorf("write Status error response: %w", err), "failed to write Status error response")
 	}
 }
 
@@ -1475,6 +1486,15 @@ func buildNamespace(name, hcName string) *corev1.Namespace {
 
 // errSpokeConflict is returned by createOnSpoke when the spoke responds with 409.
 var errSpokeConflict = errors.New("spoke conflict")
+
+// errSpokeLogged is the stable error value for spoke HTTP failures in logs. Callers
+// must not pass spoke Status.Message-bearing errors to log.Error (customer data).
+var errSpokeLogged = errors.New("spoke HTTP request failed")
+
+// logSpokeHTTPFailure records a spoke operation failure without untrusted error text.
+func (p *hcpProxy) logSpokeHTTPFailure(msg string, keysAndValues ...interface{}) {
+	p.log.Error(errSpokeLogged, msg, keysAndValues...)
+}
 
 // isAlreadyExists reports whether a createOnSpoke error means the resource
 // already exists on the spoke (HTTP 409 Conflict).

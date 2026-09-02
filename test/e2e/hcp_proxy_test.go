@@ -270,8 +270,12 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			      "sshKey": {"name": "%s-ssh-key"},
 			      "platform": {"type": "None"},
 			      "networking": {"networkType": "OVNKubernetes"},
-			      "services": [],
-			      "etcd": {"managementType": "Managed"},
+			      "services": [
+			        {"service": "APIServer", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "OAuthServer", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "Konnectivity", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "Ignition", "servicePublishingStrategy": {"type": "None"}}
+			      ],
 			      "infraID": %q
 			    }
 			  },
@@ -305,7 +309,8 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 					}
 				}
 				return false
-			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue())
+			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue(),
+				"cluster-proxy ManagedClusterAddOn must become Available before create")
 
 			client := insecureHTTPClient()
 			url := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+
@@ -313,12 +318,12 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 
 			ginkgo.By("POST create HostedCluster via HCP proxy → cluster-proxy → local-cluster")
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build POST create HostedCluster request")
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("X-Remote-User", "e2e-test-user")
 			req.Header.Set("X-Remote-Group", "system:masters")
 			resp, err := client.Do(req)
-			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy create HostedCluster")
 			defer resp.Body.Close()
 			respBody, _ := io.ReadAll(resp.Body)
 			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusCreated),
@@ -374,8 +379,12 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			      "sshKey": {"name": "%s-ssh-key"},
 			      "platform": {"type": "None"},
 			      "networking": {"networkType": "OVNKubernetes"},
-			      "services": [],
-			      "etcd": {"managementType": "Managed"},
+			      "services": [
+			        {"service": "APIServer", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "OAuthServer", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "Konnectivity", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "Ignition", "servicePublishingStrategy": {"type": "None"}}
+			      ],
 			      "infraID": %q
 			    }
 			  },
@@ -423,7 +432,8 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 					}
 				}
 				return false
-			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue())
+			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue(),
+				"cluster-proxy ManagedClusterAddOn must become Available before extraObjects create")
 
 			client := insecureHTTPClient()
 			url := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+

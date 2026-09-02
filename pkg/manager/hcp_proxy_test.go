@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
 	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
@@ -37,6 +39,29 @@ import (
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
+
+// recordingLogSink captures errors passed to log.Error for assertions.
+type recordingLogSink struct {
+	errors []error
+}
+
+func (s *recordingLogSink) Init(logr.RuntimeInfo) {}
+func (s *recordingLogSink) Enabled(level int) bool { return true }
+func (s *recordingLogSink) Info(level int, msg string, keysAndValues ...any) {}
+func (s *recordingLogSink) Error(err error, msg string, keysAndValues ...any) {
+	s.errors = append(s.errors, err)
+}
+func (s *recordingLogSink) WithValues(keysAndValues ...any) logr.LogSink { return s }
+func (s *recordingLogSink) WithName(name string) logr.LogSink            { return s }
+
+func Test_logSpokeHTTPFailure_DoesNotLogSpokeErrorText(t *testing.T) {
+	sink := &recordingLogSink{}
+	p := &hcpProxy{log: logr.New(sink)}
+	p.logSpokeHTTPFailure("failed to create extra object", "object", "Role/foo", "spoke", "spoke-1")
+	require.Len(t, sink.errors, 1)
+	assert.Equal(t, errSpokeLogged, sink.errors[0])
+	assert.NotContains(t, sink.errors[0].Error(), "user@evil.com")
+}
 
 // setCertPaths overrides the package-level cert/key file paths for testing.
 func setCertPaths(cert, key string) {
@@ -1164,10 +1189,11 @@ func Test_handleCreate_WhenExtraObjectsProvided_ItShouldPostThemBeforeHostedClus
 }
 
 func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
+	const sensitiveMsg = "user@evil.com is not allowed to create roles"
 	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/roles") {
 			w.WriteHeader(http.StatusForbidden)
-			_, _ = io.WriteString(w, `{"reason":"Forbidden"}`)
+			_, _ = io.WriteString(w, fmt.Sprintf(`{"message":%q}`, sensitiveMsg))
 			return
 		}
 		w.Header().Set(headerContentType, contentTypeJSON)
@@ -1177,7 +1203,9 @@ func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
 	t.Cleanup(spokeSrv.Close)
 
 	mc := availableManagedCluster("spoke-1")
+	sink := &recordingLogSink{}
 	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
+	p.log = logr.New(sink)
 
 	body, err := json.Marshal(CreateRequest{
 		HostedCluster: &hypershiftv1beta1.HostedCluster{
@@ -1196,6 +1224,10 @@ func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, w.Code, "RBAC denial applying extra objects must fail the create")
 	assert.Contains(t, w.Body.String(), "capi-provider-role", "error must name the extra object that failed")
 	assert.Contains(t, w.Body.String(), "403", "error must include the spoke HTTP status")
+	for _, loggedErr := range sink.errors {
+		assert.NotContains(t, loggedErr.Error(), "user@evil.com", "logs must not contain spoke Status.Message")
+		assert.NotContains(t, loggedErr.Error(), sensitiveMsg, "logs must not contain spoke Status.Message")
+	}
 }
 
 func Test_handleCreate_WhenExtraObjectAlreadyExists_ItShouldContinue(t *testing.T) {
@@ -1263,13 +1295,15 @@ func Test_extraObjectCollectionAPIPath_WhenRoleAndConfigMap_ItShouldBuildNamespa
 		Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role",
 	})
 	require.NoError(t, err, "Role GVK must map to a namespaced collection path")
-	assert.Equal(t, "/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles", rolePath)
+	assert.Equal(t, "/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles", rolePath,
+		"Role must POST to the discovery-backed roles collection path")
 
 	cmPath, err := extraObjectCollectionAPIPath(mapper, "clusters", schema.GroupVersionKind{
 		Version: "v1", Kind: "ConfigMap",
 	})
 	require.NoError(t, err, "ConfigMap GVK must map to a namespaced collection path")
-	assert.Equal(t, "/api/v1/namespaces/clusters/configmaps", cmPath)
+	assert.Equal(t, "/api/v1/namespaces/clusters/configmaps", cmPath,
+		"ConfigMap must POST to the core configmaps collection path")
 }
 
 func Test_extraObjectCollectionAPIPath_WhenNetworkPolicy_ItShouldUseCorrectPlural(t *testing.T) {
@@ -1280,7 +1314,8 @@ func Test_extraObjectCollectionAPIPath_WhenNetworkPolicy_ItShouldUseCorrectPlura
 		Kind:    "NetworkPolicy",
 	})
 	require.NoError(t, err, "NetworkPolicy GVK must map via discovery-backed REST mapping")
-	assert.Equal(t, "/apis/networking.k8s.io/v1/namespaces/clusters/networkpolicies", path)
+	assert.Equal(t, "/apis/networking.k8s.io/v1/namespaces/clusters/networkpolicies", path,
+		"NetworkPolicy plural must be networkpolicies, not an UnsafeGuessKind plural")
 }
 
 func Test_decodeExtraObjects_WhenDedicatedKind_ItShouldSkip(t *testing.T) {
@@ -1291,8 +1326,8 @@ func Test_decodeExtraObjects_WhenDedicatedKind_ItShouldSkip(t *testing.T) {
 	})
 	require.NoError(t, err, "valid extra objects must decode")
 	require.Len(t, objs, 1, "Secret is a dedicated CreateRequest field and must be skipped")
-	assert.Equal(t, "ConfigMap", objs[0].GetKind())
-	assert.Equal(t, "user-ca-bundle", objs[0].GetName())
+	assert.Equal(t, "ConfigMap", objs[0].GetKind(), "only non-dedicated kinds remain after filtering")
+	assert.Equal(t, "user-ca-bundle", objs[0].GetName(), "decoded ConfigMap name must match input")
 }
 
 func Test_decodeExtraObjects_WhenCustomSecretKind_ItShouldNotSkip(t *testing.T) {
@@ -1305,9 +1340,9 @@ func Test_decodeExtraObjects_WhenCustomSecretKind_ItShouldNotSkip(t *testing.T) 
 	objs, err := decodeExtraObjects([]runtime.RawExtension{{Raw: raw}})
 	require.NoError(t, err, "non-core Secret kind must not be filtered as dedicated")
 	require.Len(t, objs, 1, "custom Secret CRD must pass through generic extra-object handling")
-	assert.Equal(t, "example.com/v1", objs[0].GetAPIVersion())
-	assert.Equal(t, "Secret", objs[0].GetKind())
-	assert.Equal(t, "custom-secret", objs[0].GetName())
+	assert.Equal(t, "example.com/v1", objs[0].GetAPIVersion(), "custom Secret must retain its API group")
+	assert.Equal(t, "Secret", objs[0].GetKind(), "custom Secret kind must not be filtered as core v1 Secret")
+	assert.Equal(t, "custom-secret", objs[0].GetName(), "custom Secret name must match input")
 }
 
 // --- handleGetResources ---
