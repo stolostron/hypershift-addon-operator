@@ -454,6 +454,12 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusCreated),
 				"POST create response: %s", string(respBody))
 
+			var bundle map[string]interface{}
+			gomega.Expect(json.Unmarshal(respBody, &bundle)).To(gomega.Succeed(), "decode create response bundle")
+			extra, ok := bundle["extraObjects"].([]interface{})
+			gomega.Expect(ok).To(gomega.BeTrue(), "response should include extraObjects")
+			gomega.Expect(extra).To(gomega.HaveLen(2), "response should echo both extra objects")
+
 			ginkgo.By("Verifying capi-provider-role exists on the hosting cluster")
 			gomega.Eventually(func() error {
 				role, err := kubeClient.RbacV1().Roles(hcNS).Get(ctx, roleName, metav1.GetOptions{})

@@ -1186,6 +1186,64 @@ func Test_handleCreate_WhenExtraObjectsProvided_ItShouldPostThemBeforeHostedClus
 	require.NoError(t, json.Unmarshal(posted[2].body, &cm), "ConfigMap body must be unstructured JSON")
 	assert.Equal(t, labelCreatedViaValue, cm.GetLabels()[labelCreatedVia], "ConfigMap must be stamped created-via")
 	assert.Equal(t, "my-hc", cm.GetLabels()[labelHostedCluster], "ConfigMap must be stamped with HostedCluster name")
+
+	var bundle ResourceBundle
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &bundle), "create response must be a ResourceBundle")
+	require.Len(t, bundle.ExtraObjects, 2, "response must echo applied extra objects")
+}
+
+func Test_handleCreate_WhenExtraObjectFailsMidway_ItShouldRollbackCreatedObjects(t *testing.T) {
+	var methods []string
+	var paths []string
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		methods = append(methods, r.Method)
+		paths = append(paths, r.URL.Path)
+		switch {
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/roles"):
+			w.Header().Set(headerContentType, contentTypeJSON)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{}`)
+		case r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/configmaps"):
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"message":"forbidden"}`)
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/roles/capi-provider-role"):
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.Header().Set(headerContentType, contentTypeJSON)
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{}`)
+		}
+	}))
+	t.Cleanup(spokeSrv.Close)
+
+	mc := availableManagedCluster("spoke-1")
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
+
+	body, err := json.Marshal(CreateRequest{
+		HostedCluster: &hypershiftv1beta1.HostedCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+		},
+		ExtraObjects: []runtime.RawExtension{
+			mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
+			mustRawObject(t, "v1", "ConfigMap", "user-ca-bundle"),
+		},
+	})
+	require.NoError(t, err, "marshal CreateRequest fixture")
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleCreate(w, r, "clusters", "spoke-1")
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code, "midway extra-object failure must fail the create")
+	assert.Contains(t, methods, http.MethodDelete, "created extra objects must be rolled back on failure")
+	rolledBack := false
+	for i, path := range paths {
+		if methods[i] == http.MethodDelete && strings.Contains(path, "/roles/capi-provider-role") {
+			rolledBack = true
+			break
+		}
+	}
+	assert.True(t, rolledBack, "rollback must DELETE the Role created before the failure; paths=%v methods=%v", paths, methods)
 }
 
 func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {

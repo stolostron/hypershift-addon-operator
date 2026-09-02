@@ -79,11 +79,11 @@ Mirrors `hcp create cluster --render` output:
 | `hostedCluster` | yes | Full HostedCluster; `spec.pullSecret.name` / `spec.sshKey.name` must match Secrets in the request |
 | `nodePools` | no | One or more NodePools (`--render` may emit several) |
 | `secrets` | no | Pull secret, SSH key, cloud credential / STS secrets |
-| `extraObjects` | no | Non-secret objects from `--render` (Agent `capi-provider-role` Role, `--additional-trust-bundle` ConfigMap, …). Applied in the HostedCluster namespace after Secrets and before the HostedCluster. Create failures abort the request; 409 AlreadyExists is ignored. |
+| `extraObjects` | no | Non-secret objects from `--render` (Agent `capi-provider-role` Role, `--additional-trust-bundle` ConfigMap, …). Applied in the HostedCluster namespace after Secrets and before the HostedCluster. Create failures abort the request, roll back any extra objects created in the same request, and treat 409 AlreadyExists as already present. |
 
 Create order on the spoke: `Namespace` (idempotent) → `Secrets` (create-or-update) → `ExtraObjects` → `HostedCluster` → `NodePool(s)`.
 
-**Response:** `201 Created` with a `ResourceBundle` (Namespace + HostedCluster + NodePools). Secrets are never returned.
+**Response:** `201 Created` with a `ResourceBundle` (Namespace + HostedCluster + NodePools + ExtraObjects). Secrets are never returned.
 
 #### `ResourceBundle` (GET / PUT body and response)
 
@@ -91,11 +91,12 @@ Create order on the spoke: `Namespace` (idempotent) → `Secrets` (create-or-upd
 {
   "namespace": { "...": "Namespace object" },
   "hostedCluster": { "...": "HostedCluster object" },
-  "nodePools": [ { "...": "NodePool object" } ]
+  "nodePools": [ { "...": "NodePool object" } ],
+  "extraObjects": [ { "...": "Role, ConfigMap, or other non-secret object" } ]
 }
 ```
 
-Secrets are never included — the HostedCluster only carries LocalObjectReferences (names).
+Secrets are never included — the HostedCluster only carries LocalObjectReferences (names). Extra objects are included on successful create responses.
 
 PUT workflow (same idea as `kubectl edit`):
 

@@ -122,6 +122,7 @@ type ResourceBundle struct {
 	Namespace     *corev1.Namespace                `json:"namespace,omitempty"`
 	HostedCluster *hypershiftv1beta1.HostedCluster `json:"hostedCluster"`
 	NodePools     []hypershiftv1beta1.NodePool     `json:"nodePools,omitempty"`
+	ExtraObjects  []runtime.RawExtension           `json:"extraObjects,omitempty"`
 	Warnings      []string                         `json:"warnings,omitempty"`
 }
 
@@ -875,6 +876,19 @@ func extraObjectCollectionAPIPath(restMapper meta.RESTMapper, ns string, gvk sch
 	return apiPathPrefix + group + "/" + version + "/namespaces/" + ns + "/" + resource, nil
 }
 
+// extraObjectNamedAPIPath builds a namespaced named-resource path from GVK and name.
+func extraObjectNamedAPIPath(restMapper meta.RESTMapper, ns string, obj *unstructured.Unstructured) (string, error) {
+	base, err := extraObjectCollectionAPIPath(restMapper, ns, obj.GroupVersionKind())
+	if err != nil {
+		return "", err
+	}
+	name, err := sanitizeProxyName(obj.GetName())
+	if err != nil {
+		return "", err
+	}
+	return base + "/" + name, nil
+}
+
 // hsNamedAPIPath returns the HyperShift named-resource API path for ns, resource, and name.
 func hsNamedAPIPath(ns, resource, name string) (string, error) {
 	base, err := hsCollectionAPIPath(ns, resource)
@@ -1044,15 +1058,32 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 
 	// 2. Extra objects (Role, ConfigMap, …) before HostedCluster so HO can
 	// reference them (e.g. capi-provider-role) as soon as the HC exists.
+	var createdExtraObjs []*unstructured.Unstructured
+	var appliedExtraObjs []*unstructured.Unstructured
 	for _, obj := range extraObjs {
 		obj.SetNamespace(ns)
 		obj.SetLabels(addProxyLabels(obj.GetLabels()))
 		ident := obj.GetKind() + "/" + obj.GetName()
-		if extraErr := p.createUnstructuredOnSpoke(ctx, hcpClient, spokeName, ns, obj); extraErr != nil && !isAlreadyExists(extraErr) {
+		extraErr := p.createUnstructuredOnSpoke(ctx, hcpClient, spokeName, ns, obj)
+		if extraErr != nil {
+			if isAlreadyExists(extraErr) {
+				appliedExtraObjs = append(appliedExtraObjs, obj.DeepCopy())
+				continue
+			}
 			p.logSpokeHTTPFailure("failed to create extra object", "object", ident, "spoke", spokeName)
+			p.rollbackExtraObjectsOnSpoke(ctx, hcpClient, spokeName, ns, createdExtraObjs)
 			p.writeJSONError(w, "failed to create extra object "+ident+": "+extraErr.Error(), http.StatusInternalServerError)
 			return
 		}
+		createdExtraObjs = append(createdExtraObjs, obj.DeepCopy())
+		appliedExtraObjs = append(appliedExtraObjs, obj.DeepCopy())
+	}
+	extraObjectsRaw, marshalErr := extraObjectsToRaw(appliedExtraObjs)
+	if marshalErr != nil {
+		p.logSpokeHTTPFailure("failed to marshal extra objects for response", "spoke", spokeName)
+		p.rollbackExtraObjectsOnSpoke(ctx, hcpClient, spokeName, ns, createdExtraObjs)
+		p.writeJSONError(w, "failed to marshal extra objects: "+marshalErr.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	// 3. Create HostedCluster
@@ -1064,6 +1095,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	req.HostedCluster.Labels = addProxyLabels(req.HostedCluster.Labels)
 	if err := p.createOnSpoke(ctx, hcpClient, spokeName, ns, resourceHostedClusters, req.HostedCluster); err != nil {
 		p.logSpokeHTTPFailure("failed to create HostedCluster", "name", hcName, "spoke", spokeName)
+		p.rollbackExtraObjectsOnSpoke(ctx, hcpClient, spokeName, ns, createdExtraObjs)
 		p.writeJSONError(w, "failed to create HostedCluster: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -1095,6 +1127,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		Namespace:     nsObj,
 		HostedCluster: req.HostedCluster,
 		NodePools:     createdNodePools,
+		ExtraObjects:  extraObjectsRaw,
 		Warnings:      warnings,
 	}
 
@@ -1564,6 +1597,58 @@ func (p *hcpProxy) createUnstructuredOnSpoke(
 	return p.postOnSpoke(ctx, httpClient, spokeName, what, apiPath, obj)
 }
 
+// deleteUnstructuredOnSpoke DELETEs a generic namespaced object from the spoke.
+// NotFound is treated as success (idempotent rollback).
+func (p *hcpProxy) deleteUnstructuredOnSpoke(
+	ctx context.Context,
+	httpClient *http.Client,
+	spokeName, ns string,
+	obj *unstructured.Unstructured,
+) error {
+	apiPath, err := extraObjectNamedAPIPath(p.restMapper, ns, obj)
+	if err != nil {
+		return err
+	}
+	what := obj.GetKind() + "/" + obj.GetName()
+	req, err := p.newSpokeRequest(ctx, http.MethodDelete, spokeName, apiPath, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := doSpokeHTTP(httpClient, req)
+	if err != nil {
+		return fmt.Errorf("DELETE %s: %w", what, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	if resp.StatusCode >= 300 {
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return fmt.Errorf("read spoke response for DELETE %s: %w", what, readErr)
+		}
+		return spokeHTTPError(resp.StatusCode, what, respBody)
+	}
+	return nil
+}
+
+// rollbackExtraObjectsOnSpoke best-effort deletes extra objects created during a
+// failed create, in reverse order. Errors are logged but not returned.
+func (p *hcpProxy) rollbackExtraObjectsOnSpoke(
+	ctx context.Context,
+	httpClient *http.Client,
+	spokeName, ns string,
+	created []*unstructured.Unstructured,
+) {
+	for i := len(created) - 1; i >= 0; i-- {
+		obj := created[i]
+		ident := obj.GetKind() + "/" + obj.GetName()
+		if err := p.deleteUnstructuredOnSpoke(ctx, httpClient, spokeName, ns, obj); err != nil {
+			p.logSpokeHTTPFailure("failed to rollback extra object", "object", ident, "spoke", spokeName)
+		}
+	}
+}
+
 // postOnSpoke POSTs a JSON-encoded object to apiPath on the spoke.
 func (p *hcpProxy) postOnSpoke(
 	ctx context.Context,
@@ -1656,6 +1741,22 @@ func decodeExtraObjects(raws []runtime.RawExtension) ([]*unstructured.Unstructur
 			return nil, fmt.Errorf("extraObjects[%d]: %w", i, err)
 		}
 		out = append(out, obj)
+	}
+	return out, nil
+}
+
+// extraObjectsToRaw marshals unstructured extra objects for ResourceBundle responses.
+func extraObjectsToRaw(objs []*unstructured.Unstructured) ([]runtime.RawExtension, error) {
+	if len(objs) == 0 {
+		return nil, nil
+	}
+	out := make([]runtime.RawExtension, 0, len(objs))
+	for i, obj := range objs {
+		raw, err := obj.MarshalJSON()
+		if err != nil {
+			return nil, fmt.Errorf("extraObjects[%d]: %w", i, err)
+		}
+		out = append(out, runtime.RawExtension{Raw: raw})
 	}
 	return out, nil
 }
