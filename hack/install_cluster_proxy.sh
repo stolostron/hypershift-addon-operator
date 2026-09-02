@@ -18,6 +18,7 @@ NAMESPACE=${CLUSTER_PROXY_NAMESPACE:-open-cluster-management-addon}
 RELEASE=${CLUSTER_PROXY_RELEASE:-cluster-proxy}
 MANAGED_CLUSTER=${MANAGED_CLUSTER_NAME:-local-cluster}
 TIMEOUT=${CLUSTER_PROXY_TIMEOUT:-300s}
+INSTALL_NS=${CLUSTER_PROXY_AGENT_NAMESPACE:-open-cluster-management-agent-addon}
 
 # Parse CLUSTER_PROXY_TIMEOUT into seconds for polling loops (supports s, m, h, ms).
 parse_timeout_seconds() {
@@ -83,39 +84,32 @@ done
 ${KUBECTL} get svc -n "${NAMESPACE}" cluster-proxy-addon-user
 ${KUBECTL} rollout status -n "${NAMESPACE}" deployment/cluster-proxy-addon-user --timeout="${TIMEOUT}"
 
-# The chart's ClusterManagementAddOn uses installStrategy Placements with
-# Placement cluster-proxy-placement (clusterSets: [global]) in ${NAMESPACE}.
-# Without a ManagedClusterSetBinding in that namespace, the PlacementDecision
-# is empty and addon-manager deletes any ManagedClusterAddOn we create.
-echo "Binding global ManagedClusterSet to ${NAMESPACE} for cluster-proxy-placement..."
-binding_applied=0
-if ${KUBECTL} apply -f - <<EOF
-apiVersion: cluster.open-cluster-management.io/v1beta2
-kind: ManagedClusterSetBinding
-metadata:
-  name: global
-  namespace: ${NAMESPACE}
-spec:
-  clusterSet: global
-EOF
-then
-  binding_applied=1
-fi
-if [[ "${binding_applied}" != "1" ]]; then
-  ${KUBECTL} apply -f - <<EOF
-apiVersion: cluster.open-cluster-management.io/v1beta1
-kind: ManagedClusterSetBinding
-metadata:
-  name: global
-  namespace: ${NAMESPACE}
-spec:
-  clusterSet: global
-EOF
-fi
+# The chart installs ClusterManagementAddOn with installStrategy Placements
+# (cluster-proxy-placement, clusterSets: [global]). On kind that Placement
+# often stays NoManagedClusterMatched (taints on a just-joined local-cluster,
+# or global set membership lag), so addon-manager never creates the MCA and
+# deletes any we apply. Switch to Manual and create the MCA ourselves.
+echo "Switching cluster-proxy ClusterManagementAddOn to Manual installStrategy..."
+${KUBECTL} patch clustermanagementaddon cluster-proxy --type merge \
+  -p '{"spec":{"installStrategy":{"type":"Manual"}}}'
 
-# kubectl wait fails immediately with NotFound if the MCA is missing (or was
-# just deleted). Poll until Available=True instead of creating the MCA by
-# hand — addon-manager owns it once placement selects local-cluster.
+echo "Ensuring install namespace ${INSTALL_NS}..."
+${KUBECTL} create namespace "${INSTALL_NS}" --dry-run=client -o yaml | ${KUBECTL} apply -f -
+
+echo "Ensuring ManagedClusterAddOn cluster-proxy on ${MANAGED_CLUSTER}..."
+apply_cluster_proxy_mca() {
+  ${KUBECTL} apply -f - <<EOF
+apiVersion: addon.open-cluster-management.io/v1alpha1
+kind: ManagedClusterAddOn
+metadata:
+  name: cluster-proxy
+  namespace: ${MANAGED_CLUSTER}
+spec:
+  installNamespace: ${INSTALL_NS}
+EOF
+}
+apply_cluster_proxy_mca
+
 echo "Waiting for ManagedClusterAddOn cluster-proxy Available on ${MANAGED_CLUSTER}..."
 available=""
 for _ in $(seq 1 "${poll_iterations}"); do
@@ -124,16 +118,16 @@ for _ in $(seq 1 "${poll_iterations}"); do
   if [[ "${available}" == "True" ]]; then
     break
   fi
+  # Recreate if addon-manager still deletes it before the Manual patch settles.
+  apply_cluster_proxy_mca >/dev/null
   sleep "${poll_interval}"
 done
 if [[ "${available}" != "True" ]]; then
   echo "ERROR: cluster-proxy ManagedClusterAddOn not Available on ${MANAGED_CLUSTER}" >&2
-  ${KUBECTL_GET} get managedclustersetbinding -n "${NAMESPACE}" || true
+  ${KUBECTL_GET} get clustermanagementaddon cluster-proxy -o yaml || true
+  ${KUBECTL_GET} get managedclusteraddon -A || true
   ${KUBECTL_GET} get placement,placementdecision -n "${NAMESPACE}" || true
-  ${KUBECTL_GET} get clustermanagementaddon cluster-proxy \
-    -o jsonpath='enableServiceProxy={.spec.addOnConfiguration.enableServiceProxy} enableUserServer={.spec.addOnConfiguration.enableUserServer}{"\n"}' || true
-  ${KUBECTL_GET} get managedclusteraddon cluster-proxy -n "${MANAGED_CLUSTER}" \
-    -o jsonpath='{range .status.conditions[*]}{.type}={.status}{"\n"}{end}' || true
+  ${KUBECTL_GET} get managedcluster "${MANAGED_CLUSTER}" -o yaml || true
   exit 1
 fi
 
