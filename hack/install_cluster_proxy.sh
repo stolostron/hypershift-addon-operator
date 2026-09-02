@@ -31,8 +31,8 @@ parse_timeout_seconds() {
       s) echo "${n}"; return 0 ;;
       m) echo $(( n * 60 )); return 0 ;;
       h) echo $(( n * 3600 )); return 0 ;;
+      *) return 1 ;;
     esac
-    return 1
   fi
   local stripped="${raw%s}"
   if [[ "${stripped}" =~ ^[0-9]+$ ]]; then
