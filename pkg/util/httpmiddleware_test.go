@@ -1,3 +1,6 @@
+// Copyright Red Hat, Inc.
+// SPDX-License-Identifier: Apache-2.0
+
 package util
 
 import (
@@ -8,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// TestBlockDebugPprof verifies pprof paths are blocked while operational routes pass through.
 func TestBlockDebugPprof(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
@@ -31,7 +35,7 @@ func TestBlockDebugPprof(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, tt.path, nil)
 			w := httptest.NewRecorder()
 			handler.ServeHTTP(w, r)
-			assert.Equal(t, tt.wantStatus, w.Code)
+			assert.Equal(t, tt.wantStatus, w.Code, "unexpected status for path %q, want %d", tt.path, tt.wantStatus)
 		})
 	}
 }
