@@ -49,15 +49,16 @@ Base path:
 | ------ | ---- | ------- | ----------- |
 | `GET` | `/healthz`, `/readyz` | health | Liveness / readiness probes |
 | `GET` | `/apis/hcp.ocm.io` | discovery | APIGroup document |
-| `GET` | `/apis/hcp.ocm.io/v1alpha1` | discovery | APIResourceList (`hostedclusters`, `hostedclusters/resources`) |
+| `GET` | `/apis/hcp.ocm.io/v1alpha1` | discovery | APIResourceList (`hostedclusters`, `hostedclusters/resources`, `hostedclusters/finalizers`) |
 | `POST` | `/namespaces/{ns}/hostedclusters?hostingCluster={cluster}` | create | Create Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s) — GET list is not supported |
 | `GET` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | get | Return full `ResourceBundle` |
 | `GET` | `/namespaces/{ns}/hostedclusters/{name}/resources?hostingCluster={cluster}` | get | Same as GET above (explicit `/resources` alias) |
 | `PUT` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | put | Full-replace HostedCluster + NodePools from a `ResourceBundle` |
 | `PUT` | `/namespaces/{ns}/hostedclusters/{name}/resources?hostingCluster={cluster}` | put | Same as PUT above |
 | `DELETE` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | delete | Delete matching NodePools, then the HostedCluster |
+| `PATCH` | `/namespaces/{ns}/hostedclusters/{name}/finalizers?hostingCluster={cluster}` | patch | Add or remove the CLI destroy finalizer (`openshift.io/destroy-cluster`) on the hosting `HostedCluster` |
 
-`Content-Type` for create/put bodies: `application/json`.
+`Content-Type` for create/put bodies: `application/json`. Finalizers PATCH uses `application/json` with a `FinalizersRequest` body.
 
 ### Request / response types
 
@@ -105,6 +106,24 @@ PUT workflow (same idea as `kubectl edit`):
 3. `PUT .../hostedclusters/{name}/resources` with the modified bundle
 
 The proxy PUTs the HostedCluster and each NodePool present in the bundle (by `metadata.name`). Objects omitted from the bundle are left untouched. The response is a fresh GET of the live bundle.
+
+#### `FinalizersRequest` (PATCH body)
+
+Used by `hcp from-hub delete` to add or remove the CLI destroy finalizer on the hosting cluster (same as `hcp delete cluster`):
+
+```json
+{ "operation": "add" }
+```
+
+```json
+{ "operation": "remove" }
+```
+
+| Field | Required | Notes |
+| ----- | -------- | ----- |
+| `operation` | yes | `add` appends `openshift.io/destroy-cluster` before deletion starts; `remove` drops that finalizer after AWS infra cleanup |
+
+**Response:** `200 OK` with `{ "hostedCluster": { ... } }` reflecting the live object on the hosting cluster. Patch failures return a clear error (not a silent success).
 
 
 ### Common HTTP status codes

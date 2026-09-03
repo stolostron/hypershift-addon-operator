@@ -61,6 +61,10 @@ fi
 ${HELM} repo add ocm https://open-cluster-management.io/helm-charts/ 2>/dev/null || true
 ${HELM} repo update ocm
 
+echo "Waiting for OCM addon conversion webhook before installing cluster-proxy..."
+${KUBECTL} wait --for=condition=Available deployment/cluster-manager-addon-webhook \
+  -n open-cluster-management-hub --timeout="${TIMEOUT}"
+
 # PortForward entrypoint is the kind-friendly default when entrypointAddress
 # is unset (see ManagedProxyConfiguration chart template).
 if ${HELM} status "${RELEASE}" -n "${NAMESPACE}" >/dev/null 2>&1; then
@@ -124,10 +128,13 @@ for _ in $(seq 1 "${poll_iterations}"); do
 done
 if [[ "${available}" != "True" ]]; then
   echo "ERROR: cluster-proxy ManagedClusterAddOn not Available on ${MANAGED_CLUSTER}" >&2
-  ${KUBECTL_GET} get clustermanagementaddon cluster-proxy -o yaml || true
-  ${KUBECTL_GET} get managedclusteraddon -A || true
-  ${KUBECTL_GET} get placement,placementdecision -n "${NAMESPACE}" || true
-  ${KUBECTL_GET} get managedcluster "${MANAGED_CLUSTER}" -o yaml || true
+  ${KUBECTL_GET} get clustermanagementaddon cluster-proxy \
+    -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}{"\n"}{end}' || true
+  ${KUBECTL_GET} get managedclusteraddon cluster-proxy -n "${MANAGED_CLUSTER}" \
+    -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}{"\n"}{end}' || true
+  ${KUBECTL_GET} get placement,placementdecision -n "${NAMESPACE}" -o wide || true
+  ${KUBECTL_GET} get managedcluster "${MANAGED_CLUSTER}" \
+    -o jsonpath='{range .status.conditions[*]}{.type}={.status} {.reason}{"\n"}{end}' || true
   exit 1
 fi
 

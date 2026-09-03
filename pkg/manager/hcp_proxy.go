@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,7 +24,6 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 	mcev1 "github.com/stolostron/backplane-operator/api/v1"
-	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -70,10 +70,13 @@ const (
 	apiPathCoreNamespaces = "/api/v1/namespaces"
 	apiPathHSNamespaces   = "/apis/hypershift.openshift.io/v1beta1/namespaces"
 
-	headerContentType = "Content-Type"
-	contentTypeJSON   = "application/json"
+	headerContentType     = "Content-Type"
+	contentTypeJSON       = "application/json"
+	mergePatchContentType = "application/merge-patch+json"
 
-	errMsgFailedSpokeClient = "failed to build spoke client: "
+	errMsgFailedSpokeClient  = "failed to build spoke client: "
+	errMsgInvalidNamespace   = "invalid namespace: "
+	errMsgInvalidRequestBody = "invalid request body: "
 
 	resourceNodePools      = "nodepools"
 	resourceHostedClusters = "hostedclusters"
@@ -83,6 +86,14 @@ const (
 	maxCreateRequestBytes = 4 * 1024 * 1024 // 4 MiB total body
 	maxExtraObjects       = 64
 	maxExtraObjectBytes   = 256 * 1024 // 256 KiB per object
+
+	finalizersSubresource = "finalizers"
+
+	// hostedClusterDestroyFinalizer matches cmd/cluster/core/destroy.go destroyFinalizer.
+	hostedClusterDestroyFinalizer = "openshift.io/destroy-cluster"
+	finalizerOpAdd                = "add"
+	finalizerOpRemove             = "remove"
+	maxFinalizersRequestBytes     = 16 * 1024
 )
 
 // Overridable in tests.
@@ -114,6 +125,18 @@ type CreateRequest struct {
 	// reference them immediately. Created as the impersonated caller; spoke
 	// RBAC is the user's, not the manager ServiceAccount.
 	ExtraObjects []runtime.RawExtension `json:"extraObjects,omitempty"`
+}
+
+// FinalizersRequest is the PATCH body for .../hostedclusters/{name}/finalizers.
+type FinalizersRequest struct {
+	// Operation is "add" or "remove" for the CLI destroy finalizer
+	// (openshift.io/destroy-cluster), matching hcp delete cluster behavior.
+	Operation string `json:"operation"`
+}
+
+// FinalizersResponse returns the HostedCluster after a finalizers mutation.
+type FinalizersResponse struct {
+	HostedCluster *hypershiftv1beta1.HostedCluster `json:"hostedCluster"`
 }
 
 // ResourceBundle is the response body for GET/POST/PUT .../hostedclusters/{name}/resources.
@@ -192,7 +215,7 @@ func StartHCPProxy(
 
 	server := &http.Server{
 		Addr:              hcpProxyListenAddr,
-		Handler:           util.BlockDebugPprof(p.loggingMiddleware(mux)),
+		Handler:           p.loggingMiddleware(mux),
 		TLSConfig:         tlsCfg,
 		ReadHeaderTimeout: 30 * time.Second,
 	}
@@ -460,6 +483,12 @@ func (p *hcpProxy) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 				"kind":       "ResourceBundle",
 				"verbs":      []string{"get", "update"},
 			},
+			{
+				"name":       hcpProxyResource + "/" + finalizersSubresource,
+				"namespaced": true,
+				"kind":       "HostedCluster",
+				"verbs":      []string{"patch"},
+			},
 		},
 	}
 	_ = json.NewEncoder(w).Encode(doc)
@@ -519,6 +548,14 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// PATCH .../namespaces/{ns}/hostedclusters/{name}/finalizers
+	isFinalizers := len(parts) == 5 && parts[0] == "namespaces" && parts[2] == hcpProxyResource &&
+		parts[4] == finalizersSubresource
+	if isFinalizers {
+		p.dispatchFinalizers(w, r, parts[1], parts[3], hostingCluster)
+		return
+	}
+
 	// GET|PUT|DELETE .../namespaces/{ns}/hostedclusters/{name}
 	// GET/PUT also accept the /resources suffix — both operate on the full bundle.
 	isNamed := (len(parts) == 4 || (len(parts) == 5 && parts[4] == "resources")) &&
@@ -535,7 +572,7 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 func (p *hcpProxy) dispatchCollection(w http.ResponseWriter, r *http.Request, nsRaw, hostingCluster string) {
 	ns, err := sanitizeProxyName(nsRaw)
 	if err != nil {
-		p.writeJSONError(w, "invalid namespace: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, errMsgInvalidNamespace+err.Error(), http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
@@ -546,11 +583,186 @@ func (p *hcpProxy) dispatchCollection(w http.ResponseWriter, r *http.Request, ns
 	}
 }
 
+// dispatchFinalizers routes PATCH requests on the hostedclusters/finalizers subresource.
+func (p *hcpProxy) dispatchFinalizers(w http.ResponseWriter, r *http.Request, nsRaw, nameRaw, hostingCluster string) {
+	ns, err := sanitizeProxyName(nsRaw)
+	if err != nil {
+		p.writeJSONError(w, errMsgInvalidNamespace+err.Error(), http.StatusBadRequest)
+		return
+	}
+	name, err := sanitizeProxyName(nameRaw)
+	if err != nil {
+		p.writeJSONError(w, "invalid name: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	switch r.Method {
+	case http.MethodPatch:
+		p.handleFinalizers(w, r, ns, name, hostingCluster)
+	default:
+		p.writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleFinalizers adds or removes the CLI destroy finalizer on a hosting
+// HostedCluster via merge patch, matching cmd/cluster/core/destroy.go behavior.
+func (p *hcpProxy) handleFinalizers(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxFinalizersRequestBytes)
+	var req FinalizersRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		p.writeJSONError(w, errMsgInvalidRequestBody+err.Error(), http.StatusBadRequest)
+		return
+	}
+	op := strings.TrimSpace(strings.ToLower(req.Operation))
+	if op != finalizerOpAdd && op != finalizerOpRemove {
+		p.writeJSONError(w, `operation must be "add" or "remove"`, http.StatusBadRequest)
+		return
+	}
+
+	username, groups := whoIsTheCaller(r)
+	hcpClient, err := p.spokeHTTPClient(username, groups)
+	if err != nil {
+		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	ctx := r.Context()
+	const maxConflictRetries = 5
+	for attempt := 0; attempt < maxConflictRetries; attempt++ {
+		hc, status, errMsg := p.fetchHostedCluster(ctx, hcpClient, ns, name, spokeName)
+		if status != http.StatusOK {
+			p.writeJSONError(w, errMsg, status)
+			return
+		}
+
+		newFinalizers, changed, computeErr := computeDestroyFinalizers(hc, op)
+		if computeErr != nil {
+			p.writeJSONError(w, computeErr.Error(), http.StatusBadRequest)
+			return
+		}
+		if !changed {
+			p.writeFinalizersResponse(w, hc)
+			return
+		}
+
+		hcPath, pathErr := hsNamedAPIPath(ns, resourceHostedClusters, name)
+		if pathErr != nil {
+			p.writeJSONError(w, pathErr.Error(), http.StatusBadRequest)
+			return
+		}
+		patchStatus, patchErr := p.patchHostedClusterFinalizersOnSpoke(
+			ctx, hcpClient, spokeName, hcPath, hc.ResourceVersion, newFinalizers,
+		)
+		if patchStatus == http.StatusConflict {
+			continue
+		}
+		if patchErr != nil {
+			p.writeJSONError(w, "failed to patch HostedCluster finalizers: "+patchErr.Error(), http.StatusBadGateway)
+			return
+		}
+		switch {
+		case patchStatus == http.StatusOK:
+			updated, fetchStatus, fetchErrMsg := p.fetchHostedCluster(ctx, hcpClient, ns, name, spokeName)
+			if fetchStatus != http.StatusOK {
+				p.writeJSONError(w, fetchErrMsg, fetchStatus)
+				return
+			}
+			p.writeFinalizersResponse(w, updated)
+			return
+		default:
+			p.writeJSONError(
+				w,
+				fmt.Sprintf("spoke returned %d patching HostedCluster finalizers", patchStatus),
+				http.StatusBadGateway,
+			)
+			return
+		}
+	}
+	p.writeJSONError(w, "HostedCluster finalizers conflict after retries", http.StatusConflict)
+}
+
+// computeDestroyFinalizers returns the updated finalizer list for add/remove of the CLI destroy finalizer.
+func computeDestroyFinalizers(hc *hypershiftv1beta1.HostedCluster, op string) ([]string, bool, error) {
+	finalizers := append([]string(nil), hc.Finalizers...)
+	switch op {
+	case finalizerOpAdd:
+		if hc.DeletionTimestamp != nil {
+			return nil, false, fmt.Errorf("cannot add finalizer while HostedCluster is deleting")
+		}
+		if sets.New(finalizers...).Has(hostedClusterDestroyFinalizer) {
+			return finalizers, false, nil
+		}
+		return append(finalizers, hostedClusterDestroyFinalizer), true, nil
+	case finalizerOpRemove:
+		if !sets.New(finalizers...).Has(hostedClusterDestroyFinalizer) {
+			return finalizers, false, nil
+		}
+		out := make([]string, 0, len(finalizers))
+		for _, f := range finalizers {
+			if f != hostedClusterDestroyFinalizer {
+				out = append(out, f)
+			}
+		}
+		return out, true, nil
+	default:
+		return nil, false, fmt.Errorf("unsupported operation %q", op)
+	}
+}
+
+// patchHostedClusterFinalizersOnSpoke merge-patches finalizers on the spoke HostedCluster.
+func (p *hcpProxy) patchHostedClusterFinalizersOnSpoke(
+	ctx context.Context,
+	httpClient *http.Client,
+	spokeName, hcPath, resourceVersion string,
+	finalizers []string,
+) (int, error) {
+	metadata := map[string]interface{}{
+		"finalizers": finalizers,
+	}
+	if resourceVersion != "" {
+		metadata["resourceVersion"] = resourceVersion
+	}
+	patchBody, err := json.Marshal(map[string]interface{}{
+		"metadata": metadata,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("marshal merge patch: %w", err)
+	}
+	req, err := p.newSpokeRequest(ctx, http.MethodPatch, spokeName, hcPath, bytes.NewReader(patchBody))
+	if err != nil {
+		return 0, fmt.Errorf("create PATCH request for %s: %w", hcPath, err)
+	}
+	req.Header.Set(headerContentType, mergePatchContentType)
+	resp, err := doSpokeHTTP(httpClient, req)
+	if err != nil {
+		return 0, fmt.Errorf("PATCH %s: %w", hcPath, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		respBody, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return resp.StatusCode, fmt.Errorf("read spoke response for PATCH %s: %w", hcPath, readErr)
+		}
+		if msg := spokeHTTPStatusMessage(respBody); msg != "" {
+			return resp.StatusCode, fmt.Errorf("spoke returned %d: %s", resp.StatusCode, msg)
+		}
+		return resp.StatusCode, fmt.Errorf("spoke returned %d for PATCH %s", resp.StatusCode, hcPath)
+	}
+	return resp.StatusCode, nil
+}
+
+// writeFinalizersResponse returns the HostedCluster after a finalizers mutation.
+func (p *hcpProxy) writeFinalizersResponse(w http.ResponseWriter, hc *hypershiftv1beta1.HostedCluster) {
+	w.Header().Set(headerContentType, contentTypeJSON)
+	if err := json.NewEncoder(w).Encode(FinalizersResponse{HostedCluster: hc}); err != nil {
+		p.log.Error(err, "failed to write finalizers response")
+	}
+}
+
 // dispatchNamed routes named /namespaces/{ns}/hostedclusters/{name} requests.
 func (p *hcpProxy) dispatchNamed(w http.ResponseWriter, r *http.Request, nsRaw, nameRaw, hostingCluster string) {
 	ns, err := sanitizeProxyName(nsRaw)
 	if err != nil {
-		p.writeJSONError(w, "invalid namespace: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, errMsgInvalidNamespace+err.Error(), http.StatusBadRequest)
 		return
 	}
 	name, err := sanitizeProxyName(nameRaw)
@@ -991,7 +1203,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	r.Body = http.MaxBytesReader(w, r.Body, maxCreateRequestBytes)
 	var req CreateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		p.writeJSONError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, errMsgInvalidRequestBody+err.Error(), http.StatusBadRequest)
 		return
 	}
 	if req.HostedCluster == nil {
@@ -1231,7 +1443,7 @@ func (p *hcpProxy) deleteNodePool(
 func (p *hcpProxy) handlePatchResources(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	var bundle ResourceBundle
 	if err := json.NewDecoder(r.Body).Decode(&bundle); err != nil {
-		p.writeJSONError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, errMsgInvalidRequestBody+err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -1448,6 +1660,14 @@ func (p *hcpProxy) fetchNodePoolsForHC(
 	return out
 }
 
+// statusCodeInt32 converts an HTTP status code to int32 without integer overflow.
+func statusCodeInt32(code int) int32 {
+	if code < math.MinInt32 || code > math.MaxInt32 {
+		return int32(http.StatusInternalServerError)
+	}
+	return int32(code)
+}
+
 // writeJSONError marshals a Kubernetes Status body before committing the HTTP
 // status so a marshal failure cannot leave a truncated response. Callers that
 // have an hcpProxy should use (*hcpProxy).writeJSONError so encode/write
@@ -1461,7 +1681,7 @@ func writeJSONError(w http.ResponseWriter, msg string, code int) error {
 		Status:  metav1.StatusFailure,
 		Message: msg,
 		Reason:  statusReasonForCode(code),
-		Code:    int32(code),
+		Code:    statusCodeInt32(code),
 	}
 	body, err := json.Marshal(status)
 	w.Header().Set(headerContentType, contentTypeJSON)
@@ -1499,6 +1719,8 @@ func statusReasonForCode(code int) metav1.StatusReason {
 		return metav1.StatusReasonMethodNotAllowed
 	case http.StatusServiceUnavailable:
 		return metav1.StatusReasonServiceUnavailable
+	case http.StatusConflict:
+		return metav1.StatusReasonConflict
 	default:
 		return metav1.StatusReasonInternalError
 	}
