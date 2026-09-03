@@ -1826,14 +1826,38 @@ func TestReinstallWhenOIDCArgsStripped(t *testing.T) {
 
 	// Image stream with same images as the running deployment — no image change detected
 	tr := []imageapi.TagReference{}
-	tr = append(tr, imageapi.TagReference{Name: hsOperatorImage, From: &corev1.ObjectReference{Name: "hypershift-operator@sha256:aaa"}})
-	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAwsCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-aws-controller@sha256:aaa"}})
-	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAzureCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-azure@sha256:aaa"}})
-	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamKubevertCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-kubevirt@sha256:aaa"}})
-	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamKonnectivity, From: &corev1.ObjectReference{Name: "apiserver-network-proxy@sha256:aaa"}})
-	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAwsEncyptionProvider, From: &corev1.ObjectReference{Name: "aws-encryption-provider@sha256:aaa"}})
-	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamClusterApi, From: &corev1.ObjectReference{Name: "cluster-api@sha256:aaa"}})
-	tr = append(tr, imageapi.TagReference{Name: util.ImageStreamAgentCapiProvider, From: &corev1.ObjectReference{Name: "cluster-api-provider-agent@sha256:aaa"}})
+	tr = append(tr, imageapi.TagReference{
+		Name: hsOperatorImage,
+		From: &corev1.ObjectReference{Name: "hypershift-operator@sha256:aaa"},
+	})
+	tr = append(tr, imageapi.TagReference{
+		Name: util.ImageStreamAwsCapiProvider,
+		From: &corev1.ObjectReference{Name: "cluster-api-aws-controller@sha256:aaa"},
+	})
+	tr = append(tr, imageapi.TagReference{
+		Name: util.ImageStreamAzureCapiProvider,
+		From: &corev1.ObjectReference{Name: "cluster-api-provider-azure@sha256:aaa"},
+	})
+	tr = append(tr, imageapi.TagReference{
+		Name: util.ImageStreamKubevertCapiProvider,
+		From: &corev1.ObjectReference{Name: "cluster-api-provider-kubevirt@sha256:aaa"},
+	})
+	tr = append(tr, imageapi.TagReference{
+		Name: util.ImageStreamKonnectivity,
+		From: &corev1.ObjectReference{Name: "apiserver-network-proxy@sha256:aaa"},
+	})
+	tr = append(tr, imageapi.TagReference{
+		Name: util.ImageStreamAwsEncyptionProvider,
+		From: &corev1.ObjectReference{Name: "aws-encryption-provider@sha256:aaa"},
+	})
+	tr = append(tr, imageapi.TagReference{
+		Name: util.ImageStreamClusterApi,
+		From: &corev1.ObjectReference{Name: "cluster-api@sha256:aaa"},
+	})
+	tr = append(tr, imageapi.TagReference{
+		Name: util.ImageStreamAgentCapiProvider,
+		From: &corev1.ObjectReference{Name: "cluster-api-provider-agent@sha256:aaa"},
+	})
 	ims := &imageapi.ImageStream{}
 	ims.Spec.Tags = tr
 	imb, err := yaml.Marshal(ims)
@@ -1894,7 +1918,11 @@ func TestReinstallWhenOIDCArgsStripped(t *testing.T) {
 
 	assert.Eventually(t, func() bool {
 		theDeployment := &appsv1.Deployment{}
-		err := aCtrl.spokeUncachedClient.Get(ctx, types.NamespacedName{Namespace: "hypershift", Name: "operator"}, theDeployment)
+		err := aCtrl.spokeUncachedClient.Get(
+			ctx,
+			types.NamespacedName{Namespace: "hypershift", Name: "operator"},
+			theDeployment,
+		)
 		return err == nil
 	}, 10*time.Second, 1*time.Second, "The test operator deployment was created successfully")
 

@@ -414,7 +414,11 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			      "apiVersion": "rbac.authorization.k8s.io/v1",
 			      "kind": "Role",
 			      "metadata": {"name": %q},
-			      "rules": [{"apiGroups": ["agent-install.openshift.io"], "resources": ["agents"], "verbs": ["get", "list", "watch"]}]
+			      "rules": [{
+			        "apiGroups": ["agent-install.openshift.io"],
+			        "resources": ["agents"],
+			        "verbs": ["get", "list", "watch"]
+			      }]
 			    },
 			    {
 			      "apiVersion": "v1",

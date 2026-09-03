@@ -866,7 +866,10 @@ func (p *hcpProxy) checkHubPermission(
 					p.log.Info("clusterview API not installed, skipping hub permission check (SKIP_HUB_PERMISSION_CHECK=true)")
 					return nil
 				}
-				return fmt.Errorf("UserPermission is required in production. Please ensure the cluster has UserPermission configured")
+				return fmt.Errorf(
+					"UserPermission is required in production. " +
+						"Please ensure the cluster has UserPermission configured",
+				)
 			}
 			// API exists but the SA has no admin bindings — expected. Proceed to step 2.
 		} else {

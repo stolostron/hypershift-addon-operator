@@ -71,12 +71,20 @@ func EnableHypershiftCLIDownload(ctx context.Context, hubclient client.Client, l
 
 // getMCECSVWithRetry gets the current version of the MCE CSV from the multicluster-engine
 // namespace, retrying every 2 minutes (5 attempts) in case of a cluster upgrade in progress.
-func getMCECSVWithRetry(ctx context.Context, hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.ClusterServiceVersion, error) {
+func getMCECSVWithRetry(
+	ctx context.Context,
+	hubclient client.Client,
+	log logr.Logger,
+) (*operatorsv1alpha1.ClusterServiceVersion, error) {
 	var csv *operatorsv1alpha1.ClusterServiceVersion
 	var err error
 	for try := 1; try <= 5; try++ {
 		if try != 1 {
-			log.Error(err, "failed to get the most current version of MCE CSV from multicluster-engine namespace, retrying in 2 minutes", "attempt", strconv.Itoa(try)+"/5")
+			log.Error(
+				err,
+				"failed to get the most current version of MCE CSV from multicluster-engine namespace, retrying in 2 minutes",
+				"attempt", strconv.Itoa(try)+"/5",
+			)
 			select {
 			case <-ctx.Done():
 				return nil, ctx.Err()
@@ -92,7 +100,11 @@ func getMCECSVWithRetry(ctx context.Context, hubclient client.Client, log logr.L
 	return csv, err
 }
 
-func GetMCECSV(ctx context.Context, hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.ClusterServiceVersion, error) {
+func GetMCECSV(
+	ctx context.Context,
+	hubclient client.Client,
+	log logr.Logger,
+) (*operatorsv1alpha1.ClusterServiceVersion, error) {
 	csvlist := &operatorsv1alpha1.ClusterServiceVersionList{}
 
 	//listopts := &client.ListOptions{Namespace: "multicluster-engine"}
@@ -262,7 +274,12 @@ func deployHCPCLIDownload(ctx context.Context, hubclient client.Client, cliImage
 	return nil
 }
 
-func removeHypershiftCLIDownload(ctx context.Context, hubclient client.Client, installNamespace string, log logr.Logger) {
+func removeHypershiftCLIDownload(
+	ctx context.Context,
+	hubclient client.Client,
+	installNamespace string,
+	log logr.Logger,
+) {
 	// Remove the old version of hypershift CLI resources
 
 	// Remove the old ConsoleCLIDownload if exists
@@ -295,7 +312,11 @@ func removeHypershiftCLIDownload(ctx context.Context, hubclient client.Client, i
 
 	// Remove the old service if exists
 	cliService := &corev1.Service{}
-	err = hubclient.Get(ctx, types.NamespacedName{Namespace: installNamespace, Name: OldCLIDownloadResourceName}, cliService)
+	err = hubclient.Get(
+		ctx,
+		types.NamespacedName{Namespace: installNamespace, Name: OldCLIDownloadResourceName},
+		cliService,
+	)
 	if err == nil {
 		deleteErr := hubclient.Delete(ctx, cliService)
 		if deleteErr != nil {
@@ -309,7 +330,11 @@ func removeHypershiftCLIDownload(ctx context.Context, hubclient client.Client, i
 
 	// Remove the old deployment if exists
 	cliDeployment := &appsv1.Deployment{}
-	err = hubclient.Get(ctx, types.NamespacedName{Namespace: installNamespace, Name: OldCLIDownloadResourceName}, cliDeployment)
+	err = hubclient.Get(
+		ctx,
+		types.NamespacedName{Namespace: installNamespace, Name: OldCLIDownloadResourceName},
+		cliDeployment,
+	)
 	if err == nil {
 		deleteErr := hubclient.Delete(ctx, cliDeployment)
 		if deleteErr != nil {
@@ -324,7 +349,11 @@ func removeHypershiftCLIDownload(ctx context.Context, hubclient client.Client, i
 	// Remove the current deployment if exists
 	// This ensures that the hcp cli gets upgraded
 	currentCliDeployment := &appsv1.Deployment{}
-	err = hubclient.Get(ctx, types.NamespacedName{Namespace: installNamespace, Name: "hcp-cli-download"}, currentCliDeployment)
+	err = hubclient.Get(
+		ctx,
+		types.NamespacedName{Namespace: installNamespace, Name: "hcp-cli-download"},
+		currentCliDeployment,
+	)
 	if err == nil {
 		deleteErr := hubclient.Delete(ctx, currentCliDeployment)
 		if deleteErr != nil {
@@ -337,7 +366,14 @@ func removeHypershiftCLIDownload(ctx context.Context, hubclient client.Client, i
 	}
 }
 
-func getCLIDeployment(ctx context.Context, cliImage string, envVars []corev1.EnvVar, log logr.Logger, installNamespace string, hubclient client.Client) (*appsv1.Deployment, error) {
+func getCLIDeployment(
+	ctx context.Context,
+	cliImage string,
+	envVars []corev1.EnvVar,
+	log logr.Logger,
+	installNamespace string,
+	hubclient client.Client,
+) (*appsv1.Deployment, error) {
 	depFile, err := fs.ReadFile("manifests/cli/deployment.yaml")
 	if err != nil {
 		log.Error(err, "failed to read manifests/cli/deployment.yaml")
@@ -497,7 +533,11 @@ func getConsoleDownload(routeUrl string, log logr.Logger) (*consolev1.ConsoleCLI
 	return cliDownload, nil
 }
 
-func getOwnerRef(ctx context.Context, hubclient client.Client, log logr.Logger) (*metav1.OwnerReference, []corev1.EnvVar, string, error) {
+func getOwnerRef(
+	ctx context.Context,
+	hubclient client.Client,
+	log logr.Logger,
+) (*metav1.OwnerReference, []corev1.EnvVar, string, error) {
 
 	//get mce target namespace for operand deployments
 	deploymentNamespace := "multicluster-engine"
@@ -521,7 +561,11 @@ func getOwnerRef(ctx context.Context, hubclient client.Client, log logr.Logger) 
 	}
 
 	deployment := &appsv1.Deployment{}
-	err = hubclient.Get(ctx, types.NamespacedName{Namespace: deploymentNamespace, Name: "hypershift-addon-manager"}, deployment)
+	err = hubclient.Get(
+		ctx,
+		types.NamespacedName{Namespace: deploymentNamespace, Name: "hypershift-addon-manager"},
+		deployment,
+	)
 	if err != nil {
 		log.Error(err, "failed to get hypershift-addon-manager deployment")
 		return nil, nil, "", err
@@ -531,9 +575,17 @@ func getOwnerRef(ctx context.Context, hubclient client.Client, log logr.Logger) 
 	return ownerRef, deployment.Spec.Template.Spec.Containers[0].Env, deploymentNamespace, nil
 }
 
-func getClusterScopedOwnerRef(ctx context.Context, hubclient client.Client, log logr.Logger) (*metav1.OwnerReference, error) {
+func getClusterScopedOwnerRef(
+	ctx context.Context,
+	hubclient client.Client,
+	log logr.Logger,
+) (*metav1.OwnerReference, error) {
 	clusterRole := &rbacv1.ClusterRole{}
-	err := hubclient.Get(ctx, types.NamespacedName{Name: "open-cluster-management:hypershift:hypershift-addon-manager"}, clusterRole)
+	err := hubclient.Get(
+		ctx,
+		types.NamespacedName{Name: "open-cluster-management:hypershift:hypershift-addon-manager"},
+		clusterRole,
+	)
 	if err != nil {
 		log.Error(err, "failed to get open-cluster-management:hypershift:hypershift-addon-manager clusterrole")
 		return nil, err

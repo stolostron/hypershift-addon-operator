@@ -572,7 +572,8 @@ func Test_handleRoute_WhenClusterWideGET_WithoutHostingCluster_ItShouldReturnEmp
 func Test_handleRoute_WhenInvalidHostingCluster_OnCollection_ItShouldReturn400(t *testing.T) {
 	p := newTestProxy(t)
 	w := httptest.NewRecorder()
-	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion + "/namespaces/clusters/hostedclusters?hostingCluster=../evil"
+	path := "/apis/" + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion +
+		"/namespaces/clusters/hostedclusters?hostingCluster=../evil"
 	r := httptest.NewRequest(http.MethodDelete, path, nil)
 	p.handleRoute(w, r)
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -1246,7 +1247,13 @@ func Test_handleCreate_WhenExtraObjectFailsMidway_ItShouldRollbackCreatedObjects
 			break
 		}
 	}
-	assert.True(t, rolledBack, "rollback must DELETE the Role created before the failure; paths=%v methods=%v", paths, methods)
+	assert.True(
+		t,
+		rolledBack,
+		"rollback must DELETE the Role created before the failure; paths=%v methods=%v",
+		paths,
+		methods,
+	)
 }
 
 func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
@@ -2214,7 +2221,10 @@ func Test_createOrUpdateSecretOnSpoke_WhenConflict_ItShouldPut(t *testing.T) {
 	client, err := p.spokeHTTPClient("alice", nil)
 	require.NoError(t, err)
 
-	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "clusters"}, Data: map[string][]byte{"key": []byte("val")}}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "clusters"},
+		Data:       map[string][]byte{"key": []byte("val")},
+	}
 	err = p.createOrUpdateSecretOnSpoke(context.Background(), client, "spoke-1", "clusters", secret)
 	require.NoError(t, err)
 	assert.Equal(t, []string{http.MethodPost, http.MethodPut}, methods)
@@ -2233,7 +2243,10 @@ func Test_createOrUpdateSecretOnSpoke_WhenCreateSucceeds_ItShouldNotPut(t *testi
 	client, err := p.spokeHTTPClient("alice", nil)
 	require.NoError(t, err)
 
-	secret := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "clusters"}, Data: map[string][]byte{"key": []byte("val")}}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "pull-secret", Namespace: "clusters"},
+		Data:       map[string][]byte{"key": []byte("val")},
+	}
 	err = p.createOrUpdateSecretOnSpoke(context.Background(), client, "spoke-1", "clusters", secret)
 	require.NoError(t, err)
 	assert.Equal(t, []string{http.MethodPost}, methods)
