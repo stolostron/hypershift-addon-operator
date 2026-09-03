@@ -411,7 +411,7 @@ func (c *agentController) serveHealthProbes(healthProbeBindAddress string, confi
 		"configz-ping": configCheck,
 	}}))
 	server := http.Server{
-		Handler:           mux,
+		Handler:           util.BlockDebugPprof(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		Addr:              healthProbeBindAddress,
 	}

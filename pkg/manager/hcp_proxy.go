@@ -23,6 +23,7 @@ import (
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 	mcev1 "github.com/stolostron/backplane-operator/api/v1"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
@@ -191,7 +192,7 @@ func StartHCPProxy(
 
 	server := &http.Server{
 		Addr:              hcpProxyListenAddr,
-		Handler:           p.loggingMiddleware(mux),
+		Handler:           util.BlockDebugPprof(p.loggingMiddleware(mux)),
 		TLSConfig:         tlsCfg,
 		ReadHeaderTimeout: 30 * time.Second,
 	}
