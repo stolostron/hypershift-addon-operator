@@ -45,8 +45,8 @@ type recordingLogSink struct {
 	errors []error
 }
 
-func (s *recordingLogSink) Init(logr.RuntimeInfo) {}
-func (s *recordingLogSink) Enabled(level int) bool { return true }
+func (s *recordingLogSink) Init(logr.RuntimeInfo)                            {}
+func (s *recordingLogSink) Enabled(level int) bool                           { return true }
 func (s *recordingLogSink) Info(level int, msg string, keysAndValues ...any) {}
 func (s *recordingLogSink) Error(err error, msg string, keysAndValues ...any) {
 	s.errors = append(s.errors, err)
@@ -2269,14 +2269,22 @@ func (w failWriter) Write([]byte) (int, error) {
 }
 
 func Test_statusReasonForCode_WhenMapped_ItShouldReturnKubernetesReasons(t *testing.T) {
-	assert.Equal(t, metav1.StatusReasonBadRequest, statusReasonForCode(http.StatusBadRequest), "HTTP 400 must map to StatusReasonBadRequest")
-	assert.Equal(t, metav1.StatusReasonForbidden, statusReasonForCode(http.StatusForbidden), "HTTP 403 must map to StatusReasonForbidden")
-	assert.Equal(t, metav1.StatusReasonNotFound, statusReasonForCode(http.StatusNotFound), "HTTP 404 must map to StatusReasonNotFound")
-	assert.Equal(t, metav1.StatusReasonMethodNotAllowed, statusReasonForCode(http.StatusMethodNotAllowed), "HTTP 405 must map to StatusReasonMethodNotAllowed")
-	assert.Equal(t, metav1.StatusReasonServiceUnavailable, statusReasonForCode(http.StatusServiceUnavailable), "HTTP 503 must map to StatusReasonServiceUnavailable")
-	assert.Equal(t, metav1.StatusReasonConflict, statusReasonForCode(http.StatusConflict), "HTTP 409 must map to StatusReasonConflict")
-	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusBadGateway), "HTTP 502 must map to StatusReasonInternalError")
-	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusInternalServerError), "HTTP 500 must map to StatusReasonInternalError")
+	assert.Equal(t, metav1.StatusReasonBadRequest, statusReasonForCode(http.StatusBadRequest),
+		"HTTP 400 must map to StatusReasonBadRequest")
+	assert.Equal(t, metav1.StatusReasonForbidden, statusReasonForCode(http.StatusForbidden),
+		"HTTP 403 must map to StatusReasonForbidden")
+	assert.Equal(t, metav1.StatusReasonNotFound, statusReasonForCode(http.StatusNotFound),
+		"HTTP 404 must map to StatusReasonNotFound")
+	assert.Equal(t, metav1.StatusReasonMethodNotAllowed, statusReasonForCode(http.StatusMethodNotAllowed),
+		"HTTP 405 must map to StatusReasonMethodNotAllowed")
+	assert.Equal(t, metav1.StatusReasonServiceUnavailable, statusReasonForCode(http.StatusServiceUnavailable),
+		"HTTP 503 must map to StatusReasonServiceUnavailable")
+	assert.Equal(t, metav1.StatusReasonConflict, statusReasonForCode(http.StatusConflict),
+		"HTTP 409 must map to StatusReasonConflict")
+	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusBadGateway),
+		"HTTP 502 must map to StatusReasonInternalError")
+	assert.Equal(t, metav1.StatusReasonInternalError, statusReasonForCode(http.StatusInternalServerError),
+		"HTTP 500 must map to StatusReasonInternalError")
 }
 
 func assertStatusError(t *testing.T, w *httptest.ResponseRecorder, code int, msgContains string) {

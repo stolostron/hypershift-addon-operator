@@ -77,6 +77,7 @@ const (
 	errMsgFailedSpokeClient  = "failed to build spoke client: "
 	errMsgInvalidNamespace   = "invalid namespace: "
 	errMsgInvalidRequestBody = "invalid request body: "
+	errMsgMethodNotAllowed   = "method not allowed"
 
 	resourceNodePools      = "nodepools"
 	resourceHostedClusters = "hostedclusters"
@@ -579,7 +580,7 @@ func (p *hcpProxy) dispatchCollection(w http.ResponseWriter, r *http.Request, ns
 	case http.MethodPost:
 		p.handleCreate(w, r, ns, hostingCluster)
 	default:
-		p.writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		p.writeJSONError(w, errMsgMethodNotAllowed, http.StatusMethodNotAllowed)
 	}
 }
 
@@ -599,7 +600,7 @@ func (p *hcpProxy) dispatchFinalizers(w http.ResponseWriter, r *http.Request, ns
 	case http.MethodPatch:
 		p.handleFinalizers(w, r, ns, name, hostingCluster)
 	default:
-		p.writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		p.writeJSONError(w, errMsgMethodNotAllowed, http.StatusMethodNotAllowed)
 	}
 }
 
@@ -778,7 +779,7 @@ func (p *hcpProxy) dispatchNamed(w http.ResponseWriter, r *http.Request, nsRaw, 
 	case http.MethodDelete:
 		p.handleDelete(w, r, ns, name, hostingCluster)
 	default:
-		p.writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+		p.writeJSONError(w, errMsgMethodNotAllowed, http.StatusMethodNotAllowed)
 	}
 }
 
