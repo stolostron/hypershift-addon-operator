@@ -25,6 +25,10 @@ $CLUSTERADM init \
 # Confirm hub pieces exist even if clusteradm's wait flaked.
 $KUBECTL wait --for=condition=Available deployment/cluster-manager \
   -n open-cluster-management --timeout=120s
+# cluster-proxy helm install creates ClusterManagementAddOn resources that hit
+# the addon conversion webhook; wait until it is listening before proceeding.
+$KUBECTL wait --for=condition=Available deployment/cluster-manager-addon-webhook \
+  -n open-cluster-management-hub --timeout=120s
 
 # Parse join credentials from join.sh (do not reuse its flaky --wait).
 if [[ ! -f join.sh ]]; then

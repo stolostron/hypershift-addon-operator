@@ -1,0 +1,16 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+
+issues:
+  exclude-dirs:
+    - vendor
+
+linters:
+  disable-all: true
+  enable:
+    - lll
+
+linters-settings:
+  lll:
+    line-length: 120
