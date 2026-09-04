@@ -9,27 +9,10 @@ import (
 	"strings"
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
-	hyperutil "github.com/openshift/hypershift/support/util"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const apiPathVersion = "/version"
-
-// isMultiArchReleaseImageFunc checks whether a release image is a multi-arch manifest list.
-// Overridable in unit tests to avoid registry calls.
-var isMultiArchReleaseImageFunc = func(
-	ctx context.Context,
-	image string,
-	pullSecret []byte,
-) (bool, error) {
-	return registryclient.IsMultiArchManifestList(
-		ctx,
-		image,
-		pullSecret,
-		&hyperutil.RegistryClientImageMetadataProvider{},
-	)
-}
 
 type k8sVersionInfo struct {
 	Platform string `json:"platform"`
@@ -46,6 +29,10 @@ type k8sVersionInfo struct {
 // a NodePool that doesn't exist yet and so cannot be looked up. hcp create cluster
 // renders exactly one NodePool per invocation (one --arch flag), so a single value
 // is enough.
+//
+// Multi-arch release detection here uses only the "multi" naming convention on
+// releaseImage/releaseStream. Registry manifest lookup (IsMultiArchManifestList)
+// is performed client-side by hcp from-hub create using local --pull-secret.
 //
 //	GET .../hostedclusters/{name}/validate?hostingCluster={cluster}
 //	    &arch=amd64&releaseImage={image}&releaseStream={stream}
@@ -84,11 +71,8 @@ func (p *hcpProxy) handleValidateHostedCluster(w http.ResponseWriter, r *http.Re
 }
 
 // validateArchAgainstHostingCluster checks the requested NodePool arch against the
-// hosting cluster's CPU architecture, skipping the check when the release image or
-// stream is multi-arch. Used by the standalone GET /validate endpoint, which has no
-// pull secret to look up a release image manifest, so it only recognizes the "multi"
-// naming convention (same as core's validateMgmtClusterAndNodePoolCPUArchitectures
-// when no pull secret is available).
+// hosting cluster's CPU architecture, skipping the check when releaseImage or
+// releaseStream names a multi-arch payload (contains "multi").
 func (p *hcpProxy) validateArchAgainstHostingCluster(
 	ctx context.Context,
 	hcpClient *http.Client,
@@ -99,11 +83,7 @@ func (p *hcpProxy) validateArchAgainstHostingCluster(
 		return 0, ""
 	}
 
-	multiArch, err := isMultiArchReleaseOrStream(ctx, releaseImage, releaseStream, nil)
-	if err != nil {
-		return http.StatusBadRequest, err.Error()
-	}
-	if multiArch {
+	if isMultiArchByNaming(releaseImage, releaseStream) {
 		return 0, ""
 	}
 
@@ -176,42 +156,12 @@ func (p *hcpProxy) fetchHostingClusterCPUArch(
 	return platformParts[1], nil
 }
 
-func pullSecretBytesFromCreateRequest(req *CreateRequest) []byte {
-	if req.HostedCluster == nil || req.HostedCluster.Spec.PullSecret.Name == "" {
-		return nil
-	}
-	secretName := req.HostedCluster.Spec.PullSecret.Name
-	for i := range req.Secrets {
-		if req.Secrets[i].Name != secretName {
-			continue
-		}
-		if data, ok := req.Secrets[i].Data[".dockerconfigjson"]; ok {
-			return data
-		}
-	}
-	return nil
-}
-
-func isMultiArchReleaseOrStream(
-	ctx context.Context,
-	releaseImage, releaseStream string,
-	pullSecret []byte,
-) (bool, error) {
+// isMultiArchByNaming reports whether releaseImage or releaseStream names a
+// multi-arch payload using the same "multi" substring convention as core create
+// validation when no pull secret is available for a registry manifest lookup.
+func isMultiArchByNaming(releaseImage, releaseStream string) bool {
 	if releaseImage != "" {
-		if strings.Contains(releaseImage, hypershiftv1beta1.ArchitectureMulti) {
-			return true, nil
-		}
-		if len(pullSecret) == 0 {
-			return false, nil
-		}
-		return isMultiArchReleaseImageFunc(ctx, releaseImage, pullSecret)
+		return strings.Contains(releaseImage, hypershiftv1beta1.ArchitectureMulti)
 	}
-	if releaseStream != "" && strings.Contains(releaseStream, hypershiftv1beta1.ArchitectureMulti) {
-		return true, nil
-	}
-	return false, nil
-}
-
-func isManifestAccessError(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "failed to retrieve manifest")
+	return releaseStream != "" && strings.Contains(releaseStream, hypershiftv1beta1.ArchitectureMulti)
 }

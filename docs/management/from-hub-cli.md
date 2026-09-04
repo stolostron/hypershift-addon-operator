@@ -112,6 +112,12 @@ GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&relea
 | `releaseImage` | no | Used to recognize a multi-arch release by naming convention (contains `multi`) and skip the arch check. When set, `releaseStream` is ignored (same as core). No pull secret is available here, so a registry manifest lookup isn't attempted — an inconclusive image is *not* treated as multi-arch. |
 | `releaseStream` | no | Used only when `releaseImage` is omitted. If the stream name contains `multi` (e.g. `4-stable-multi`), the arch check is skipped — matching core's `validateMgmtClusterAndNodePoolCPUArchitectures`. |
 
+Multi-arch detection on this endpoint is **naming-only** (`releaseImage` or
+`releaseStream` contains `multi`). There is no pull secret on GET `/validate`,
+so registry manifest lookup (`IsMultiArchManifestList`) is **not** attempted
+here. `hcp from-hub create` performs that check client-side using local
+`--pull-secret` before calling `/validate` (see ACM-44232).
+
 Checks, in order:
 
 1. **Duplicate name** — GETs the HostedCluster by namespace/name (from the

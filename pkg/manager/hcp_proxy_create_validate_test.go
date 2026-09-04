@@ -195,6 +195,22 @@ func Test_handleRoute_WhenValidatePosted_ItShouldReturn405(t *testing.T) {
 	assert.Equal(t, http.StatusMethodNotAllowed, w.Code)
 }
 
+func Test_isMultiArchByNaming_WhenReleaseImageContainsMulti_ItShouldReturnTrue(t *testing.T) {
+	assert.True(t, isMultiArchByNaming("quay.io/openshift-release-dev/ocp-release:4.16.0-multi", ""))
+}
+
+func Test_isMultiArchByNaming_WhenReleaseStreamContainsMulti_ItShouldReturnTrue(t *testing.T) {
+	assert.True(t, isMultiArchByNaming("", "4-stable-multi"))
+}
+
+func Test_isMultiArchByNaming_WhenReleaseImageSetWithoutMulti_ItShouldIgnoreReleaseStream(t *testing.T) {
+	assert.False(t, isMultiArchByNaming("quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64", "4-stable-multi"))
+}
+
+func Test_isMultiArchByNaming_WhenNeitherNamesMulti_ItShouldReturnFalse(t *testing.T) {
+	assert.False(t, isMultiArchByNaming("quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64", "4-stable"))
+}
+
 // Note: handleCreate no longer pre-checks name collisions or NodePool arch itself —
 // that's now the dedicated GET .../hostedclusters/{name}/validate endpoint's job
 // (see the Test_handleValidateHostedCluster_* tests above). Callers that skip
