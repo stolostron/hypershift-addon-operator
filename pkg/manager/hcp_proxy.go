@@ -1240,6 +1240,11 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 
 	ctx := r.Context()
 
+	if status, msg := p.validateCreateRequest(ctx, hcpClient, spokeName, ns, &req); status != 0 {
+		p.writeJSONError(w, msg, status)
+		return
+	}
+
 	hcName := req.HostedCluster.Name
 
 	// addProxyLabels merges the proxy-managed labels into an existing label map.
