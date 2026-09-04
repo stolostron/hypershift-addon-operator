@@ -50,7 +50,7 @@ Base path:
 | `GET` | `/healthz`, `/readyz` | health | Liveness / readiness probes |
 | `GET` | `/apis/hcp.ocm.io` | discovery | APIGroup document |
 | `GET` | `/apis/hcp.ocm.io/v1alpha1` | discovery | APIResourceList (`hostedclusters`, `hostedclusters/resources`, `hostedclusters/finalizers`) |
-| `POST` | `/namespaces/{ns}/hostedclusters?hostingCluster={cluster}` | create | Create Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s) — GET list is not supported |
+| `POST` | `/namespaces/{ns}/hostedclusters?hostingCluster={cluster}` | create | Validate → Create Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s) — GET list is not supported |
 | `GET` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | get | Return full `ResourceBundle` |
 | `GET` | `/namespaces/{ns}/hostedclusters/{name}/resources?hostingCluster={cluster}` | get | Same as GET above (explicit `/resources` alias) |
 | `PUT` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | put | Full-replace HostedCluster + NodePools from a `ResourceBundle` |
@@ -81,6 +81,19 @@ Mirrors `hcp create cluster --render` output:
 | `nodePools` | no | One or more NodePools (`--render` may emit several) |
 | `secrets` | no | Pull secret, SSH key, cloud credential / STS secrets |
 | `extraObjects` | no | Non-secret objects from `--render` (Agent `capi-provider-role` Role, `--additional-trust-bundle` ConfigMap, …). Applied in the HostedCluster namespace after Secrets and before the HostedCluster. Create failures abort the request, roll back any extra objects created in the same request, and treat 409 AlreadyExists as already present. |
+
+**Pre-create validation** — runs against the hosting cluster before any resource
+(namespace, secrets, HostedCluster, NodePools) is applied, mirroring the checks
+`hcp create cluster` runs directly and that `--render` skips:
+
+1. **Duplicate name** — GETs the HostedCluster by namespace/name on the hosting
+   cluster; if it already exists, the request fails with `409 Conflict` and
+   nothing is created.
+2. **Node architecture** — reads the hosting cluster's CPU architecture (via
+   `/version`) and compares it against each NodePool's `spec.arch` (default
+   `amd64`). Skipped when the HostedCluster/NodePool release image is a
+   multi-arch manifest list or the release stream/image is `multi`. On
+   mismatch, fails with `400 Bad Request` naming both architectures.
 
 Create order on the spoke: `Namespace` (idempotent) → `Secrets` (create-or-update) → `ExtraObjects` → `HostedCluster` → `NodePool(s)`.
 
@@ -130,10 +143,11 @@ Used by `hcp from-hub delete` to add or remove the CLI destroy finalizer on the 
 
 | Status | When |
 | ------ | ---- |
-| `400 Bad Request` | Missing `hostingCluster`, invalid JSON, or missing `hostedCluster` on create |
+| `400 Bad Request` | Missing `hostingCluster`, invalid JSON, missing `hostedCluster` on create, or NodePool architecture doesn't match the hosting cluster |
 | `403 Forbidden` | Caller lacks `managedcluster:admin` on the hosting cluster |
 | `404 Not Found` | Unknown path, or HostedCluster not found on get |
 | `405 Method Not Allowed` | Unsupported verb on a path |
+| `409 Conflict` | HostedCluster name already exists on the hosting cluster (checked before create) |
 | `503 Service Unavailable` | Hosting `ManagedCluster` is missing or not Available |
 | `502 Bad Gateway` | Spoke / cluster-proxy request failed |
 | `201 Created` | Successful create (body is `ResourceBundle`) |
@@ -178,7 +192,7 @@ Each platform subcommand accepts the **same flags** as the corresponding
 1. Runs `hcp create cluster <platform>` in render mode (`--render --render-sensitive`) to produce YAML.
 2. Parses the YAML to extract `HostedCluster`, `NodePool(s)`, `Secret`, and remaining documents (`Role`, `ConfigMap`, …).
 3. Stamps client-side labels (see [Resource labels](#resource-labels)).
-4. POSTs a `CreateRequest` to the HCP proxy, which creates the resources on the hosting cluster in dependency order:
+4. POSTs a `CreateRequest` to the HCP proxy, which validates the request against the hosting cluster (duplicate HostedCluster name, NodePool CPU architecture) and, if validation passes, creates the resources in dependency order:
    `Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s)`
 
 ### Examples
