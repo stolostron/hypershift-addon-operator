@@ -57,7 +57,7 @@ Base path:
 | `PUT` | `/namespaces/{ns}/hostedclusters/{name}/resources?hostingCluster={cluster}` | put | Same as PUT above |
 | `DELETE` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | delete | Delete matching NodePools, then the HostedCluster |
 | `PATCH` | `/namespaces/{ns}/hostedclusters/{name}/finalizers?hostingCluster={cluster}` | patch | Add or remove the CLI destroy finalizer (`openshift.io/destroy-cluster`) on the hosting `HostedCluster` |
-| `POST` | `/namespaces/{ns}/hostedclusters/{name}/validate?hostingCluster={cluster}` | validate | Dedicated pre-create validation (duplicate name + NodePool arch) — no resources are applied |
+| `GET` | `/namespaces/{ns}/hostedclusters/{name}/validate?hostingCluster={cluster}&arch=...&releaseImage=...` | validate | Dedicated pre-create validation (duplicate name + NodePool arch) — read-only, no body, no resources are applied |
 
 `Content-Type` for create/put bodies: `application/json`. Finalizers PATCH uses `application/json` with a `FinalizersRequest` body.
 
@@ -86,29 +86,41 @@ Mirrors `hcp create cluster --render` output:
 `handleCreate` always runs the same pre-create checks as the dedicated `/validate`
 endpoint below before applying any resource — this is a safety net so a create
 request can never bypass validation, even if the caller skipped calling
-`/validate` first.
+`/validate` first. `handleCreate`'s internal check does have the full body
+(`hostedCluster`/`nodePools`/`secrets`) available, so unlike the standalone
+`/validate` endpoint it *can* fall back to a registry manifest lookup when a
+release image's multi-arch status isn't obvious from its name.
 
 Create order on the spoke: `Namespace` (idempotent) → `Secrets` (create-or-update) → `ExtraObjects` → `HostedCluster` → `NodePool(s)`.
 
 **Response:** `201 Created` with a `ResourceBundle` (Namespace + HostedCluster + NodePools + ExtraObjects). Secrets are never returned.
 
-#### `POST .../hostedclusters/{name}/validate` (dedicated pre-create validation)
+#### `GET .../hostedclusters/{name}/validate` (dedicated pre-create validation)
 
-A standalone endpoint that runs the hosting-cluster pre-create checks **without
-applying any resources**, so `hcp from-hub create` can validate before it even
-starts rendering/POSTing infrastructure (or a caller can dry-run a request on
-its own). `{name}` in the path must match `hostedCluster.metadata.name` in the
-body.
+A standalone, read-only endpoint that runs the hosting-cluster pre-create
+checks **without applying any resources and without a body**, so
+`hcp from-hub create` can validate before it even starts rendering/POSTing
+infrastructure (or a caller can dry-run a request on its own). Everything the
+checks need is already in the path/query string:
 
-Body is a `CreateRequest` (only `hostedCluster`, `nodePools`, and `secrets` are
-read; `extraObjects` is ignored). Checks:
+```text
+GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&arch=arm64&releaseImage={image}
+```
 
-1. **Duplicate name** — GETs the HostedCluster by namespace/name on the hosting
-   cluster; if it already exists, fails with `409 Conflict`.
-2. **Node architecture** — reads the hosting cluster's CPU architecture (via
-   `/version`) and compares it against each NodePool's `spec.arch` (default
-   `amd64`). Skipped when the HostedCluster/NodePool release image is a
-   multi-arch manifest list or the release stream/image is `multi`. On
+| Param | Required | Notes |
+| ----- | -------- | ----- |
+| `hostingCluster` | yes | Same as every other endpoint |
+| `arch` | no, repeatable | One NodePool CPU arch per value, e.g. `?arch=amd64&arch=arm64`. Omit to skip the architecture check (e.g. when only checking for a name collision). |
+| `releaseImage` | no | Used only to recognize a multi-arch release by naming convention (contains `multi`) and skip the arch check. Unlike `handleCreate`'s internal check, there's no pull secret here, so a registry manifest lookup isn't attempted — an inconclusive image is *not* treated as multi-arch. |
+
+Checks, in order:
+
+1. **Duplicate name** — GETs the HostedCluster by namespace/name (from the
+   path) on the hosting cluster; if it already exists, fails with
+   `409 Conflict`.
+2. **Node architecture** — if any `arch` values were given, reads the hosting
+   cluster's CPU architecture (via `/version`) and compares it against each
+   one. Skipped entirely when `releaseImage` names a multi-arch release. On
    mismatch, fails with `400 Bad Request` naming both architectures.
 
 **Response:** `200 OK` with a success `Status` body on pass; a Kubernetes
@@ -209,7 +221,7 @@ Each platform subcommand accepts the **same flags** as the corresponding
 1. Runs `hcp create cluster <platform>` in render mode (`--render --render-sensitive`) to produce YAML.
 2. Parses the YAML to extract `HostedCluster`, `NodePool(s)`, `Secret`, and remaining documents (`Role`, `ConfigMap`, …).
 3. Stamps client-side labels (see [Resource labels](#resource-labels)).
-4. POSTs a `CreateRequest` to the HCP proxy's create endpoint, which validates the request against the hosting cluster (duplicate HostedCluster name, NodePool CPU architecture — the same checks exposed standalone at `POST .../hostedclusters/{name}/validate`) and, if validation passes, creates the resources in dependency order:
+4. POSTs a `CreateRequest` to the HCP proxy's create endpoint, which validates the request against the hosting cluster (duplicate HostedCluster name, NodePool CPU architecture — the same checks exposed standalone at `GET .../hostedclusters/{name}/validate`) and, if validation passes, creates the resources in dependency order:
    `Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s)`
 
 ### Examples

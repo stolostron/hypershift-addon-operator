@@ -495,7 +495,7 @@ func Test_handleDiscovery_WhenVersionPath_ItShouldReturnAPIResourceList(t *testi
 	assert.Equal(t, []interface{}{"patch"}, third["verbs"])
 	fourth := resources[3].(map[string]interface{})
 	assert.Equal(t, hcpProxyResource+"/"+validateSubresource, fourth["name"])
-	assert.Equal(t, []interface{}{"create"}, fourth["verbs"])
+	assert.Equal(t, []interface{}{"get"}, fourth["verbs"])
 }
 
 // --- handleRoute ---

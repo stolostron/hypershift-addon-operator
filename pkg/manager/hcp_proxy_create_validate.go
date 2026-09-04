@@ -38,35 +38,18 @@ type k8sVersionInfo struct {
 	Platform string `json:"platform"`
 }
 
-// maxValidateRequestBytes bounds the POST .../hostedclusters/{name}/validate body.
-// Same shape as CreateRequest but callers only need to send the fields the
-// checks actually use (hostedCluster + nodePools + secrets), so 1 MiB is ample.
-const maxValidateRequestBytes = 1 * 1024 * 1024
-
-// handleValidateCreate serves POST .../namespaces/{ns}/hostedclusters/{name}/validate.
-// It is the dedicated pre-create validation endpoint: callers (hcp from-hub create)
-// can call it before rendering/POSTing infrastructure, or the proxy's own
-// handleCreate can rely on it as a safety net — either way, no resources are
-// applied on the spoke by this handler. Body is a CreateRequest; only
-// hostedCluster, nodePools, and secrets are read.
-func (p *hcpProxy) handleValidateCreate(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
-	r.Body = http.MaxBytesReader(w, r.Body, maxValidateRequestBytes)
-	var req CreateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		p.writeJSONError(w, errMsgInvalidRequestBody+err.Error(), http.StatusBadRequest)
-		return
-	}
-	if req.HostedCluster == nil {
-		p.writeJSONError(w, "hostedCluster is required", http.StatusBadRequest)
-		return
-	}
-	if req.HostedCluster.Name != name {
-		p.writeJSONError(w,
-			fmt.Sprintf("hostedCluster.metadata.name %q does not match path name %q", req.HostedCluster.Name, name),
-			http.StatusBadRequest)
-		return
-	}
-
+// handleValidateHostedCluster serves GET .../namespaces/{ns}/hostedclusters/{name}/validate.
+// This is the dedicated, side-effect-free pre-create check: callers (hcp from-hub
+// create) can call it before rendering/POSTing infrastructure to find out whether
+// {name} already exists on the hosting cluster and whether the NodePool arch(es)
+// they intend to create match the hosting cluster's CPU architecture.
+//
+// No request body — {name}/{ns} come from the path (like every other endpoint) and
+// the NodePool arch(es) come from the repeatable "arch" query parameter, since that
+// is data about a NodePool that doesn't exist yet and so cannot be looked up.
+//
+//	GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&arch=arm64&releaseImage={image}
+func (p *hcpProxy) handleValidateHostedCluster(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	username, groups := whoIsTheCaller(r)
 	hcpClient, err := p.spokeHTTPClient(username, groups)
 	if err != nil {
@@ -75,7 +58,15 @@ func (p *hcpProxy) handleValidateCreate(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	if status, msg := p.validateCreateRequest(r.Context(), hcpClient, spokeName, ns, &req); status != 0 {
+	ctx := r.Context()
+	if status, msg := p.validateHostedClusterNotExists(ctx, hcpClient, spokeName, ns, name); status != 0 {
+		p.writeJSONError(w, msg, status)
+		return
+	}
+
+	arches := r.URL.Query()["arch"]
+	releaseImage := strings.TrimSpace(r.URL.Query().Get("releaseImage"))
+	if status, msg := p.validateArchesAgainstHostingCluster(ctx, hcpClient, spokeName, arches, releaseImage); status != 0 {
 		p.writeJSONError(w, msg, status)
 		return
 	}
@@ -87,6 +78,53 @@ func (p *hcpProxy) handleValidateCreate(w http.ResponseWriter, r *http.Request, 
 		Status:   metav1.StatusSuccess,
 		Message:  "validation passed",
 	})
+}
+
+// validateArchesAgainstHostingCluster checks each requested NodePool arch against the
+// hosting cluster's CPU architecture, skipping the check entirely when releaseImage is
+// a multi-arch manifest list/stream. Used by the standalone GET /validate endpoint,
+// which — unlike handleCreate's internal check — has no pull secret to look up a
+// release image's manifest, so it only recognizes the "multi" naming convention.
+func (p *hcpProxy) validateArchesAgainstHostingCluster(
+	ctx context.Context,
+	hcpClient *http.Client,
+	spokeName string,
+	arches []string,
+	releaseImage string,
+) (int, string) {
+	if len(arches) == 0 {
+		return 0, ""
+	}
+
+	multiArch, err := isMultiArchRelease(ctx, releaseImage, nil)
+	if err != nil {
+		return http.StatusBadRequest, err.Error()
+	}
+	if multiArch {
+		return 0, ""
+	}
+
+	hostingArch, err := p.fetchHostingClusterCPUArch(ctx, hcpClient, spokeName)
+	if err != nil {
+		return http.StatusBadGateway, "failed to check hosting cluster CPU arch: " + err.Error()
+	}
+
+	for _, arch := range arches {
+		arch = strings.TrimSpace(arch)
+		if arch == "" {
+			arch = defaultNodePoolArch
+		}
+		if !strings.EqualFold(hostingArch, arch) {
+			return http.StatusBadRequest, fmt.Sprintf(
+				"multi-arch hosted cluster is not enabled and "+
+					"management cluster and nodepool cpu architectures do not match; "+
+					"please use a multi-arch release image or a multi-arch release stream - "+
+					"management cluster cpu arch: %s, nodepool cpu arch: %s",
+				hostingArch, arch,
+			)
+		}
+	}
+	return 0, ""
 }
 
 // validateCreateRequest runs hosting-cluster pre-create checks before any resources

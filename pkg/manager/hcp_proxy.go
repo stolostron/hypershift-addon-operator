@@ -91,7 +91,7 @@ const (
 	finalizersSubresource = "finalizers"
 
 	// validateSubresource is the dedicated pre-create validation route:
-	// POST .../hostedclusters/{name}/validate?hostingCluster={cluster}
+	// GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=...
 	validateSubresource = "validate"
 
 	// hostedClusterDestroyFinalizer matches cmd/cluster/core/destroy.go destroyFinalizer.
@@ -497,10 +497,11 @@ func (p *hcpProxy) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 			{
 				// Pre-create validation: duplicate HostedCluster name + NodePool
 				// CPU architecture, run against the hosting cluster before apply.
+				// GET only — read-only, no resources are applied.
 				"name":       hcpProxyResource + "/" + validateSubresource,
 				"namespaced": true,
 				"kind":       "HostedCluster",
-				"verbs":      []string{"create"},
+				"verbs":      []string{"get"},
 			},
 		},
 	}
@@ -569,7 +570,7 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// POST .../namespaces/{ns}/hostedclusters/{name}/validate
+	// GET .../namespaces/{ns}/hostedclusters/{name}/validate
 	isValidate := len(parts) == 5 && parts[0] == "namespaces" && parts[2] == hcpProxyResource &&
 		parts[4] == validateSubresource
 	if isValidate {
@@ -624,7 +625,7 @@ func (p *hcpProxy) dispatchFinalizers(w http.ResponseWriter, r *http.Request, ns
 	}
 }
 
-// dispatchValidate routes POST requests on the hostedclusters/validate subresource.
+// dispatchValidate routes GET requests on the hostedclusters/validate subresource.
 func (p *hcpProxy) dispatchValidate(w http.ResponseWriter, r *http.Request, nsRaw, nameRaw, hostingCluster string) {
 	ns, err := sanitizeProxyName(nsRaw)
 	if err != nil {
@@ -637,8 +638,8 @@ func (p *hcpProxy) dispatchValidate(w http.ResponseWriter, r *http.Request, nsRa
 		return
 	}
 	switch r.Method {
-	case http.MethodPost:
-		p.handleValidateCreate(w, r, ns, name, hostingCluster)
+	case http.MethodGet:
+		p.handleValidateHostedCluster(w, r, ns, name, hostingCluster)
 	default:
 		p.writeJSONError(w, errMsgMethodNotAllowed, http.StatusMethodNotAllowed)
 	}
