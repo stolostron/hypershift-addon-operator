@@ -83,13 +83,11 @@ Mirrors `hcp create cluster --render` output:
 | `secrets` | no | Pull secret, SSH key, cloud credential / STS secrets |
 | `extraObjects` | no | Non-secret objects from `--render` (Agent `capi-provider-role` Role, `--additional-trust-bundle` ConfigMap, …). Applied in the HostedCluster namespace after Secrets and before the HostedCluster. Create failures abort the request, roll back any extra objects created in the same request, and treat 409 AlreadyExists as already present. |
 
-`handleCreate` always runs the same pre-create checks as the dedicated `/validate`
-endpoint below before applying any resource — this is a safety net so a create
-request can never bypass validation, even if the caller skipped calling
-`/validate` first. `handleCreate`'s internal check does have the full body
-(`hostedCluster`/`nodePools`/`secrets`) available, so unlike the standalone
-`/validate` endpoint it *can* fall back to a registry manifest lookup when a
-release image's multi-arch status isn't obvious from its name.
+`handleCreate` itself does **not** pre-check name collisions or NodePool
+architecture — callers that want that should call the dedicated `/validate`
+endpoint below first (`hcp from-hub create` does). Skipping `/validate` and
+posting a duplicate/mismatched request directly just gets whatever error the
+spoke itself returns for the underlying `POST`.
 
 Create order on the spoke: `Namespace` (idempotent) → `Secrets` (create-or-update) → `ExtraObjects` → `HostedCluster` → `NodePool(s)`.
 
@@ -104,24 +102,24 @@ infrastructure (or a caller can dry-run a request on its own). Everything the
 checks need is already in the path/query string:
 
 ```text
-GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&arch=arm64&releaseImage={image}
+GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&releaseImage={image}
 ```
 
 | Param | Required | Notes |
 | ----- | -------- | ----- |
 | `hostingCluster` | yes | Same as every other endpoint |
-| `arch` | no, repeatable | One NodePool CPU arch per value, e.g. `?arch=amd64&arch=arm64`. Omit to skip the architecture check (e.g. when only checking for a name collision). |
-| `releaseImage` | no | Used only to recognize a multi-arch release by naming convention (contains `multi`) and skip the arch check. Unlike `handleCreate`'s internal check, there's no pull secret here, so a registry manifest lookup isn't attempted — an inconclusive image is *not* treated as multi-arch. |
+| `arch` | no | The NodePool's CPU arch (`hcp create cluster` takes a single `--arch` flag and renders one NodePool per invocation). Omit to skip the architecture check (e.g. when only checking for a name collision). |
+| `releaseImage` | no | Used only to recognize a multi-arch release by naming convention (contains `multi`) and skip the arch check. Unlike `handleCreate`'s internal check used to have, there's no pull secret here, so a registry manifest lookup isn't attempted — an inconclusive image is *not* treated as multi-arch. |
 
 Checks, in order:
 
 1. **Duplicate name** — GETs the HostedCluster by namespace/name (from the
    path) on the hosting cluster; if it already exists, fails with
    `409 Conflict`.
-2. **Node architecture** — if any `arch` values were given, reads the hosting
-   cluster's CPU architecture (via `/version`) and compares it against each
-   one. Skipped entirely when `releaseImage` names a multi-arch release. On
-   mismatch, fails with `400 Bad Request` naming both architectures.
+2. **Node architecture** — if `arch` was given, reads the hosting cluster's
+   CPU architecture (via `/version`) and compares it against `arch`. Skipped
+   entirely when `releaseImage` names a multi-arch release. On mismatch,
+   fails with `400 Bad Request` naming both architectures.
 
 **Response:** `200 OK` with a success `Status` body on pass; a Kubernetes
 `Status` error body (`409`/`400`/`502`/…) on failure — same error shape as
@@ -171,11 +169,11 @@ Used by `hcp from-hub delete` to add or remove the CLI destroy finalizer on the 
 
 | Status | When |
 | ------ | ---- |
-| `400 Bad Request` | Missing `hostingCluster`, invalid JSON, missing `hostedCluster` on create, or NodePool architecture doesn't match the hosting cluster |
+| `400 Bad Request` | Missing `hostingCluster`, invalid JSON, missing `hostedCluster` on create, or (via `/validate`) NodePool architecture doesn't match the hosting cluster |
 | `403 Forbidden` | Caller lacks `managedcluster:admin` on the hosting cluster |
 | `404 Not Found` | Unknown path, or HostedCluster not found on get |
 | `405 Method Not Allowed` | Unsupported verb on a path |
-| `409 Conflict` | HostedCluster name already exists on the hosting cluster (checked by `/validate` and before create) |
+| `409 Conflict` | HostedCluster name already exists on the hosting cluster (checked by `/validate`) |
 | `503 Service Unavailable` | Hosting `ManagedCluster` is missing or not Available |
 | `502 Bad Gateway` | Spoke / cluster-proxy request failed |
 | `201 Created` | Successful create (body is `ResourceBundle`) |
@@ -221,7 +219,7 @@ Each platform subcommand accepts the **same flags** as the corresponding
 1. Runs `hcp create cluster <platform>` in render mode (`--render --render-sensitive`) to produce YAML.
 2. Parses the YAML to extract `HostedCluster`, `NodePool(s)`, `Secret`, and remaining documents (`Role`, `ConfigMap`, …).
 3. Stamps client-side labels (see [Resource labels](#resource-labels)).
-4. POSTs a `CreateRequest` to the HCP proxy's create endpoint, which validates the request against the hosting cluster (duplicate HostedCluster name, NodePool CPU architecture — the same checks exposed standalone at `GET .../hostedclusters/{name}/validate`) and, if validation passes, creates the resources in dependency order:
+4. Calls `GET .../hostedclusters/{name}/validate` (duplicate HostedCluster name, NodePool CPU architecture) before rendering/POSTing infrastructure, then POSTs a `CreateRequest` to the HCP proxy's create endpoint, which creates the resources in dependency order:
    `Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s)`
 
 ### Examples

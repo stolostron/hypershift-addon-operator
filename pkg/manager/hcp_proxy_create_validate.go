@@ -14,10 +14,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-const (
-	defaultNodePoolArch = hypershiftv1beta1.ArchitectureAMD64
-	apiPathVersion      = "/version"
-)
+const apiPathVersion = "/version"
 
 // isMultiArchReleaseImageFunc checks whether a release image is a multi-arch manifest list.
 // Overridable in unit tests to avoid registry calls.
@@ -41,14 +38,16 @@ type k8sVersionInfo struct {
 // handleValidateHostedCluster serves GET .../namespaces/{ns}/hostedclusters/{name}/validate.
 // This is the dedicated, side-effect-free pre-create check: callers (hcp from-hub
 // create) can call it before rendering/POSTing infrastructure to find out whether
-// {name} already exists on the hosting cluster and whether the NodePool arch(es)
-// they intend to create match the hosting cluster's CPU architecture.
+// {name} already exists on the hosting cluster and whether the NodePool arch they
+// intend to create matches the hosting cluster's CPU architecture.
 //
 // No request body — {name}/{ns} come from the path (like every other endpoint) and
-// the NodePool arch(es) come from the repeatable "arch" query parameter, since that
-// is data about a NodePool that doesn't exist yet and so cannot be looked up.
+// the NodePool arch comes from the "arch" query parameter, since that is data about
+// a NodePool that doesn't exist yet and so cannot be looked up. hcp create cluster
+// renders exactly one NodePool per invocation (one --arch flag), so a single value
+// is enough.
 //
-//	GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&arch=arm64&releaseImage={image}
+//	GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&releaseImage={image}
 func (p *hcpProxy) handleValidateHostedCluster(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	username, groups := whoIsTheCaller(r)
 	hcpClient, err := p.spokeHTTPClient(username, groups)
@@ -64,9 +63,9 @@ func (p *hcpProxy) handleValidateHostedCluster(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	arches := r.URL.Query()["arch"]
+	arch := strings.TrimSpace(r.URL.Query().Get("arch"))
 	releaseImage := strings.TrimSpace(r.URL.Query().Get("releaseImage"))
-	if status, msg := p.validateArchesAgainstHostingCluster(ctx, hcpClient, spokeName, arches, releaseImage); status != 0 {
+	if status, msg := p.validateArchAgainstHostingCluster(ctx, hcpClient, spokeName, arch, releaseImage); status != 0 {
 		p.writeJSONError(w, msg, status)
 		return
 	}
@@ -80,19 +79,18 @@ func (p *hcpProxy) handleValidateHostedCluster(w http.ResponseWriter, r *http.Re
 	})
 }
 
-// validateArchesAgainstHostingCluster checks each requested NodePool arch against the
+// validateArchAgainstHostingCluster checks the requested NodePool arch against the
 // hosting cluster's CPU architecture, skipping the check entirely when releaseImage is
 // a multi-arch manifest list/stream. Used by the standalone GET /validate endpoint,
 // which — unlike handleCreate's internal check — has no pull secret to look up a
 // release image's manifest, so it only recognizes the "multi" naming convention.
-func (p *hcpProxy) validateArchesAgainstHostingCluster(
+func (p *hcpProxy) validateArchAgainstHostingCluster(
 	ctx context.Context,
 	hcpClient *http.Client,
 	spokeName string,
-	arches []string,
-	releaseImage string,
+	arch, releaseImage string,
 ) (int, string) {
-	if len(arches) == 0 {
+	if arch == "" {
 		return 0, ""
 	}
 
@@ -109,38 +107,14 @@ func (p *hcpProxy) validateArchesAgainstHostingCluster(
 		return http.StatusBadGateway, "failed to check hosting cluster CPU arch: " + err.Error()
 	}
 
-	for _, arch := range arches {
-		arch = strings.TrimSpace(arch)
-		if arch == "" {
-			arch = defaultNodePoolArch
-		}
-		if !strings.EqualFold(hostingArch, arch) {
-			return http.StatusBadRequest, fmt.Sprintf(
-				"multi-arch hosted cluster is not enabled and "+
-					"management cluster and nodepool cpu architectures do not match; "+
-					"please use a multi-arch release image or a multi-arch release stream - "+
-					"management cluster cpu arch: %s, nodepool cpu arch: %s",
-				hostingArch, arch,
-			)
-		}
-	}
-	return 0, ""
-}
-
-// validateCreateRequest runs hosting-cluster pre-create checks before any resources
-// are applied on the spoke. Mirrors core's validateClusterExistence and
-// validateMgmtClusterAndNodePoolCPUArchitectures for hcp from-hub create.
-func (p *hcpProxy) validateCreateRequest(
-	ctx context.Context,
-	hcpClient *http.Client,
-	spokeName, ns string,
-	req *CreateRequest,
-) (int, string) {
-	if status, msg := p.validateHostedClusterNotExists(ctx, hcpClient, spokeName, ns, req.HostedCluster.Name); status != 0 {
-		return status, msg
-	}
-	if status, msg := p.validateNodePoolArchitectures(ctx, hcpClient, spokeName, req); status != 0 {
-		return status, msg
+	if !strings.EqualFold(hostingArch, arch) {
+		return http.StatusBadRequest, fmt.Sprintf(
+			"multi-arch hosted cluster is not enabled and "+
+				"management cluster and nodepool cpu architectures do not match; "+
+				"please use a multi-arch release image or a multi-arch release stream - "+
+				"management cluster cpu arch: %s, nodepool cpu arch: %s",
+			hostingArch, arch,
+		)
 	}
 	return 0, ""
 }
@@ -159,76 +133,6 @@ func (p *hcpProxy) validateHostedClusterNotExists(
 	default:
 		return status, msg
 	}
-}
-
-func (p *hcpProxy) validateNodePoolArchitectures(
-	ctx context.Context,
-	hcpClient *http.Client,
-	spokeName string,
-	req *CreateRequest,
-) (int, string) {
-	if req.HostedCluster == nil || len(req.NodePools) == 0 {
-		return 0, ""
-	}
-
-	hostingArch, err := p.fetchHostingClusterCPUArch(ctx, hcpClient, spokeName)
-	if err != nil {
-		return http.StatusBadGateway, "failed to check hosting cluster CPU arch: " + err.Error()
-	}
-
-	pullSecret := pullSecretBytesFromCreateRequest(req)
-	releaseImage := strings.TrimSpace(req.HostedCluster.Spec.Release.Image)
-	multiArch, multiArchErr := isMultiArchRelease(ctx, releaseImage, pullSecret)
-	if multiArchErr != nil {
-		if isManifestAccessError(multiArchErr) {
-			p.log.Info(
-				"WARNING: Unable to access the release payload, skipping the Architectures check.",
-				"error", multiArchErr.Error(),
-			)
-			return 0, ""
-		}
-		return http.StatusBadRequest, multiArchErr.Error()
-	}
-	if multiArch {
-		return 0, ""
-	}
-
-	for _, np := range req.NodePools {
-		if np == nil {
-			continue
-		}
-		npArch := strings.TrimSpace(np.Spec.Arch)
-		if npArch == "" {
-			npArch = defaultNodePoolArch
-		}
-		npReleaseImage := strings.TrimSpace(np.Spec.Release.Image)
-		if npReleaseImage != "" && npReleaseImage != releaseImage {
-			npMultiArch, npErr := isMultiArchRelease(ctx, npReleaseImage, pullSecret)
-			if npErr != nil {
-				if isManifestAccessError(npErr) {
-					p.log.Info(
-						"WARNING: Unable to access the release payload, skipping the Architectures check.",
-						"error", npErr.Error(),
-					)
-					continue
-				}
-				return http.StatusBadRequest, npErr.Error()
-			}
-			if npMultiArch {
-				continue
-			}
-		}
-		if !strings.EqualFold(hostingArch, npArch) {
-			return http.StatusBadRequest, fmt.Sprintf(
-				"multi-arch hosted cluster is not enabled and "+
-					"management cluster and nodepool cpu architectures do not match; "+
-					"please use a multi-arch release image or a multi-arch release stream - "+
-					"management cluster cpu arch: %s, nodepool cpu arch: %s",
-				hostingArch, npArch,
-			)
-		}
-	}
-	return 0, ""
 }
 
 func (p *hcpProxy) fetchHostingClusterCPUArch(
