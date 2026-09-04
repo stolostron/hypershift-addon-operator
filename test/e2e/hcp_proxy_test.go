@@ -355,6 +355,214 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred())
 		})
 
+		ginkgo.It("should return 409 when POST create targets an existing HostedCluster name", func() {
+			ginkgo.By("Ensuring OCM cluster-proxy user Service is present")
+			_, err := kubeClient.CoreV1().Services(clusterProxyNamespace).Get(
+				ctx, "cluster-proxy-addon-user", metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				ginkgo.Skip("cluster-proxy-addon-user Service missing; run make deploy-cluster-proxy")
+			}
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "cluster-proxy-addon-user Service must exist for HCP proxy e2e")
+
+			hcNS := fmt.Sprintf("e2e-hcp-proxy-dup-%d", time.Now().UnixNano())
+			const hcName = "e2e-hc-dup"
+			ginkgo.DeferCleanup(func() {
+				gomega.Expect(kubeClient.CoreV1().Namespaces().Delete(ctx, hcNS, metav1.DeleteOptions{})).
+					To(gomega.Succeed(), "delete test namespace %s", hcNS)
+			})
+
+			body := []byte(fmt.Sprintf(`{
+			  "hostedCluster": {
+			    "apiVersion": "hypershift.openshift.io/v1beta1",
+			    "kind": "HostedCluster",
+			    "metadata": {"name": %q, "namespace": %q},
+			    "spec": {
+			      "release": {"image": "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64"},
+			      "pullSecret": {"name": "%s-pull-secret"},
+			      "sshKey": {"name": "%s-ssh-key"},
+			      "platform": {"type": "None"},
+			      "networking": {"networkType": "OVNKubernetes"},
+			      "services": [
+			        {"service": "APIServer", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "OAuthServer", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "Konnectivity", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "Ignition", "servicePublishingStrategy": {"type": "None"}}
+			      ],
+			      "etcd": {"managementType": "Managed"},
+			      "infraID": %q
+			    }
+			  },
+			  "secrets": [
+			    {
+			      "apiVersion": "v1",
+			      "kind": "Secret",
+			      "metadata": {"name": "%s-pull-secret"},
+			      "type": "kubernetes.io/dockerconfigjson",
+			      "data": {".dockerconfigjson": "eyJhdXRocyI6e319"}
+			    },
+			    {
+			      "apiVersion": "v1",
+			      "kind": "Secret",
+			      "metadata": {"name": "%s-ssh-key"},
+			      "data": {"id_rsa.pub": "c3NoLXJzYSBBQUFB"}
+			    }
+			  ]
+			}`, hcName, hcNS, hcName, hcName, hcName, hcName, hcName))
+
+			ginkgo.By("Waiting for ManagedClusterAddOn cluster-proxy Available")
+			gomega.Eventually(func() bool {
+				addon, err := addonClient.AddonV1alpha1().ManagedClusterAddOns(defaultManagedCluster).
+					Get(ctx, "cluster-proxy", metav1.GetOptions{})
+				if err != nil {
+					return false
+				}
+				for _, c := range addon.Status.Conditions {
+					if c.Type == "Available" && c.Status == metav1.ConditionTrue {
+						return true
+					}
+				}
+				return false
+			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue(),
+				"cluster-proxy ManagedClusterAddOn must become Available before create")
+
+			client := insecureHTTPClient()
+			url := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+
+				"/namespaces/"+hcNS+"/hostedclusters?hostingCluster="+defaultManagedCluster)
+
+			ginkgo.By("POST create HostedCluster via HCP proxy (first create succeeds)")
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build first POST create request")
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Remote-User", "e2e-test-user")
+			req.Header.Set("X-Remote-Group", "system:masters")
+			resp, err := client.Do(req)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy first create")
+			defer resp.Body.Close()
+			respBody, _ := io.ReadAll(resp.Body)
+			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusCreated),
+				"first POST create response: %s", string(respBody))
+
+			ginkgo.By("POST create with the same HostedCluster name is rejected before apply")
+			dupReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build duplicate POST create request")
+			dupReq.Header.Set("Content-Type", "application/json")
+			dupReq.Header.Set("X-Remote-User", "e2e-test-user")
+			dupReq.Header.Set("X-Remote-Group", "system:masters")
+			dupResp, err := client.Do(dupReq)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy duplicate create")
+			defer dupResp.Body.Close()
+			dupBody, _ := io.ReadAll(dupResp.Body)
+			gomega.Expect(dupResp.StatusCode).To(gomega.Equal(http.StatusConflict),
+				"duplicate POST create response: %s", string(dupBody))
+			gomega.Expect(string(dupBody)).To(gomega.ContainSubstring("already exists"))
+		})
+
+		ginkgo.It("should return 400 when NodePool arch mismatches the hosting cluster", func() {
+			ginkgo.By("Ensuring OCM cluster-proxy user Service is present")
+			_, err := kubeClient.CoreV1().Services(clusterProxyNamespace).Get(
+				ctx, "cluster-proxy-addon-user", metav1.GetOptions{})
+			if apierrors.IsNotFound(err) {
+				ginkgo.Skip("cluster-proxy-addon-user Service missing; run make deploy-cluster-proxy")
+			}
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "cluster-proxy-addon-user Service must exist for HCP proxy e2e")
+
+			hcNS := fmt.Sprintf("e2e-hcp-proxy-arch-%d", time.Now().UnixNano())
+			const hcName = "e2e-hc-arch"
+			ginkgo.DeferCleanup(func() {
+				_ = kubeClient.CoreV1().Namespaces().Delete(ctx, hcNS, metav1.DeleteOptions{})
+			})
+
+			body := []byte(fmt.Sprintf(`{
+			  "hostedCluster": {
+			    "apiVersion": "hypershift.openshift.io/v1beta1",
+			    "kind": "HostedCluster",
+			    "metadata": {"name": %q, "namespace": %q},
+			    "spec": {
+			      "release": {"image": "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64"},
+			      "pullSecret": {"name": "%s-pull-secret"},
+			      "sshKey": {"name": "%s-ssh-key"},
+			      "platform": {"type": "None"},
+			      "networking": {"networkType": "OVNKubernetes"},
+			      "services": [
+			        {"service": "APIServer", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "OAuthServer", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "Konnectivity", "servicePublishingStrategy": {"type": "None"}},
+			        {"service": "Ignition", "servicePublishingStrategy": {"type": "None"}}
+			      ],
+			      "etcd": {"managementType": "Managed"},
+			      "infraID": %q
+			    }
+			  },
+			  "nodePools": [{
+			    "apiVersion": "hypershift.openshift.io/v1beta1",
+			    "kind": "NodePool",
+			    "metadata": {"name": "%s-pool"},
+			    "spec": {
+			      "clusterName": %q,
+			      "arch": "arm64",
+			      "release": {"image": "quay.io/openshift-release-dev/ocp-release:4.16.0-x86_64"},
+			      "platform": {"type": "None"},
+			      "management": {"upgradeType": "Replace", "autoRepair": false}
+			    }
+			  }],
+			  "secrets": [
+			    {
+			      "apiVersion": "v1",
+			      "kind": "Secret",
+			      "metadata": {"name": "%s-pull-secret"},
+			      "type": "kubernetes.io/dockerconfigjson",
+			      "data": {".dockerconfigjson": "eyJhdXRocyI6e319"}
+			    },
+			    {
+			      "apiVersion": "v1",
+			      "kind": "Secret",
+			      "metadata": {"name": "%s-ssh-key"},
+			      "data": {"id_rsa.pub": "c3NoLXJzYSBBQUFB"}
+			    }
+			  ]
+			}`, hcName, hcNS, hcName, hcName, hcName, hcName, hcName, hcName, hcName))
+
+			ginkgo.By("Waiting for ManagedClusterAddOn cluster-proxy Available")
+			gomega.Eventually(func() bool {
+				addon, err := addonClient.AddonV1alpha1().ManagedClusterAddOns(defaultManagedCluster).
+					Get(ctx, "cluster-proxy", metav1.GetOptions{})
+				if err != nil {
+					return false
+				}
+				for _, c := range addon.Status.Conditions {
+					if c.Type == "Available" && c.Status == metav1.ConditionTrue {
+						return true
+					}
+				}
+				return false
+			}, eventuallyTimeout, eventuallyInterval).Should(gomega.BeTrue(),
+				"cluster-proxy ManagedClusterAddOn must become Available before create")
+
+			client := insecureHTTPClient()
+			url := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+
+				"/namespaces/"+hcNS+"/hostedclusters?hostingCluster="+defaultManagedCluster)
+
+			ginkgo.By("POST create with mismatched NodePool arch is rejected before apply")
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build POST create request with arch mismatch")
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("X-Remote-User", "e2e-test-user")
+			req.Header.Set("X-Remote-Group", "system:masters")
+			resp, err := client.Do(req)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy create with arch mismatch")
+			defer resp.Body.Close()
+			respBody, _ := io.ReadAll(resp.Body)
+			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusBadRequest),
+				"POST create response: %s", string(respBody))
+			gomega.Expect(string(respBody)).To(gomega.ContainSubstring("management cluster cpu arch"))
+			gomega.Expect(string(respBody)).To(gomega.ContainSubstring("nodepool cpu arch"))
+
+			ginkgo.By("Verifying no namespace was created on the hosting cluster")
+			_, nsErr := kubeClient.CoreV1().Namespaces().Get(ctx, hcNS, metav1.GetOptions{})
+			gomega.Expect(apierrors.IsNotFound(nsErr)).To(gomega.BeTrue(),
+				"validation must fail before namespace creation; got err=%v", nsErr)
+		})
+
 		ginkgo.It("should create Role and ConfigMap extraObjects via POST through cluster-proxy", func() {
 			ginkgo.By("Ensuring OCM cluster-proxy user Service is present")
 			_, err := kubeClient.CoreV1().Services(clusterProxyNamespace).Get(
