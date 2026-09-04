@@ -136,7 +136,8 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			gomega.Expect(doc["kind"]).To(gomega.Equal("APIResourceList"))
 
 			resources := doc["resources"].([]interface{})
-			gomega.Expect(resources).To(gomega.HaveLen(4), "discovery must list hostedclusters, /resources, /finalizers, and /validate")
+			gomega.Expect(resources).To(gomega.HaveLen(4),
+				"discovery must list hostedclusters, /resources, /finalizers, and /validate")
 			names := []string{}
 			for _, r := range resources {
 				names = append(names, r.(map[string]interface{})["name"].(string))

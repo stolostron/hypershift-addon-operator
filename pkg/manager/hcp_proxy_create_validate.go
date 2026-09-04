@@ -47,7 +47,8 @@ type k8sVersionInfo struct {
 // renders exactly one NodePool per invocation (one --arch flag), so a single value
 // is enough.
 //
-//	GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&releaseImage={image}
+//	GET .../hostedclusters/{name}/validate?hostingCluster={cluster}
+//	    &arch=amd64&releaseImage={image}&releaseStream={stream}
 func (p *hcpProxy) handleValidateHostedCluster(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	username, groups := whoIsTheCaller(r)
 	hcpClient, err := p.spokeHTTPClient(username, groups)
@@ -65,7 +66,10 @@ func (p *hcpProxy) handleValidateHostedCluster(w http.ResponseWriter, r *http.Re
 
 	arch := strings.TrimSpace(r.URL.Query().Get("arch"))
 	releaseImage := strings.TrimSpace(r.URL.Query().Get("releaseImage"))
-	if status, msg := p.validateArchAgainstHostingCluster(ctx, hcpClient, spokeName, arch, releaseImage); status != 0 {
+	releaseStream := strings.TrimSpace(r.URL.Query().Get("releaseStream"))
+	if status, msg := p.validateArchAgainstHostingCluster(
+		ctx, hcpClient, spokeName, arch, releaseImage, releaseStream,
+	); status != 0 {
 		p.writeJSONError(w, msg, status)
 		return
 	}
@@ -80,21 +84,22 @@ func (p *hcpProxy) handleValidateHostedCluster(w http.ResponseWriter, r *http.Re
 }
 
 // validateArchAgainstHostingCluster checks the requested NodePool arch against the
-// hosting cluster's CPU architecture, skipping the check entirely when releaseImage is
-// a multi-arch manifest list/stream. Used by the standalone GET /validate endpoint,
-// which — unlike handleCreate's internal check — has no pull secret to look up a
-// release image's manifest, so it only recognizes the "multi" naming convention.
+// hosting cluster's CPU architecture, skipping the check when the release image or
+// stream is multi-arch. Used by the standalone GET /validate endpoint, which has no
+// pull secret to look up a release image manifest, so it only recognizes the "multi"
+// naming convention (same as core's validateMgmtClusterAndNodePoolCPUArchitectures
+// when no pull secret is available).
 func (p *hcpProxy) validateArchAgainstHostingCluster(
 	ctx context.Context,
 	hcpClient *http.Client,
 	spokeName string,
-	arch, releaseImage string,
+	arch, releaseImage, releaseStream string,
 ) (int, string) {
 	if arch == "" {
 		return 0, ""
 	}
 
-	multiArch, err := isMultiArchRelease(ctx, releaseImage, nil)
+	multiArch, err := isMultiArchReleaseOrStream(ctx, releaseImage, releaseStream, nil)
 	if err != nil {
 		return http.StatusBadRequest, err.Error()
 	}
@@ -187,17 +192,24 @@ func pullSecretBytesFromCreateRequest(req *CreateRequest) []byte {
 	return nil
 }
 
-func isMultiArchRelease(ctx context.Context, releaseImage string, pullSecret []byte) (bool, error) {
-	if releaseImage == "" {
-		return false, nil
+func isMultiArchReleaseOrStream(
+	ctx context.Context,
+	releaseImage, releaseStream string,
+	pullSecret []byte,
+) (bool, error) {
+	if releaseImage != "" {
+		if strings.Contains(releaseImage, hypershiftv1beta1.ArchitectureMulti) {
+			return true, nil
+		}
+		if len(pullSecret) == 0 {
+			return false, nil
+		}
+		return isMultiArchReleaseImageFunc(ctx, releaseImage, pullSecret)
 	}
-	if strings.Contains(releaseImage, hypershiftv1beta1.ArchitectureMulti) {
+	if releaseStream != "" && strings.Contains(releaseStream, hypershiftv1beta1.ArchitectureMulti) {
 		return true, nil
 	}
-	if len(pullSecret) == 0 {
-		return false, nil
-	}
-	return isMultiArchReleaseImageFunc(ctx, releaseImage, pullSecret)
+	return false, nil
 }
 
 func isManifestAccessError(err error) bool {

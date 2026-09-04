@@ -130,6 +130,31 @@ func Test_handleValidateHostedCluster_WhenMultiArchReleaseImage_ItShouldSkipArch
 	assert.Equal(t, http.StatusOK, w.Code)
 }
 
+func Test_handleValidateHostedCluster_WhenMultiArchReleaseStream_ItShouldSkipArchCheck(t *testing.T) {
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/hostedclusters/my-hc"):
+			w.Header().Set(headerContentType, contentTypeJSON)
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"kind":"Status","apiVersion":"v1","status":"Failure","reason":"NotFound","code":404}`)
+		default:
+			t.Fatalf("unexpected spoke request: %s %s (arch check should be skipped, /version must not be called)",
+				r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(spokeSrv.Close)
+
+	mc := availableManagedCluster("spoke-1")
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, mc)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/?arch=amd64&releaseStream=4-stable-multi", nil)
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleValidateHostedCluster(w, r, "clusters", "my-hc", "spoke-1")
+
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
 // --- routing: GET .../hostedclusters/{name}/validate ---
 
 func Test_handleRoute_WhenValidateGet_ItShouldDispatchToHandleValidateHostedCluster(t *testing.T) {

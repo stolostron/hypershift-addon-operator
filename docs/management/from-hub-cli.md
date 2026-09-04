@@ -102,14 +102,15 @@ infrastructure (or a caller can dry-run a request on its own). Everything the
 checks need is already in the path/query string:
 
 ```text
-GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&releaseImage={image}
+GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&releaseImage={image}&releaseStream={stream}
 ```
 
 | Param | Required | Notes |
 | ----- | -------- | ----- |
 | `hostingCluster` | yes | Same as every other endpoint |
 | `arch` | no | The NodePool's CPU arch (`hcp create cluster` takes a single `--arch` flag and renders one NodePool per invocation). Omit to skip the architecture check (e.g. when only checking for a name collision). |
-| `releaseImage` | no | Used only to recognize a multi-arch release by naming convention (contains `multi`) and skip the arch check. Unlike `handleCreate`'s internal check used to have, there's no pull secret here, so a registry manifest lookup isn't attempted — an inconclusive image is *not* treated as multi-arch. |
+| `releaseImage` | no | Used to recognize a multi-arch release by naming convention (contains `multi`) and skip the arch check. When set, `releaseStream` is ignored (same as core). No pull secret is available here, so a registry manifest lookup isn't attempted — an inconclusive image is *not* treated as multi-arch. |
+| `releaseStream` | no | Used only when `releaseImage` is omitted. If the stream name contains `multi` (e.g. `4-stable-multi`), the arch check is skipped — matching core's `validateMgmtClusterAndNodePoolCPUArchitectures`. |
 
 Checks, in order:
 
@@ -118,8 +119,8 @@ Checks, in order:
    `409 Conflict`.
 2. **Node architecture** — if `arch` was given, reads the hosting cluster's
    CPU architecture (via `/version`) and compares it against `arch`. Skipped
-   entirely when `releaseImage` names a multi-arch release. On mismatch,
-   fails with `400 Bad Request` naming both architectures.
+   entirely when `releaseImage` or `releaseStream` names a multi-arch release.
+   On mismatch, fails with `400 Bad Request` naming both architectures.
 
 **Response:** `200 OK` with a success `Status` body on pass; a Kubernetes
 `Status` error body (`409`/`400`/`502`/…) on failure — same error shape as
