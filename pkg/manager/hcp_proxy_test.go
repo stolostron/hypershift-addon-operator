@@ -481,8 +481,8 @@ func Test_handleDiscovery_WhenVersionPath_ItShouldReturnAPIResourceList(t *testi
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
 	assert.Equal(t, "APIResourceList", doc["kind"])
 	resources := doc["resources"].([]interface{})
-	// hostedclusters + hostedclusters/resources + hostedclusters/finalizers
-	assert.Len(t, resources, 3)
+	// hostedclusters + hostedclusters/resources + hostedclusters/finalizers + hostedclusters/validate
+	assert.Len(t, resources, 4)
 	first := resources[0].(map[string]interface{})
 	assert.Equal(t, hcpProxyResource, first["name"])
 	verbs := first["verbs"].([]interface{})
@@ -493,6 +493,9 @@ func Test_handleDiscovery_WhenVersionPath_ItShouldReturnAPIResourceList(t *testi
 	third := resources[2].(map[string]interface{})
 	assert.Equal(t, hcpProxyResource+"/"+finalizersSubresource, third["name"])
 	assert.Equal(t, []interface{}{"patch"}, third["verbs"])
+	fourth := resources[3].(map[string]interface{})
+	assert.Equal(t, hcpProxyResource+"/"+validateSubresource, fourth["name"])
+	assert.Equal(t, []interface{}{"get"}, fourth["verbs"])
 }
 
 // --- handleRoute ---
@@ -842,7 +845,7 @@ func Test_handleCreate_WhenHostedClusterMissing_ItShouldReturn400(t *testing.T) 
 }
 
 func Test_handleCreate_WhenSpokeAccepts_ItShouldReturn201(t *testing.T) {
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(headerContentType, contentTypeJSON)
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{}`)
@@ -879,7 +882,7 @@ func Test_handleCreate_WhenSpokeAccepts_ItShouldReturn201(t *testing.T) {
 
 func Test_handleCreate_WhenSSHKeyProvided_ItShouldPostBothSecrets(t *testing.T) {
 	var postedPaths []string
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		postedPaths = append(postedPaths, r.URL.Path)
 		w.Header().Set(headerContentType, contentTypeJSON)
 		w.WriteHeader(http.StatusCreated)
@@ -980,7 +983,7 @@ func Test_handleDelete_WhenSpokeAccepts_ItShouldProxy200(t *testing.T) {
 
 func Test_handleCreate_WhenNamespaceDoesNotExist_ItShouldPostNamespaceFirst(t *testing.T) {
 	var postedPaths []string
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			postedPaths = append(postedPaths, r.URL.Path)
 		}
@@ -1009,7 +1012,7 @@ func Test_handleCreate_WhenNamespaceDoesNotExist_ItShouldPostNamespaceFirst(t *t
 }
 
 func Test_handleCreate_WhenNamespaceAlreadyExists_ItShouldContinue(t *testing.T) {
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.Contains(r.URL.Path, "/api/v1/namespaces") {
 			w.WriteHeader(http.StatusConflict)
 			_, _ = io.WriteString(w, `{"reason":"AlreadyExists"}`)
@@ -1038,7 +1041,7 @@ func Test_handleCreate_WhenNamespaceAlreadyExists_ItShouldContinue(t *testing.T)
 }
 
 func Test_handleCreate_WhenCreated_ItShouldReturnResourceBundle(t *testing.T) {
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(headerContentType, contentTypeJSON)
 		w.WriteHeader(http.StatusCreated)
 		_, _ = io.WriteString(w, `{}`)
@@ -1087,7 +1090,7 @@ func Test_handleCreate_WhenCreated_ItShouldReturnResourceBundle(t *testing.T) {
 
 func Test_handleCreate_WhenCreated_ItShouldStampCreatedViaLabel(t *testing.T) {
 	var postedBodies [][]byte
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		postedBodies = append(postedBodies, body)
 		w.Header().Set(headerContentType, contentTypeJSON)
@@ -1141,7 +1144,7 @@ func Test_handleCreate_WhenExtraObjectsProvided_ItShouldPostThemBeforeHostedClus
 		path string
 		body []byte
 	}
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
 		posted = append(posted, struct {
 			path string
@@ -1199,7 +1202,7 @@ func Test_handleCreate_WhenExtraObjectsProvided_ItShouldPostThemBeforeHostedClus
 func Test_handleCreate_WhenExtraObjectFailsMidway_ItShouldRollbackCreatedObjects(t *testing.T) {
 	var methods []string
 	var paths []string
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		methods = append(methods, r.Method)
 		paths = append(paths, r.URL.Path)
 		switch {
@@ -1258,7 +1261,7 @@ func Test_handleCreate_WhenExtraObjectFailsMidway_ItShouldRollbackCreatedObjects
 
 func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
 	const sensitiveMsg = "user@evil.com is not allowed to create roles"
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/roles") {
 			w.WriteHeader(http.StatusForbidden)
 			if _, writeErr := io.WriteString(w, fmt.Sprintf(`{"message":%q}`, sensitiveMsg)); writeErr != nil {
@@ -1304,7 +1307,7 @@ func Test_handleCreate_WhenExtraObjectDenied_ItShouldReturnError(t *testing.T) {
 
 func Test_handleCreate_WhenExtraObjectAlreadyExists_ItShouldContinue(t *testing.T) {
 	var hostedClusterPosted bool
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/roles") {
 			w.WriteHeader(http.StatusConflict)
 			_, _ = io.WriteString(w, `{"reason":"AlreadyExists"}`)
@@ -2521,7 +2524,7 @@ func Test_handlePatchResources_WhenHostedClusterNil_ItShouldRefetchBundle(t *tes
 }
 
 func Test_handleCreate_WhenNodePoolCreateFails_ItShouldOmitFromResponse(t *testing.T) {
-	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	spokeSrv := httptest.NewServer(spokeCreatePreflightHandler(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set(headerContentType, contentTypeJSON)
 		if strings.Contains(r.URL.Path, "/nodepools") {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -2595,6 +2598,29 @@ func mustRawObject(t *testing.T, apiVersion, kind, name string) runtime.RawExten
 	})
 	require.NoError(t, err, "marshal extra object fixture")
 	return runtime.RawExtension{Raw: raw}
+}
+
+// spokeCreatePreflightHandler answers create preflight GETs before delegating to next.
+func spokeCreatePreflightHandler(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			if strings.HasSuffix(r.URL.Path, apiPathVersion) {
+				w.Header().Set(headerContentType, contentTypeJSON)
+				w.WriteHeader(http.StatusOK)
+				_, _ = io.WriteString(w, `{"platform":"linux/amd64"}`)
+				return
+			}
+			if strings.Contains(r.URL.Path, "/hostedclusters/") &&
+				!strings.HasSuffix(r.URL.Path, "/hostedclusters") {
+				w.Header().Set(headerContentType, contentTypeJSON)
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = io.WriteString(w, `{"kind":"Status","apiVersion":"v1","status":"Failure",`+
+					`"reason":"NotFound","code":404}`)
+				return
+			}
+		}
+		next(w, r)
+	}
 }
 
 // newTestProxyWithSpokeURL sets clusterProxyURL to the mock server so all spoke
