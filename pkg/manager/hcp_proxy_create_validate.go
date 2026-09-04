@@ -9,8 +9,9 @@ import (
 	"strings"
 
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
-	hyperutil "github.com/openshift/hypershift/support/util"
 	"github.com/openshift/hypershift/support/releaseinfo/registryclient"
+	hyperutil "github.com/openshift/hypershift/support/util"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -35,6 +36,57 @@ var isMultiArchReleaseImageFunc = func(
 
 type k8sVersionInfo struct {
 	Platform string `json:"platform"`
+}
+
+// maxValidateRequestBytes bounds the POST .../hostedclusters/{name}/validate body.
+// Same shape as CreateRequest but callers only need to send the fields the
+// checks actually use (hostedCluster + nodePools + secrets), so 1 MiB is ample.
+const maxValidateRequestBytes = 1 * 1024 * 1024
+
+// handleValidateCreate serves POST .../namespaces/{ns}/hostedclusters/{name}/validate.
+// It is the dedicated pre-create validation endpoint: callers (hcp from-hub create)
+// can call it before rendering/POSTing infrastructure, or the proxy's own
+// handleCreate can rely on it as a safety net — either way, no resources are
+// applied on the spoke by this handler. Body is a CreateRequest; only
+// hostedCluster, nodePools, and secrets are read.
+func (p *hcpProxy) handleValidateCreate(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxValidateRequestBytes)
+	var req CreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		p.writeJSONError(w, errMsgInvalidRequestBody+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.HostedCluster == nil {
+		p.writeJSONError(w, "hostedCluster is required", http.StatusBadRequest)
+		return
+	}
+	if req.HostedCluster.Name != name {
+		p.writeJSONError(w,
+			fmt.Sprintf("hostedCluster.metadata.name %q does not match path name %q", req.HostedCluster.Name, name),
+			http.StatusBadRequest)
+		return
+	}
+
+	username, groups := whoIsTheCaller(r)
+	hcpClient, err := p.spokeHTTPClient(username, groups)
+	if err != nil {
+		p.log.Error(err, "failed to build spoke client", "spoke", spokeName)
+		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if status, msg := p.validateCreateRequest(r.Context(), hcpClient, spokeName, ns, &req); status != 0 {
+		p.writeJSONError(w, msg, status)
+		return
+	}
+
+	w.Header().Set(headerContentType, contentTypeJSON)
+	w.WriteHeader(http.StatusOK)
+	_ = json.NewEncoder(w).Encode(metav1.Status{
+		TypeMeta: metav1.TypeMeta{APIVersion: "v1", Kind: "Status"},
+		Status:   metav1.StatusSuccess,
+		Message:  "validation passed",
+	})
 }
 
 // validateCreateRequest runs hosting-cluster pre-create checks before any resources

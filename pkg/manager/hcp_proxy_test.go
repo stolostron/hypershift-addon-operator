@@ -481,8 +481,8 @@ func Test_handleDiscovery_WhenVersionPath_ItShouldReturnAPIResourceList(t *testi
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
 	assert.Equal(t, "APIResourceList", doc["kind"])
 	resources := doc["resources"].([]interface{})
-	// hostedclusters + hostedclusters/resources + hostedclusters/finalizers
-	assert.Len(t, resources, 3)
+	// hostedclusters + hostedclusters/resources + hostedclusters/finalizers + hostedclusters/validate
+	assert.Len(t, resources, 4)
 	first := resources[0].(map[string]interface{})
 	assert.Equal(t, hcpProxyResource, first["name"])
 	verbs := first["verbs"].([]interface{})
@@ -493,6 +493,9 @@ func Test_handleDiscovery_WhenVersionPath_ItShouldReturnAPIResourceList(t *testi
 	third := resources[2].(map[string]interface{})
 	assert.Equal(t, hcpProxyResource+"/"+finalizersSubresource, third["name"])
 	assert.Equal(t, []interface{}{"patch"}, third["verbs"])
+	fourth := resources[3].(map[string]interface{})
+	assert.Equal(t, hcpProxyResource+"/"+validateSubresource, fourth["name"])
+	assert.Equal(t, []interface{}{"create"}, fourth["verbs"])
 }
 
 // --- handleRoute ---

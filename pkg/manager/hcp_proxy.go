@@ -90,6 +90,10 @@ const (
 
 	finalizersSubresource = "finalizers"
 
+	// validateSubresource is the dedicated pre-create validation route:
+	// POST .../hostedclusters/{name}/validate?hostingCluster={cluster}
+	validateSubresource = "validate"
+
 	// hostedClusterDestroyFinalizer matches cmd/cluster/core/destroy.go destroyFinalizer.
 	hostedClusterDestroyFinalizer = "openshift.io/destroy-cluster"
 	finalizerOpAdd                = "add"
@@ -490,6 +494,14 @@ func (p *hcpProxy) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 				"kind":       "HostedCluster",
 				"verbs":      []string{"patch"},
 			},
+			{
+				// Pre-create validation: duplicate HostedCluster name + NodePool
+				// CPU architecture, run against the hosting cluster before apply.
+				"name":       hcpProxyResource + "/" + validateSubresource,
+				"namespaced": true,
+				"kind":       "HostedCluster",
+				"verbs":      []string{"create"},
+			},
 		},
 	}
 	_ = json.NewEncoder(w).Encode(doc)
@@ -557,6 +569,14 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// POST .../namespaces/{ns}/hostedclusters/{name}/validate
+	isValidate := len(parts) == 5 && parts[0] == "namespaces" && parts[2] == hcpProxyResource &&
+		parts[4] == validateSubresource
+	if isValidate {
+		p.dispatchValidate(w, r, parts[1], parts[3], hostingCluster)
+		return
+	}
+
 	// GET|PUT|DELETE .../namespaces/{ns}/hostedclusters/{name}
 	// GET/PUT also accept the /resources suffix — both operate on the full bundle.
 	isNamed := (len(parts) == 4 || (len(parts) == 5 && parts[4] == "resources")) &&
@@ -599,6 +619,26 @@ func (p *hcpProxy) dispatchFinalizers(w http.ResponseWriter, r *http.Request, ns
 	switch r.Method {
 	case http.MethodPatch:
 		p.handleFinalizers(w, r, ns, name, hostingCluster)
+	default:
+		p.writeJSONError(w, errMsgMethodNotAllowed, http.StatusMethodNotAllowed)
+	}
+}
+
+// dispatchValidate routes POST requests on the hostedclusters/validate subresource.
+func (p *hcpProxy) dispatchValidate(w http.ResponseWriter, r *http.Request, nsRaw, nameRaw, hostingCluster string) {
+	ns, err := sanitizeProxyName(nsRaw)
+	if err != nil {
+		p.writeJSONError(w, errMsgInvalidNamespace+err.Error(), http.StatusBadRequest)
+		return
+	}
+	name, err := sanitizeProxyName(nameRaw)
+	if err != nil {
+		p.writeJSONError(w, "invalid name: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	switch r.Method {
+	case http.MethodPost:
+		p.handleValidateCreate(w, r, ns, name, hostingCluster)
 	default:
 		p.writeJSONError(w, errMsgMethodNotAllowed, http.StatusMethodNotAllowed)
 	}
