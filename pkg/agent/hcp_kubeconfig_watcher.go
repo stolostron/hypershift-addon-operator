@@ -100,7 +100,11 @@ func (c *HcpKubeconfigChangeWatcher) Reconcile(ctx context.Context, req ctrl.Req
 	if !hcFound {
 		// No HostedCluster owner reference found; guard against race conditions.
 		// This is a terminal state for this secret — do not requeue.
-		c.log.Info("No HostedCluster owner reference found on admin kubeconfig, skipping", "secret", req.Name, "namespace", req.Namespace)
+		c.log.Info(
+			"No HostedCluster owner reference found on admin kubeconfig, skipping",
+			"secret", req.Name,
+			"namespace", req.Namespace,
+		)
 		return ctrl.Result{}, nil
 	}
 
@@ -113,7 +117,11 @@ func (c *HcpKubeconfigChangeWatcher) Reconcile(ctx context.Context, req ctrl.Req
 
 	currentTime := time.Now()
 	hostedClusterObj.Annotations[hcAnnotation] = currentTime.Format(time.RFC3339)
-	c.log.Info("Annotated HostedCluster with kubeconfig update timestamp", "hostedCluster", hostedClusterObj.Name, "annotation", hcAnnotation)
+	c.log.Info(
+		"Annotated HostedCluster with kubeconfig update timestamp",
+		"hostedCluster", hostedClusterObj.Name,
+		"annotation", hcAnnotation,
+	)
 
 	if err := c.spokeClient.Patch(ctx, hostedClusterObj, client.MergeFromWithOptions(originalHC)); err != nil {
 		return ctrl.Result{}, err

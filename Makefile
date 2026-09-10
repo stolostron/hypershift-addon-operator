@@ -57,6 +57,23 @@ fmt: ## Run go fmt against code.
 vet: ## Run go vet against code.
 	go vet ./...
 
+GOLANGCI_LINT_VERSION ?= v1.62.2
+GOLANGCI_LINT ?= go run github.com/golangci/golangci-lint/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
+# Compare against this revision to lint only new/changed code (matches CI on pull requests).
+LINT_NEW_FROM_REV ?= $(shell git merge-base HEAD origin/main 2>/dev/null || echo "")
+
+.PHONY: lint
+lint: fmt vet ## Run linters (line length ≤120 on changed code).
+	@if [ -z "$(LINT_NEW_FROM_REV)" ]; then \
+		echo "LINT_NEW_FROM_REV is empty; run 'git fetch origin main' or set LINT_NEW_FROM_REV explicitly"; \
+		exit 1; \
+	fi
+	$(GOLANGCI_LINT) run --new-from-rev=$(LINT_NEW_FROM_REV) ./...
+
+.PHONY: lint-all
+lint-all: fmt vet ## Run linters on all code (includes legacy line-length issues).
+	$(GOLANGCI_LINT) run ./...
+
 # Use toolchain from go.mod so Go uses a complete install (with covdata); avoids
 # "no such tool covdata" when auto-downloaded minimal toolchain is used (golang/go#75031).
 GOTOOLCHAIN ?= $(shell (grep '^toolchain ' go.mod | cut -d' ' -f2) || echo "go$$(grep '^go ' go.mod | cut -d' ' -f2)")

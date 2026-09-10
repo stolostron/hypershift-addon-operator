@@ -537,3 +537,38 @@ func Test_ClusterRoleContainsAPIServerTLSPermissions(t *testing.T) {
 		}
 	}
 }
+
+func Test_ClusterRoleContainsPodDisruptionBudgetPermissions(t *testing.T) {
+	tmplData, err := fs.ReadFile("manifests/templates/clusterrole.yaml")
+	assert.Nil(t, err, "should read embedded clusterrole template")
+
+	tmpl, err := template.New("clusterrole").Parse(string(tmplData))
+	assert.Nil(t, err, "should parse template")
+
+	var rendered bytes.Buffer
+	err = tmpl.Execute(&rendered, map[string]string{
+		"SpokeRolebindingName":  "test-cluster-hypershift-addon",
+		"AddonInstallNamespace": "open-cluster-management-agent-addon",
+	})
+	assert.Nil(t, err, "should render template")
+
+	clusterRole := &rbacv1.ClusterRole{}
+	err = yaml.NewYAMLOrJSONDecoder(&rendered, 4096).Decode(clusterRole)
+	assert.Nil(t, err, "should decode rendered ClusterRole")
+
+	rule := findRBACRule(clusterRole.Rules, "policy", "poddisruptionbudgets")
+	assert.NotNil(t, rule,
+		"ClusterRole must include policy/poddisruptionbudgets rule "+
+			"(required to apply the hypershift operator PodDisruptionBudget, OCPBUGS-114936)")
+
+	if rule != nil {
+		verbSet := make(map[string]bool)
+		for _, v := range rule.Verbs {
+			verbSet[v] = true
+		}
+		for _, required := range []string{"get", "list", "watch", "create", "patch", "update", "delete"} {
+			assert.True(t, verbSet[required],
+				"policy/poddisruptionbudgets must include verb %q", required)
+		}
+	}
+}

@@ -10,6 +10,7 @@ on:
       - "Dockerfile.e2e"
       - "Makefile"
       - "hack/install_ocm.sh"
+      - "hack/install_cluster_proxy.sh"
       - ".github/workflows/e2e-hcp-proxy.yaml"
   pull_request:
     branches: ["main", "backplane-5.*"]
@@ -20,6 +21,7 @@ on:
       - "Dockerfile.e2e"
       - "Makefile"
       - "hack/install_ocm.sh"
+      - "hack/install_cluster_proxy.sh"
       - ".github/workflows/e2e-hcp-proxy.yaml"
   workflow_dispatch: {}
 

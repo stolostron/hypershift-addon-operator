@@ -549,9 +549,15 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadXCSVLookupErro
 	// Remove any CSVs left over from earlier suite tests so the lookup fails and the retry
 	// loop is entered.
 	csvList := &operatorsv1alpha1.ClusterServiceVersionList{}
-	suite.Require().NoError(o.Client.List(context.Background(), csvList), "must list CSVs to clear fixtures before exercising the CSV-lookup-failure path")
+	suite.Require().NoError(
+		o.Client.List(context.Background(), csvList),
+		"must list CSVs to clear fixtures before exercising the CSV-lookup-failure path",
+	)
 	for i := range csvList.Items {
-		suite.Require().NoError(o.Client.Delete(context.Background(), &csvList.Items[i]), "must delete leftover CSV so no MCE CSV exists for this test")
+		suite.Require().NoError(
+			o.Client.Delete(context.Background(), &csvList.Items[i]),
+			"must delete leftover CSV so no MCE CSV exists for this test",
+		)
 	}
 
 	// Expire the context before calling in, so the retry loop's ctx.Done() case fires
@@ -563,7 +569,10 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadXCSVLookupErro
 	err := EnableHypershiftCLIDownload(ctx, o.Client, o.log)
 	suite.Require().Error(err, "EnableHypershiftCLIDownload should fail when the MCE CSV lookup is cancelled")
 	suite.Contains(err.Error(), "get MCE CSV", "error should be wrapped with context about the failing operation")
-	suite.True(errors.Is(err, context.DeadlineExceeded), "error should wrap context.DeadlineExceeded via %%w so callers can check it with errors.Is")
+	suite.True(
+		errors.Is(err, context.DeadlineExceeded),
+		"error should wrap context.DeadlineExceeded via %%w so callers can check it with errors.Is",
+	)
 }
 
 // TestEnableHypershiftCLIDownloadXSkipsWithoutImage verifies that EnableHypershiftCLIDownload
@@ -584,9 +593,15 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadXSkipsWithoutI
 	// Leave only an upstream CSV (no hypershift_cli related image) in place, so the CSV lookup
 	// succeeds but getHypershiftCLIDownloadImage still returns "".
 	csvList := &operatorsv1alpha1.ClusterServiceVersionList{}
-	suite.Require().NoError(o.Client.List(ctx, csvList), "must list CSVs to clear fixtures before leaving only the upstream CSV in place")
+	suite.Require().NoError(
+		o.Client.List(ctx, csvList),
+		"must list CSVs to clear fixtures before leaving only the upstream CSV in place",
+	)
 	for i := range csvList.Items {
-		suite.Require().NoError(o.Client.Delete(ctx, &csvList.Items[i]), "must delete leftover CSV so only the upstream CSV created below is present")
+		suite.Require().NoError(
+			o.Client.Delete(ctx, &csvList.Items[i]),
+			"must delete leftover CSV so only the upstream CSV created below is present",
+		)
 	}
 	upstreamCSV := getTestMCECSV("v2.1.0", false)
 	suite.Require().NoError(o.Client.Create(ctx, upstreamCSV))
@@ -596,7 +611,10 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadXSkipsWithoutI
 	})
 
 	err := EnableHypershiftCLIDownload(ctx, o.Client, o.log)
-	suite.Require().NoError(err, "EnableHypershiftCLIDownload should skip enabling the hcp CLI download without failing when no image is available")
+	suite.Require().NoError(
+		err,
+		"EnableHypershiftCLIDownload should skip enabling the hcp CLI download without failing when no image is available",
+	)
 
 	// Nothing should have been deployed.
 	cliDeployment := &appsv1.Deployment{}
@@ -637,7 +655,10 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadXDeployError()
 	// deployHCPCLIDownload returns an error for EnableHypershiftCLIDownload to wrap.
 	addonDeployment := &appsv1.Deployment{}
 	addonDeploymentNN := types.NamespacedName{Namespace: "multicluster-engine", Name: "hypershift-addon-manager"}
-	suite.Require().NoError(o.Client.Get(ctx, addonDeploymentNN, addonDeployment), "hypershift-addon-manager deployment should exist from earlier tests")
+	suite.Require().NoError(
+		o.Client.Get(ctx, addonDeploymentNN, addonDeployment),
+		"hypershift-addon-manager deployment should exist from earlier tests",
+	)
 	suite.Require().NoError(o.Client.Delete(ctx, addonDeployment))
 	suite.T().Cleanup(func() {
 		err := o.Client.Create(ctx, getTestAddonDeployment())
@@ -645,8 +666,15 @@ func (suite *CLIDownloadTestSuite) TestEnableHypershiftCLIDownloadXDeployError()
 	})
 
 	err = EnableHypershiftCLIDownload(ctx, o.Client, o.log)
-	suite.Require().Error(err, "EnableHypershiftCLIDownload should fail when the addon manager deployment used for the owner reference is missing")
-	suite.Contains(err.Error(), "deploy HypershiftCLIDownload", "error should be wrapped with context about the failing operation")
+	suite.Require().Error(
+		err,
+		"EnableHypershiftCLIDownload should fail when the addon manager deployment used for the owner reference is missing",
+	)
+	suite.Contains(
+		err.Error(),
+		"deploy HypershiftCLIDownload",
+		"error should be wrapped with context about the failing operation",
+	)
 	suite.Contains(err.Error(), "hypershift-addon-manager", "error should surface the missing owning deployment")
 }
 

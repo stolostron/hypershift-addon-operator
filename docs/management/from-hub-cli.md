@@ -49,16 +49,17 @@ Base path:
 | ------ | ---- | ------- | ----------- |
 | `GET` | `/healthz`, `/readyz` | health | Liveness / readiness probes |
 | `GET` | `/apis/hcp.ocm.io` | discovery | APIGroup document |
-| `GET` | `/apis/hcp.ocm.io/v1alpha1` | discovery | APIResourceList (`hostedclusters`, `hostedclusters/resources`, `version`) |
+| `GET` | `/apis/hcp.ocm.io/v1alpha1` | discovery | APIResourceList (`hostedclusters`, `hostedclusters/resources`, `hostedclusters/finalizers`, `version`) |
 | `GET` | `/namespaces/{ns}/version?hostingCluster={cluster}` | version | Return the hosting HyperShift Operator `serverVersion` |
-| `POST` | `/namespaces/{ns}/hostedclusters?hostingCluster={cluster}` | create | Create Namespace → Secrets → HostedCluster → NodePool(s) — GET list is not supported |
+| `POST` | `/namespaces/{ns}/hostedclusters?hostingCluster={cluster}` | create | Create Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s) — GET list is not supported |
 | `GET` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | get | Return full `ResourceBundle` |
 | `GET` | `/namespaces/{ns}/hostedclusters/{name}/resources?hostingCluster={cluster}` | get | Same as GET above (explicit `/resources` alias) |
 | `PUT` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | put | Full-replace HostedCluster + NodePools from a `ResourceBundle` |
 | `PUT` | `/namespaces/{ns}/hostedclusters/{name}/resources?hostingCluster={cluster}` | put | Same as PUT above |
 | `DELETE` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | delete | Delete matching NodePools, then the HostedCluster |
+| `PATCH` | `/namespaces/{ns}/hostedclusters/{name}/finalizers?hostingCluster={cluster}` | patch | Add or remove the CLI destroy finalizer (`openshift.io/destroy-cluster`) on the hosting `HostedCluster` |
 
-`Content-Type` for create/put bodies: `application/json`.
+`Content-Type` for create/put bodies: `application/json`. Finalizers PATCH uses `application/json` with a `FinalizersRequest` body.
 
 For the `version` endpoint, `{ns}` is the CLI namespace (`clusters` by default)
 and is retained for API compatibility. The proxy always reads
@@ -82,7 +83,8 @@ Mirrors `hcp create cluster --render` output:
 {
   "hostedCluster": { "...": "HostedCluster object" },
   "nodePools": [ { "...": "NodePool object" } ],
-  "secrets": [ { "...": "Secret object" } ]
+  "secrets": [ { "...": "Secret object" } ],
+  "extraObjects": [ { "...": "Role, ConfigMap, or other non-secret object" } ]
 }
 ```
 
@@ -91,10 +93,11 @@ Mirrors `hcp create cluster --render` output:
 | `hostedCluster` | yes | Full HostedCluster; `spec.pullSecret.name` / `spec.sshKey.name` must match Secrets in the request |
 | `nodePools` | no | One or more NodePools (`--render` may emit several) |
 | `secrets` | no | Pull secret, SSH key, cloud credential / STS secrets |
+| `extraObjects` | no | Non-secret objects from `--render` (Agent `capi-provider-role` Role, `--additional-trust-bundle` ConfigMap, …). Applied in the HostedCluster namespace after Secrets and before the HostedCluster. Create failures abort the request, roll back any extra objects created in the same request, and treat 409 AlreadyExists as already present. |
 
-Create order on the spoke: `Namespace` (idempotent) → `Secrets` (create-or-update) → `HostedCluster` → `NodePool(s)`.
+Create order on the spoke: `Namespace` (idempotent) → `Secrets` (create-or-update) → `ExtraObjects` → `HostedCluster` → `NodePool(s)`.
 
-**Response:** `201 Created` with a `ResourceBundle` (Namespace + HostedCluster + NodePools). Secrets are never returned.
+**Response:** `201 Created` with a `ResourceBundle` (Namespace + HostedCluster + NodePools + ExtraObjects). Secrets are never returned.
 
 #### `ResourceBundle` (GET / PUT body and response)
 
@@ -102,11 +105,12 @@ Create order on the spoke: `Namespace` (idempotent) → `Secrets` (create-or-upd
 {
   "namespace": { "...": "Namespace object" },
   "hostedCluster": { "...": "HostedCluster object" },
-  "nodePools": [ { "...": "NodePool object" } ]
+  "nodePools": [ { "...": "NodePool object" } ],
+  "extraObjects": [ { "...": "Role, ConfigMap, or other non-secret object" } ]
 }
 ```
 
-Secrets are never included — the HostedCluster only carries LocalObjectReferences (names).
+Secrets are never included — the HostedCluster only carries LocalObjectReferences (names). Extra objects are included on successful create responses.
 
 PUT workflow (same idea as `kubectl edit`):
 
@@ -115,6 +119,24 @@ PUT workflow (same idea as `kubectl edit`):
 3. `PUT .../hostedclusters/{name}/resources` with the modified bundle
 
 The proxy PUTs the HostedCluster and each NodePool present in the bundle (by `metadata.name`). Objects omitted from the bundle are left untouched. The response is a fresh GET of the live bundle.
+
+#### `FinalizersRequest` (PATCH body)
+
+Used by `hcp from-hub delete` to add or remove the CLI destroy finalizer on the hosting cluster (same as `hcp delete cluster`):
+
+```json
+{ "operation": "add" }
+```
+
+```json
+{ "operation": "remove" }
+```
+
+| Field | Required | Notes |
+| ----- | -------- | ----- |
+| `operation` | yes | `add` appends `openshift.io/destroy-cluster` before deletion starts; `remove` drops that finalizer after AWS infra cleanup |
+
+**Response:** `200 OK` with `{ "hostedCluster": { ... } }` reflecting the live object on the hosting cluster. Patch failures return a clear error (not a silent success).
 
 
 ### Common HTTP status codes
@@ -168,10 +190,10 @@ Each platform subcommand accepts the **same flags** as the corresponding
 ### How it works internally
 
 1. Runs `hcp create cluster <platform>` in render mode (`--render --render-sensitive`) to produce YAML.
-2. Parses the YAML to extract `HostedCluster`, `NodePool(s)`, and `Secret` documents.
+2. Parses the YAML to extract `HostedCluster`, `NodePool(s)`, `Secret`, and remaining documents (`Role`, `ConfigMap`, …).
 3. Stamps client-side labels (see [Resource labels](#resource-labels)).
 4. POSTs a `CreateRequest` to the HCP proxy, which creates the resources on the hosting cluster in dependency order:
-   `Namespace → Secrets → HostedCluster → NodePool(s)`
+   `Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s)`
 
 ### Examples
 
@@ -306,7 +328,7 @@ the hosting cluster:
 This lets you find all resources belonging to a cluster:
 
 ```bash
-kubectl get secrets,hostedclusters,nodepools \
+kubectl get secrets,hostedclusters,nodepools,roles,configmaps \
   -l hcp.ocm.io/hostedcluster=my-cluster -A
 ```
 
