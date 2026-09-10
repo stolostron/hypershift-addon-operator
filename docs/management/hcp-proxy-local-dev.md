@@ -48,6 +48,18 @@ curl -sk \
   "https://localhost:9443/apis/hcp.ocm.io/v1alpha1/namespaces/clusters/hostedclusters?hostingCluster=local-cluster"
 ```
 
+**GET — hosting HyperShift Operator server version**
+
+The namespace segment is the CLI namespace (`clusters` by default). The proxy
+always reads `ConfigMap/hypershift/supported-versions` on the hosting cluster.
+
+```bash
+curl -sk \
+  -H "X-Remote-User: kube:admin" \
+  -H "X-Remote-Group: system:cluster-admins" \
+  "https://localhost:9443/apis/hcp.ocm.io/v1alpha1/namespaces/clusters/version?hostingCluster=local-cluster"
+```
+
 **GET — single HostedCluster**
 
 ```bash

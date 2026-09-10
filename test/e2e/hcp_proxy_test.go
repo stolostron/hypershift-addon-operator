@@ -136,12 +136,12 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			gomega.Expect(doc["kind"]).To(gomega.Equal("APIResourceList"))
 
 			resources := doc["resources"].([]interface{})
-			gomega.Expect(resources).To(gomega.HaveLen(2))
+			gomega.Expect(resources).To(gomega.HaveLen(3))
 			names := []string{}
 			for _, r := range resources {
 				names = append(names, r.(map[string]interface{})["name"].(string))
 			}
-			gomega.Expect(names).To(gomega.ContainElements("hostedclusters", "hostedclusters/resources"))
+			gomega.Expect(names).To(gomega.ContainElements("hostedclusters", "hostedclusters/resources", "version"))
 		})
 
 		ginkgo.It("should return empty list when collection GET is missing hostingCluster", func() {
