@@ -78,6 +78,7 @@ const (
 
 	errMsgFailedSpokeClient  = "failed to build spoke client: "
 	errMsgInvalidNamespace   = "invalid namespace: "
+	errMsgInvalidName        = "invalid name: "
 	errMsgInvalidRequestBody = "invalid request body: "
 	errMsgMethodNotAllowed   = "method not allowed"
 
@@ -91,6 +92,10 @@ const (
 	maxExtraObjectBytes   = 256 * 1024 // 256 KiB per object
 
 	finalizersSubresource = "finalizers"
+
+	// validateSubresource is the dedicated pre-create validation route:
+	// GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=...
+	validateSubresource = "validate"
 
 	// hostedClusterDestroyFinalizer matches cmd/cluster/core/destroy.go destroyFinalizer.
 	hostedClusterDestroyFinalizer = "openshift.io/destroy-cluster"
@@ -356,6 +361,8 @@ type certCache struct {
 	fallbackCert *tls.Certificate
 }
 
+// getCertificate returns the service-ca serving cert when projected, otherwise
+// a shared self-signed fallback generated once for non-OpenShift clusters.
 func (c *certCache) getCertificate() (*tls.Certificate, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -503,6 +510,15 @@ func (p *hcpProxy) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 				"kind":       "VersionInfo",
 				"verbs":      []string{"get"},
 			},
+			{
+				// Pre-create validation: duplicate HostedCluster name + NodePool
+				// CPU architecture, run against the hosting cluster before apply.
+				// GET only — read-only, no resources are applied.
+				"name":       hcpProxyResource + "/" + validateSubresource,
+				"namespaced": true,
+				"kind":       "HostedCluster",
+				"verbs":      []string{"get"},
+			},
 		},
 	}
 	_ = json.NewEncoder(w).Encode(doc)
@@ -577,6 +593,14 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 		parts[4] == finalizersSubresource
 	if isFinalizers {
 		p.dispatchFinalizers(w, r, parts[1], parts[3], hostingCluster)
+		return
+	}
+
+	// GET .../namespaces/{ns}/hostedclusters/{name}/validate
+	isValidate := len(parts) == 5 && parts[0] == "namespaces" && parts[2] == hcpProxyResource &&
+		parts[4] == validateSubresource
+	if isValidate {
+		p.dispatchValidate(w, r, parts[1], parts[3], hostingCluster)
 		return
 	}
 
@@ -667,12 +691,32 @@ func (p *hcpProxy) dispatchFinalizers(w http.ResponseWriter, r *http.Request, ns
 	}
 	name, err := sanitizeProxyName(nameRaw)
 	if err != nil {
-		p.writeJSONError(w, "invalid name: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, errMsgInvalidName+err.Error(), http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
 	case http.MethodPatch:
 		p.handleFinalizers(w, r, ns, name, hostingCluster)
+	default:
+		p.writeJSONError(w, errMsgMethodNotAllowed, http.StatusMethodNotAllowed)
+	}
+}
+
+// dispatchValidate routes GET requests on the hostedclusters/validate subresource.
+func (p *hcpProxy) dispatchValidate(w http.ResponseWriter, r *http.Request, nsRaw, nameRaw, hostingCluster string) {
+	ns, err := sanitizeProxyName(nsRaw)
+	if err != nil {
+		p.writeJSONError(w, errMsgInvalidNamespace+err.Error(), http.StatusBadRequest)
+		return
+	}
+	name, err := sanitizeProxyName(nameRaw)
+	if err != nil {
+		p.writeJSONError(w, errMsgInvalidName+err.Error(), http.StatusBadRequest)
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		p.handleValidateHostedCluster(w, r, ns, name, hostingCluster)
 	default:
 		p.writeJSONError(w, errMsgMethodNotAllowed, http.StatusMethodNotAllowed)
 	}
@@ -842,7 +886,7 @@ func (p *hcpProxy) dispatchNamed(w http.ResponseWriter, r *http.Request, nsRaw, 
 	}
 	name, err := sanitizeProxyName(nameRaw)
 	if err != nil {
-		p.writeJSONError(w, "invalid name: "+err.Error(), http.StatusBadRequest)
+		p.writeJSONError(w, errMsgInvalidName+err.Error(), http.StatusBadRequest)
 		return
 	}
 	switch r.Method {
@@ -1483,6 +1527,7 @@ func (p *hcpProxy) deleteMatchingNodePools(
 	}
 }
 
+// deleteNodePool best-effort deletes a single NodePool on the spoke during HostedCluster cleanup.
 func (p *hcpProxy) deleteNodePool(
 	ctx context.Context,
 	hcpClient *http.Client,

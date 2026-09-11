@@ -30,12 +30,12 @@ hcp CLI → hub kube-apiserver → HCP proxy → cluster-proxy → hosting clust
 ## HCP proxy API (`hcp.ocm.io/v1alpha1`)
 
 The hub manager serves this extension API on port `9443` (Service port `443`,
-APIService `v1alpha1.hcp.ocm.io`, provisioned by backplane-operator). Every
-resource request requires the query parameter:
+APIService `v1alpha1.hcp.ocm.io`, provisioned by backplane-operator). Most
+resource requests require the query parameter:
 
 | Query parameter   | Required | Description                                      |
 | ----------------- | -------- | ------------------------------------------------ |
-| `hostingCluster`  | yes      | Name of the target hosting `ManagedCluster`      |
+| `hostingCluster`  | yes*     | Name of the target hosting `ManagedCluster`. *Not required for collection-level `GET` (list) or `DELETE` (deletecollection) without a spoke target — those return an empty `HostedClusterList` so namespace cleanup and `oc get hostedclusters -A` are not blocked (see list rows below). Required for create, get, put, delete, patch, validate, and any spoke-backed operation. |
 
 Base path:
 
@@ -49,15 +49,18 @@ Base path:
 | ------ | ---- | ------- | ----------- |
 | `GET` | `/healthz`, `/readyz` | health | Liveness / readiness probes |
 | `GET` | `/apis/hcp.ocm.io` | discovery | APIGroup document |
-| `GET` | `/apis/hcp.ocm.io/v1alpha1` | discovery | APIResourceList (`hostedclusters`, `hostedclusters/resources`, `hostedclusters/finalizers`, `version`) |
+| `GET` | `/apis/hcp.ocm.io/v1alpha1` | discovery | APIResourceList (`hostedclusters`, `hostedclusters/resources`, `hostedclusters/finalizers`, `version`, `hostedclusters/validate`) |
 | `GET` | `/namespaces/{ns}/version?hostingCluster={cluster}` | version | Return the hosting HyperShift Operator `serverVersion` |
-| `POST` | `/namespaces/{ns}/hostedclusters?hostingCluster={cluster}` | create | Create Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s) — GET list is not supported |
+| `POST` | `/namespaces/{ns}/hostedclusters?hostingCluster={cluster}` | create | Create Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s) |
+| `GET` | `/namespaces/{ns}/hostedclusters` | list | Without `hostingCluster`: `200` with empty `HostedClusterList`. With `hostingCluster`: `405` — use named GET on `/{name}` instead |
+| `GET` | `/hostedclusters` | list | Cluster-wide list without `hostingCluster`: `200` with empty `HostedClusterList` (`oc get hostedclusters -A` compatibility) |
 | `GET` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | get | Return full `ResourceBundle` |
 | `GET` | `/namespaces/{ns}/hostedclusters/{name}/resources?hostingCluster={cluster}` | get | Same as GET above (explicit `/resources` alias) |
 | `PUT` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | put | Full-replace HostedCluster + NodePools from a `ResourceBundle` |
 | `PUT` | `/namespaces/{ns}/hostedclusters/{name}/resources?hostingCluster={cluster}` | put | Same as PUT above |
 | `DELETE` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | delete | Delete matching NodePools, then the HostedCluster |
 | `PATCH` | `/namespaces/{ns}/hostedclusters/{name}/finalizers?hostingCluster={cluster}` | patch | Add or remove the CLI destroy finalizer (`openshift.io/destroy-cluster`) on the hosting `HostedCluster` |
+| `GET` | `/namespaces/{ns}/hostedclusters/{name}/validate?hostingCluster={cluster}&arch=...&releaseImage=...` | validate | Dedicated pre-create validation (duplicate name + NodePool arch) — read-only, no body, no resources are applied |
 
 `Content-Type` for create/put bodies: `application/json`. Finalizers PATCH uses `application/json` with a `FinalizersRequest` body.
 
@@ -95,9 +98,125 @@ Mirrors `hcp create cluster --render` output:
 | `secrets` | no | Pull secret, SSH key, cloud credential / STS secrets |
 | `extraObjects` | no | Non-secret objects from `--render` (Agent `capi-provider-role` Role, `--additional-trust-bundle` ConfigMap, …). Applied in the HostedCluster namespace after Secrets and before the HostedCluster. Create failures abort the request, roll back any extra objects created in the same request, and treat 409 AlreadyExists as already present. |
 
+`handleCreate` itself does **not** pre-check name collisions or NodePool
+architecture — callers that want that should call the dedicated `/validate`
+endpoint below first (`hcp from-hub create` does). Skipping `/validate` and
+posting a duplicate/mismatched request directly just gets whatever error the
+spoke itself returns for the underlying `POST`.
+
 Create order on the spoke: `Namespace` (idempotent) → `Secrets` (create-or-update) → `ExtraObjects` → `HostedCluster` → `NodePool(s)`.
 
 **Response:** `201 Created` with a `ResourceBundle` (Namespace + HostedCluster + NodePools + ExtraObjects). Secrets are never returned.
+
+#### `GET .../hostedclusters/{name}/validate` (dedicated pre-create validation)
+
+A standalone, read-only endpoint that runs the hosting-cluster pre-create
+checks **without applying any resources and without a body**, so
+`hcp from-hub create` can validate before it even starts rendering/POSTing
+infrastructure (or a caller can dry-run a request on its own). Everything the
+checks need is already in the path/query string:
+
+```text
+GET .../hostedclusters/{name}/validate?hostingCluster={cluster}&arch=amd64&releaseImage={image}&releaseStream={stream}
+```
+
+| Param | Required | Notes |
+| ----- | -------- | ----- |
+| `hostingCluster` | yes | Same as every other endpoint |
+| `arch` | no | The NodePool's CPU arch (`hcp create cluster` takes a single `--arch` flag and renders one NodePool per invocation). Omit to skip the architecture check (e.g. when only checking for a name collision). |
+| `releaseImage` | no | Used to recognize a multi-arch release by naming convention (image tag suffix `-multi`, e.g. `4.16.0-multi`) and skip the arch check. No pull secret is available here, so a registry manifest lookup isn't attempted — an inconclusive image is *not* treated as multi-arch. |
+| `releaseStream` | no | If the stream name ends with `-multi` (e.g. `4-stable-multi`), the arch check is skipped. Either parameter can bypass the arch check. |
+
+Multi-arch detection on this endpoint is **naming-only** (`releaseImage` tag or
+`releaseStream` ends with `-multi`). There is no pull secret on GET `/validate`,
+so registry manifest lookup (`IsMultiArchManifestList`) is **not** attempted
+here. `hcp from-hub create` performs that check client-side using local
+`--pull-secret` before calling `/validate` (see ACM-44232).
+
+Checks, in order:
+
+1. **Duplicate name** — GETs the HostedCluster by namespace/name (from the
+   path) on the hosting cluster; if it already exists, fails with
+   `409 Conflict`.
+2. **Node architecture** — if `arch` was given, reads the hosting cluster's
+   CPU architecture (via `/version`) and compares it against `arch`. Skipped
+   entirely when `releaseImage` or `releaseStream` names a multi-arch release.
+   On mismatch, fails with `400 Bad Request` naming both architectures.
+
+**Response:** `200 OK` with a success `Status` body on pass; a Kubernetes
+`Status` error body (`409`/`400`/`502`/…) on failure — same error shape as
+every other HCP proxy endpoint.
+
+**Request:** no body. `{ns}` and `{name}` come from the path; all other inputs
+are query parameters.
+
+```bash
+# Duplicate-name check only (skip arch validation)
+kubectl get --raw \
+  '/apis/hcp.ocm.io/v1alpha1/namespaces/clusters/hostedclusters/my-cluster/validate?hostingCluster=local-cluster'
+
+# Duplicate-name + NodePool arch check (typical hcp from-hub create preflight)
+kubectl get --raw \
+  '/apis/hcp.ocm.io/v1alpha1/namespaces/clusters/hostedclusters/my-cluster/validate?hostingCluster=local-cluster&arch=amd64&releaseImage=quay.io/openshift-release-dev/ocp-release:4.17.0-x86_64'
+
+# Arch check skipped when release stream names multi-arch
+kubectl get --raw \
+  '/apis/hcp.ocm.io/v1alpha1/namespaces/clusters/hostedclusters/my-cluster/validate?hostingCluster=local-cluster&arch=arm64&releaseStream=4-stable-multi'
+```
+
+**Response examples:**
+
+`200 OK` — validation passed (no resources were applied):
+
+```json
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "status": "Success",
+  "message": "validation passed"
+}
+```
+
+`409 Conflict` — HostedCluster already exists on the hosting cluster:
+
+```json
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "status": "Failure",
+  "message": "hostedcluster clusters/my-cluster already exists",
+  "reason": "Conflict",
+  "code": 409
+}
+```
+
+`400 Bad Request` — NodePool `arch` does not match the hosting cluster CPU
+architecture (and no multi-arch release was named):
+
+```json
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "status": "Failure",
+  "message": "multi-arch hosted cluster is not enabled and management cluster and nodepool cpu architectures do not match; please use a multi-arch release image or a multi-arch release stream - management cluster cpu arch: amd64, nodepool cpu arch: arm64",
+  "reason": "BadRequest",
+  "code": 400
+}
+```
+
+`502 Bad Gateway` — hosting cluster `/version` could not be read (arch check
+only; returned when `arch` was supplied):
+
+```json
+{
+  "kind": "Status",
+  "apiVersion": "v1",
+  "status": "Failure",
+  "message": "failed to check hosting cluster CPU arch: GET /version: ...",
+  "reason": "InternalError",
+  "code": 502
+}
+```
 
 #### `ResourceBundle` (GET / PUT body and response)
 
@@ -143,14 +262,16 @@ Used by `hcp from-hub delete` to add or remove the CLI destroy finalizer on the 
 
 | Status | When |
 | ------ | ---- |
-| `400 Bad Request` | Missing `hostingCluster`, invalid JSON, or missing `hostedCluster` on create |
+| `400 Bad Request` | Missing `hostingCluster`, invalid JSON, missing `hostedCluster` on create, or (via `/validate`) NodePool architecture doesn't match the hosting cluster |
 | `403 Forbidden` | Caller lacks `managedcluster:admin` on the hosting cluster |
 | `404 Not Found` | Unknown path, HostedCluster not found on get, or `hypershift/supported-versions` ConfigMap not found |
 | `405 Method Not Allowed` | Unsupported verb on a path |
+| `409 Conflict` | HostedCluster name already exists on the hosting cluster (checked by `/validate`) |
 | `500 Internal Server Error` | Proxy could not build its spoke client or decode a successful spoke response |
 | `503 Service Unavailable` | Hosting `ManagedCluster` is missing or not Available |
 | `502 Bad Gateway` | Spoke / cluster-proxy request failed or returned an unexpected HTTP status |
 | `201 Created` | Successful create (body is `ResourceBundle`) |
+| `200 OK` | Successful `/validate` (body is a success `Status`) |
 
 ---
 
@@ -192,7 +313,7 @@ Each platform subcommand accepts the **same flags** as the corresponding
 1. Runs `hcp create cluster <platform>` in render mode (`--render --render-sensitive`) to produce YAML.
 2. Parses the YAML to extract `HostedCluster`, `NodePool(s)`, `Secret`, and remaining documents (`Role`, `ConfigMap`, …).
 3. Stamps client-side labels (see [Resource labels](#resource-labels)).
-4. POSTs a `CreateRequest` to the HCP proxy, which creates the resources on the hosting cluster in dependency order:
+4. Calls `GET .../hostedclusters/{name}/validate` (duplicate HostedCluster name, NodePool CPU architecture) before rendering/POSTing infrastructure, then POSTs a `CreateRequest` to the HCP proxy's create endpoint, which creates the resources in dependency order:
    `Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s)`
 
 ### Examples
