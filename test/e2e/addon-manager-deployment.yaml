@@ -23,6 +23,21 @@ subjects:
     name: hypershift-addon-manager-sa
     namespace: multicluster-engine
 ---
+# Minimal hosting-cluster version fixture for the /version E2E test.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hypershift
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supported-versions
+  namespace: hypershift
+data:
+  server-version: e2e-server-version
+  supported-versions: '{"versions":["4.16"]}'
+---
 # HCP proxy ClusterRole (product: backplane-operator)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole

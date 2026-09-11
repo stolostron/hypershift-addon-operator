@@ -30,6 +30,7 @@ const (
 	hcpProxyAPIGroup       = "hcp.ocm.io"
 	hcpProxyAPIVersion     = "v1alpha1"
 	hcpProxyListenPort     = "9443"
+	e2eServerVersion       = "e2e-server-version"
 
 	apiServiceGVR = "apiregistration.k8s.io"
 )
@@ -150,6 +151,27 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 				"hostedclusters/finalizers",
 				"version",
 			), "discovery must advertise all HCP proxy subresources")
+		})
+
+		ginkgo.It("should return the hosting cluster HyperShift Operator server version", func() {
+			client := insecureHTTPClient()
+			url := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+
+				"/namespaces/clusters/version?hostingCluster="+defaultManagedCluster)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build version request")
+			req.Header.Set("X-Remote-User", "e2e-test-user")
+			req.Header.Set("X-Remote-Group", "system:masters")
+
+			resp, err := client.Do(req)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy version endpoint")
+			defer resp.Body.Close()
+			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
+
+			var version struct {
+				ServerVersion string `json:"serverVersion"`
+			}
+			gomega.Expect(json.NewDecoder(resp.Body).Decode(&version)).To(gomega.Succeed())
+			gomega.Expect(version.ServerVersion).To(gomega.Equal(e2eServerVersion))
 		})
 
 		ginkgo.It("should return empty list when collection GET is missing hostingCluster", func() {
