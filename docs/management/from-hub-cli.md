@@ -49,7 +49,8 @@ Base path:
 | ------ | ---- | ------- | ----------- |
 | `GET` | `/healthz`, `/readyz` | health | Liveness / readiness probes |
 | `GET` | `/apis/hcp.ocm.io` | discovery | APIGroup document |
-| `GET` | `/apis/hcp.ocm.io/v1alpha1` | discovery | APIResourceList (`hostedclusters`, `hostedclusters/resources`, `hostedclusters/finalizers`) |
+| `GET` | `/apis/hcp.ocm.io/v1alpha1` | discovery | APIResourceList (`hostedclusters`, `hostedclusters/resources`, `hostedclusters/finalizers`, `version`) |
+| `GET` | `/namespaces/{ns}/version?hostingCluster={cluster}` | version | Return the hosting HyperShift Operator `serverVersion` |
 | `POST` | `/namespaces/{ns}/hostedclusters?hostingCluster={cluster}` | create | Create Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s) — GET list is not supported |
 | `GET` | `/namespaces/{ns}/hostedclusters/{name}?hostingCluster={cluster}` | get | Return full `ResourceBundle` |
 | `GET` | `/namespaces/{ns}/hostedclusters/{name}/resources?hostingCluster={cluster}` | get | Same as GET above (explicit `/resources` alias) |
@@ -60,7 +61,19 @@ Base path:
 
 `Content-Type` for create/put bodies: `application/json`. Finalizers PATCH uses `application/json` with a `FinalizersRequest` body.
 
+For the `version` endpoint, `{ns}` is the CLI namespace (`clusters` by default)
+and is retained for API compatibility. The proxy always reads
+`ConfigMap/hypershift/supported-versions` from the hosting cluster.
+
 ### Request / response types
+
+#### `VersionInfo` (GET version response)
+
+```json
+{
+  "serverVersion": "<hypershift-operator-server-version>"
+}
+```
 
 #### `CreateRequest` (POST body)
 
@@ -132,10 +145,11 @@ Used by `hcp from-hub delete` to add or remove the CLI destroy finalizer on the 
 | ------ | ---- |
 | `400 Bad Request` | Missing `hostingCluster`, invalid JSON, or missing `hostedCluster` on create |
 | `403 Forbidden` | Caller lacks `managedcluster:admin` on the hosting cluster |
-| `404 Not Found` | Unknown path, or HostedCluster not found on get |
+| `404 Not Found` | Unknown path, HostedCluster not found on get, or `hypershift/supported-versions` ConfigMap not found |
 | `405 Method Not Allowed` | Unsupported verb on a path |
+| `500 Internal Server Error` | Proxy could not build its spoke client or decode a successful spoke response |
 | `503 Service Unavailable` | Hosting `ManagedCluster` is missing or not Available |
-| `502 Bad Gateway` | Spoke / cluster-proxy request failed |
+| `502 Bad Gateway` | Spoke / cluster-proxy request failed or returned an unexpected HTTP status |
 | `201 Created` | Successful create (body is `ResourceBundle`) |
 
 ---

@@ -481,8 +481,8 @@ func Test_handleDiscovery_WhenVersionPath_ItShouldReturnAPIResourceList(t *testi
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &doc))
 	assert.Equal(t, "APIResourceList", doc["kind"])
 	resources := doc["resources"].([]interface{})
-	// hostedclusters + hostedclusters/resources + hostedclusters/finalizers
-	assert.Len(t, resources, 3)
+	// hostedclusters + hostedclusters/resources + hostedclusters/finalizers + version
+	assert.Len(t, resources, 4)
 	first := resources[0].(map[string]interface{})
 	assert.Equal(t, hcpProxyResource, first["name"])
 	verbs := first["verbs"].([]interface{})
@@ -493,9 +493,198 @@ func Test_handleDiscovery_WhenVersionPath_ItShouldReturnAPIResourceList(t *testi
 	third := resources[2].(map[string]interface{})
 	assert.Equal(t, hcpProxyResource+"/"+finalizersSubresource, third["name"])
 	assert.Equal(t, []interface{}{"patch"}, third["verbs"])
+	fourth := resources[3].(map[string]interface{})
+	assert.Equal(t, "version", fourth["name"])
+	assert.True(t, fourth["namespaced"].(bool))
+	assert.Equal(t, "VersionInfo", fourth["kind"])
+	assert.Equal(t, []interface{}{"get"}, fourth["verbs"])
+}
+
+// --- handleVersion ---
+
+func Test_handleVersion_WhenServerVersionMissing_ItShouldReturn502(t *testing.T) {
+	spoke := newTestSpokeServer(
+		t,
+		http.StatusOK,
+		`{"data":{}}`,
+	)
+	p := newTestProxyWithSpokeURL(t, spoke.URL)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	r.Header.Set("X-Remote-User", "alice")
+
+	p.handleVersion(w, r, "spoke-1")
+	assertStatusError(
+		t,
+		w,
+		http.StatusBadGateway,
+		"missing server-version",
+	)
+
+}
+
+func Test_handleVersion_WhenSpokeReturnsVersion_ItShouldReturnServerVersion(t *testing.T) {
+	spoke := newTestSpokeServer(
+		t,
+		http.StatusOK,
+		`{"data":{"server-version":"server-sha"}}`,
+	)
+	p := newTestProxyWithSpokeURL(t, spoke.URL)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	r.Header.Set("X-Remote-User", "alice")
+
+	p.handleVersion(w, r, "spoke-1")
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, contentTypeJSON, w.Header().Get(headerContentType))
+	assert.JSONEq(
+		t,
+		`{"serverVersion":"server-sha"}`,
+		w.Body.String(),
+	)
+}
+
+func Test_handleVersion_WhenSpokeReturnsMalformedConfigMap_ItShouldReturn500(t *testing.T) {
+	spoke := newTestSpokeServer(t, http.StatusOK, `{`)
+	p := newTestProxyWithSpokeURL(t, spoke.URL)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	p.handleVersion(w, r, "spoke-1")
+
+	assertStatusError(
+		t,
+		w,
+		http.StatusInternalServerError,
+		"Error trying to get configmap",
+	)
+}
+
+func Test_handleVersion_WhenSupportedVersionsConfigMapIsNotFound_ItShouldReturn404(t *testing.T) {
+	spoke := newTestSpokeServer(
+		t,
+		http.StatusNotFound,
+		`{"message":"ConfigMap not found"}`,
+	)
+	p := newTestProxyWithSpokeURL(t, spoke.URL)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	p.handleVersion(w, r, "spoke-1")
+
+	assertStatusError(
+		t,
+		w,
+		http.StatusNotFound,
+		"supported-versions ConfigMap not found",
+	)
+}
+
+func Test_handleVersion_WhenSpokeReturnsInternalServerError_ItShouldReturn502(t *testing.T) {
+	spoke := newTestSpokeServer(
+		t,
+		http.StatusInternalServerError,
+		`{"message":"internal server error"}`,
+	)
+	p := newTestProxyWithSpokeURL(t, spoke.URL)
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	p.handleVersion(w, r, "spoke-1")
+
+	assertStatusError(
+		t,
+		w,
+		http.StatusBadGateway,
+		"Request returned with error: 500",
+	)
+}
+
+func Test_handleVersion_WhenSpokeIsUnreachable_ItShouldReturn502(t *testing.T) {
+	spoke := newTestSpokeServer(t, http.StatusOK, `{}`)
+	spokeURL := spoke.URL
+	spoke.Close()
+
+	p := newTestProxyWithSpokeURL(t, spokeURL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	p.handleVersion(w, r, "spoke-1")
+
+	assertStatusError(
+		t,
+		w,
+		http.StatusBadGateway,
+		"Failed http request on spoke",
+	)
+}
+
+func Test_versionAPIPath_WhenCalled_ItShouldReturnSupportedVersionsConfigMapPath(t *testing.T) {
+	assert.Equal(
+		t,
+		"/api/v1/namespaces/hypershift/configmaps/supported-versions",
+		versionAPIPath(),
+	)
 }
 
 // --- handleRoute ---
+
+func Test_handleRoute_WhenVersionRequestIsValid_ItShouldReturnServerVersion(t *testing.T) {
+	spoke := newTestSpokeServer(
+		t,
+		http.StatusOK,
+		`{"data":{"server-version":"server-sha"}}`,
+	)
+	p := newTestProxyWithSpokeURL(t, spoke.URL, availableManagedCluster("spoke-1"))
+
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, versionRoutePath("spoke-1"), nil)
+	r.Header.Set("X-Remote-User", "alice")
+
+	p.handleRoute(w, r)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.JSONEq(t, `{"serverVersion":"server-sha"}`, w.Body.String())
+}
+
+func Test_handleRoute_WhenVersionUsesNonGETMethod_ItShouldReturn405(t *testing.T) {
+	p := newTestProxyWithSpokeURL(
+		t,
+		"http://unused",
+		availableManagedCluster("spoke-1"),
+	)
+
+	for _, method := range []string{http.MethodPost, http.MethodPut, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, versionRoutePath("spoke-1"), nil)
+			r.Method = method
+			r.Header.Set("X-Remote-User", "alice")
+
+			p.handleRoute(w, r)
+
+			assertStatusError(t, w, http.StatusMethodNotAllowed, "method not allowed")
+		})
+	}
+}
+
+func Test_handleRoute_WhenVersionHasNoHostingCluster_ItShouldReturn400(t *testing.T) {
+	p := newTestProxy(t)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, versionRoutePath(""), nil)
+
+	p.handleRoute(w, r)
+
+	assertStatusError(t, w, http.StatusBadRequest, "hostingCluster query parameter is required")
+}
 
 func Test_handleRoute_WhenWatchRequested_ItShouldReturn405(t *testing.T) {
 	p := newTestProxy(t)
@@ -2571,6 +2760,22 @@ func Test_generateSelfSignedCert_WhenParsed_ItShouldBeValidForTLSServerAuth(t *t
 
 // ----------- helpers -----------
 
+// newTestSpokeServer returns a mock spoke that responds to every request with
+// the supplied HTTP status and body. The server is closed automatically when
+// the test finishes.
+func newTestSpokeServer(t *testing.T, status int, body string) *httptest.Server {
+	t.Helper()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set(headerContentType, contentTypeJSON)
+		w.WriteHeader(status)
+		_, _ = io.WriteString(w, body)
+	}))
+	t.Cleanup(server.Close)
+
+	return server
+}
+
 // availableManagedCluster returns a ManagedCluster with Available=True.
 func availableManagedCluster(name string) *clusterv1.ManagedCluster {
 	return &clusterv1.ManagedCluster{
@@ -2621,4 +2826,13 @@ func newTestProxyWithSpokeURL(t *testing.T, spokeServerURL string, objs ...runti
 	require.NoError(t, err)
 	p.clusterProxyURL = spokeServerURL
 	return p
+}
+
+func versionRoutePath(hostingCluster string) string {
+	endpoint := apiPathPrefix + hcpProxyAPIGroup + "/" + hcpProxyAPIVersion +
+		"/namespaces/clusters/version"
+	if hostingCluster == "" {
+		return endpoint
+	}
+	return endpoint + "?hostingCluster=" + hostingCluster
 }

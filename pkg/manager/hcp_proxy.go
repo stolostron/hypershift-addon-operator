@@ -70,6 +70,8 @@ const (
 	apiPathCoreNamespaces = "/api/v1/namespaces"
 	apiPathHSNamespaces   = "/apis/hypershift.openshift.io/v1beta1/namespaces"
 
+	apiPathSupportedVersions = "/hypershift/configmaps/supported-versions"
+
 	headerContentType     = "Content-Type"
 	contentTypeJSON       = "application/json"
 	mergePatchContentType = "application/merge-patch+json"
@@ -104,6 +106,11 @@ var (
 	// Port 9443 avoids conflict with library-go controllercmd (:8443) in the same process.
 	hcpProxyListenAddr = ":9443"
 )
+
+// Struct for returning hcp proxy --version-check endpoint
+type VersionInfo struct {
+	ServerVersion string `json:"serverVersion"`
+}
 
 // CreateRequest mirrors the output of `hcp create cluster --render`.
 type CreateRequest struct {
@@ -490,6 +497,12 @@ func (p *hcpProxy) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 				"kind":       "HostedCluster",
 				"verbs":      []string{"patch"},
 			},
+			{
+				"name":       "version",
+				"namespaced": true,
+				"kind":       "VersionInfo",
+				"verbs":      []string{"get"},
+			},
 		},
 	}
 	_ = json.NewEncoder(w).Encode(doc)
@@ -549,6 +562,16 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 3 && parts[0] == "namespaces" && parts[2] == "version" {
+		if r.Method != http.MethodGet {
+			p.writeJSONError(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		//namespaces/clusters/version?hostingCluster=local-cluster"
+		p.handleVersion(w, r, hostingCluster)
+		return
+	}
+
 	// PATCH .../namespaces/{ns}/hostedclusters/{name}/finalizers
 	isFinalizers := len(parts) == 5 && parts[0] == "namespaces" && parts[2] == hcpProxyResource &&
 		parts[4] == finalizersSubresource
@@ -567,6 +590,57 @@ func (p *hcpProxy) handleRoute(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.writeJSONError(w, "not found", http.StatusNotFound)
+}
+
+func versionAPIPath() string {
+	return apiPathCoreNamespaces + apiPathSupportedVersions
+}
+
+func (p *hcpProxy) handleVersion(w http.ResponseWriter, r *http.Request, hostingCluster string) {
+	username, groups := whoIsTheCaller(r)
+	hcpClient, err := p.spokeHTTPClient(username, groups)
+	if err != nil {
+		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	//api/v1/namespaces/hypershift/configmaps/supported-versions
+	versionPath := versionAPIPath()
+
+	ctx := r.Context()
+	cmReq, err := p.newSpokeRequest(ctx, http.MethodGet, hostingCluster, versionPath, nil)
+	if err != nil {
+		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	cmResp, err := doSpokeHTTP(hcpClient, cmReq)
+	if err != nil {
+		p.writeJSONError(w, "Failed http request on spoke with error: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+
+	defer cmResp.Body.Close()
+	if cmResp.StatusCode == http.StatusNotFound {
+		p.writeJSONError(w, "supported-versions ConfigMap not found", http.StatusNotFound)
+		return
+	}
+	if cmResp.StatusCode != http.StatusOK {
+		p.writeJSONError(w, fmt.Sprintf("Request returned with error: %d", cmResp.StatusCode), http.StatusBadGateway)
+		return
+	}
+	var configmap corev1.ConfigMap
+	if err := json.NewDecoder(cmResp.Body).Decode(&configmap); err != nil {
+		p.writeJSONError(w, "Error trying to get configmap: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	serverVersion := configmap.Data["server-version"]
+	if serverVersion == "" {
+		p.writeJSONError(w, "supported-versions ConfigMap is missing server-version", http.StatusBadGateway)
+		return
+	}
+	w.Header().Set(headerContentType, contentTypeJSON)
+	_ = json.NewEncoder(w).Encode((VersionInfo{ServerVersion: serverVersion}))
 }
 
 // dispatchCollection routes collection-scoped /namespaces/{ns}/hostedclusters requests.
