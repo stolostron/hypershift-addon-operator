@@ -5,6 +5,7 @@ on:
     branches: ["main", "backplane-5.*"]
     paths:
       - "pkg/manager/hcp_proxy.go"
+      - "pkg/manager/hcp_proxy_create_validate.go"
       - "pkg/manager/manager.go"
       - "test/e2e/**"
       - "Dockerfile.e2e"
@@ -16,6 +17,7 @@ on:
     branches: ["main", "backplane-5.*"]
     paths:
       - "pkg/manager/hcp_proxy.go"
+      - "pkg/manager/hcp_proxy_create_validate.go"
       - "pkg/manager/manager.go"
       - "test/e2e/**"
       - "Dockerfile.e2e"
