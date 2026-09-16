@@ -238,6 +238,7 @@ e2e-hcp-proxy-setup: ensure-kind ## Spin up kind + OCM, build & load image, depl
 	$(MAKE) deploy-ocm; \
 	$(MAKE) deploy-cluster-proxy; \
 	$(MAKE) deploy-hypershift-crds; \
+	$(KUBECTL) apply -f test/e2e/supported-versions-configmap.yaml; \
 	echo "Waiting for image build (pid $$build_pid)..."; \
 	wait $$build_pid; \
 	$(MAKE) kind-load-e2e E2E_IMG="$(E2E_IMG)"; \

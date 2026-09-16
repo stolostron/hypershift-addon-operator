@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hypershift
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: supported-versions
+  namespace: hypershift
+  labels:
+    hypershift.openshift.io/supported-versions: "true"
+data:
+  server-version: e2e-server-sha
+  supported-versions: '{"versions":["4.17","4.16"]}'
