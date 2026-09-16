@@ -50,7 +50,7 @@ Base path:
 | `GET` | `/healthz`, `/readyz` | health | Liveness / readiness probes |
 | `GET` | `/apis/hcp.ocm.io` | discovery | APIGroup document |
 | `GET` | `/apis/hcp.ocm.io/v1alpha1` | discovery | APIResourceList (`hostedclusters`, `hostedclusters/resources`, `hostedclusters/finalizers`, `version`, `hostedclusters/validate`) |
-| `GET` | `/namespaces/{ns}/version?hostingCluster={cluster}` | version | Return the hosting HyperShift Operator `serverVersion` |
+| `GET` | `/namespaces/{ns}/version?hostingCluster={cluster}` | version | Return the hosting HyperShift Operator `serverVersion` and `supportedVersions` |
 | `POST` | `/namespaces/{ns}/hostedclusters?hostingCluster={cluster}` | create | Create Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s) |
 | `GET` | `/namespaces/{ns}/hostedclusters` | list | Without `hostingCluster`: `200` with empty `HostedClusterList`. With `hostingCluster`: `405` — use named GET on `/{name}` instead |
 | `GET` | `/hostedclusters` | list | Cluster-wide list without `hostingCluster`: `200` with empty `HostedClusterList` (`oc get hostedclusters -A` compatibility) |
@@ -74,7 +74,8 @@ and is retained for API compatibility. The proxy always reads
 
 ```json
 {
-  "serverVersion": "<hypershift-operator-server-version>"
+  "serverVersion": "<hypershift-operator-server-version>",
+  "supportedVersions": ["4.17", "4.16"]
 }
 ```
 
