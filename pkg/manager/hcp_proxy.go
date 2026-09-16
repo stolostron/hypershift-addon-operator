@@ -678,7 +678,8 @@ func (p *hcpProxy) handleVersion(w http.ResponseWriter, r *http.Request, hosting
 	}
 	var supportedVersions supportedVersionsConfigMapData
 	if err := json.Unmarshal([]byte(encodedSupportedVersions), &supportedVersions); err != nil {
-		p.writeJSONError(w, "supported-versions ConfigMap has invalid supported-versions: "+err.Error(), http.StatusBadGateway)
+		message := "supported-versions ConfigMap has invalid supported-versions: " + err.Error()
+		p.writeJSONError(w, message, http.StatusBadGateway)
 		return
 	}
 	w.Header().Set(headerContentType, contentTypeJSON)
