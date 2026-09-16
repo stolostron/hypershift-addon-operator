@@ -13,3 +13,28 @@ metadata:
 data:
   server-version: e2e-server-sha
   supported-versions: '{"versions":["4.17","4.16"]}'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: read-supported-versions
+  namespace: hypershift
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["supported-versions"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: e2e-read-supported-versions
+  namespace: hypershift
+subjects:
+  - kind: User
+    name: e2e-test-user
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: read-supported-versions
