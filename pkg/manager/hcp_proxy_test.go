@@ -538,7 +538,7 @@ func Test_handleVersion_WhenSpokeReturnsVersion_ItShouldReturnServerVersion(t *t
 	spoke := newTestSpokeServer(
 		t,
 		http.StatusOK,
-		`{"data":{"server-version":"server-sha"}}`,
+		`{"data":{"server-version":"server-sha","supported-versions":"{\"versions\":[\"4.17\",\"4.16\"]}"}}`,
 	)
 	p := newTestProxyWithSpokeURL(t, spoke.URL)
 
@@ -553,9 +553,32 @@ func Test_handleVersion_WhenSpokeReturnsVersion_ItShouldReturnServerVersion(t *t
 	assert.Equal(t, contentTypeJSON, w.Header().Get(headerContentType))
 	assert.JSONEq(
 		t,
-		`{"serverVersion":"server-sha"}`,
+		`{"serverVersion":"server-sha","supportedVersions":["4.17","4.16"]}`,
 		w.Body.String(),
 	)
+}
+
+func Test_handleVersion_WhenSupportedVersionsAreMissing_ItShouldReturn502(t *testing.T) {
+	spoke := newTestSpokeServer(t, http.StatusOK, `{"data":{"server-version":"server-sha"}}`)
+	p := newTestProxyWithSpokeURL(t, spoke.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	p.handleVersion(w, r, "spoke-1")
+
+	assertStatusError(t, w, http.StatusBadGateway, "missing supported-versions")
+}
+
+func Test_handleVersion_WhenSupportedVersionsAreInvalid_ItShouldReturn502(t *testing.T) {
+	spoke := newTestSpokeServer(t, http.StatusOK,
+		`{"data":{"server-version":"server-sha","supported-versions":"not-json"}}`)
+	p := newTestProxyWithSpokeURL(t, spoke.URL)
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+
+	p.handleVersion(w, r, "spoke-1")
+
+	assertStatusError(t, w, http.StatusBadGateway, "invalid supported-versions")
 }
 
 func Test_handleVersion_WhenSpokeReturnsMalformedConfigMap_ItShouldReturn500(t *testing.T) {
@@ -650,7 +673,7 @@ func Test_handleRoute_WhenVersionRequestIsValid_ItShouldReturnServerVersion(t *t
 	spoke := newTestSpokeServer(
 		t,
 		http.StatusOK,
-		`{"data":{"server-version":"server-sha"}}`,
+		`{"data":{"server-version":"server-sha","supported-versions":"{\"versions\":[\"4.17\",\"4.16\"]}"}}`,
 	)
 	p := newTestProxyWithSpokeURL(t, spoke.URL, availableManagedCluster("spoke-1"))
 
@@ -661,7 +684,7 @@ func Test_handleRoute_WhenVersionRequestIsValid_ItShouldReturnServerVersion(t *t
 	p.handleRoute(w, r)
 
 	require.Equal(t, http.StatusOK, w.Code)
-	assert.JSONEq(t, `{"serverVersion":"server-sha"}`, w.Body.String())
+	assert.JSONEq(t, `{"serverVersion":"server-sha","supportedVersions":["4.17","4.16"]}`, w.Body.String())
 }
 
 func Test_handleRoute_WhenVersionUsesNonGETMethod_ItShouldReturn405(t *testing.T) {

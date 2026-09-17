@@ -112,9 +112,17 @@ var (
 	hcpProxyListenAddr = ":9443"
 )
 
-// Struct for returning hcp proxy --version-check endpoint
+// VersionInfo is returned by the HCP proxy version endpoint. The values are
+// sourced from the hosting cluster's hypershift/supported-versions ConfigMap.
 type VersionInfo struct {
-	ServerVersion string `json:"serverVersion"`
+	ServerVersion     string   `json:"serverVersion"`
+	SupportedVersions []string `json:"supportedVersions"`
+}
+
+// supportedVersionsConfigMapData is the JSON stored in the
+// supported-versions ConfigMap's supported-versions data entry.
+type supportedVersionsConfigMapData struct {
+	Versions []string `json:"versions"`
 }
 
 // CreateRequest mirrors the output of `hcp create cluster --render`.
@@ -663,8 +671,22 @@ func (p *hcpProxy) handleVersion(w http.ResponseWriter, r *http.Request, hosting
 		p.writeJSONError(w, "supported-versions ConfigMap is missing server-version", http.StatusBadGateway)
 		return
 	}
+	encodedSupportedVersions := configmap.Data["supported-versions"]
+	if encodedSupportedVersions == "" {
+		p.writeJSONError(w, "supported-versions ConfigMap is missing supported-versions", http.StatusBadGateway)
+		return
+	}
+	var supportedVersions supportedVersionsConfigMapData
+	if err := json.Unmarshal([]byte(encodedSupportedVersions), &supportedVersions); err != nil {
+		message := "supported-versions ConfigMap has invalid supported-versions: " + err.Error()
+		p.writeJSONError(w, message, http.StatusBadGateway)
+		return
+	}
 	w.Header().Set(headerContentType, contentTypeJSON)
-	_ = json.NewEncoder(w).Encode((VersionInfo{ServerVersion: serverVersion}))
+	_ = json.NewEncoder(w).Encode(VersionInfo{
+		ServerVersion:     serverVersion,
+		SupportedVersions: supportedVersions.Versions,
+	})
 }
 
 // dispatchCollection routes collection-scoped /namespaces/{ns}/hostedclusters requests.

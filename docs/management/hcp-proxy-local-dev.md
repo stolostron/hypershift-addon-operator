@@ -48,10 +48,11 @@ curl -sk \
   "https://localhost:9443/apis/hcp.ocm.io/v1alpha1/namespaces/clusters/hostedclusters?hostingCluster=local-cluster"
 ```
 
-**GET — hosting HyperShift Operator server version**
+**GET — hosting HyperShift Operator version metadata**
 
 The namespace segment is the CLI namespace (`clusters` by default). The proxy
-always reads `ConfigMap/hypershift/supported-versions` on the hosting cluster.
+always reads `ConfigMap/hypershift/supported-versions` on the hosting cluster,
+returning its server version and supported OCP versions.
 
 ```bash
 curl -sk \

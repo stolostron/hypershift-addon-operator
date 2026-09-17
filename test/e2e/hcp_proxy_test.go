@@ -43,6 +43,26 @@ func proxyURL(host, path string) string {
 	return fmt.Sprintf("https://%s:%s%s", host, hcpProxyListenPort, path)
 }
 
+// hcpProxyTestUser returns the direct-proxy request identity. The kind setup
+// grants e2e-test-user access; external environments can supply an identity
+// that has managedcluster:admin access through HCP_PROXY_TEST_USER.
+func hcpProxyTestUser() string {
+	if username := os.Getenv("HCP_PROXY_TEST_USER"); username != "" {
+		return username
+	}
+	return "e2e-test-user"
+}
+
+// hcpProxyTestGroups returns optional groups for a direct-proxy request.
+// HCP_PROXY_TEST_GROUPS is comma-separated to match the proxy's request-header
+// authentication format.
+func hcpProxyTestGroups() []string {
+	if groups := os.Getenv("HCP_PROXY_TEST_GROUPS"); groups != "" {
+		return strings.Split(groups, ",")
+	}
+	return nil
+}
+
 var apiServicesGVR = schema.GroupVersionResource{
 	Group:    "apiregistration.k8s.io",
 	Version:  "v1",
@@ -151,6 +171,31 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 				"version",
 				"hostedclusters/validate",
 			), "discovery must advertise all HCP proxy subresources")
+		})
+
+		ginkgo.It("should return the hosting cluster's supported OCP versions", func() {
+			client := insecureHTTPClient()
+			url := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+
+				"/namespaces/clusters/version?hostingCluster="+defaultManagedCluster)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			req.Header.Set("X-Remote-User", hcpProxyTestUser())
+			for _, group := range hcpProxyTestGroups() {
+				req.Header.Add("X-Remote-Group", group)
+			}
+
+			resp, err := client.Do(req)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred())
+			defer resp.Body.Close()
+			gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusOK))
+
+			var versionInfo struct {
+				ServerVersion     string   `json:"serverVersion"`
+				SupportedVersions []string `json:"supportedVersions"`
+			}
+			gomega.Expect(json.NewDecoder(resp.Body).Decode(&versionInfo)).To(gomega.Succeed())
+			gomega.Expect(versionInfo.ServerVersion).ToNot(gomega.BeEmpty())
+			gomega.Expect(versionInfo.SupportedVersions).To(gomega.ContainElements("4.17", "4.16"))
 		})
 
 		ginkgo.It("should return empty list when collection GET is missing hostingCluster", func() {

@@ -238,6 +238,7 @@ e2e-hcp-proxy-setup: ensure-kind ## Spin up kind + OCM, build & load image, depl
 	$(MAKE) deploy-ocm; \
 	$(MAKE) deploy-cluster-proxy; \
 	$(MAKE) deploy-hypershift-crds; \
+	$(KUBECTL) apply -f test/e2e/supported-versions-configmap.yaml; \
 	echo "Waiting for image build (pid $$build_pid)..."; \
 	wait $$build_pid; \
 	$(MAKE) kind-load-e2e E2E_IMG="$(E2E_IMG)"; \
@@ -273,6 +274,7 @@ HCP_PROXY_PORT ?= 18443
 .PHONY: test-e2e-hcp-proxy
 test-e2e-hcp-proxy:
 	@echo "Starting kubectl port-forward on localhost:$(HCP_PROXY_PORT)..."
+	$(KUBECTL) apply -f test/e2e/supported-versions-configmap.yaml
 	@POD=$$($(KUBECTL) get pods -n multicluster-engine -l app=hypershift-addon-manager \
 	        -o jsonpath='{.items[0].metadata.name}'); \
 	test -n "$$POD" || { echo "ERROR: no hypershift-addon-manager pod found"; exit 1; }; \
