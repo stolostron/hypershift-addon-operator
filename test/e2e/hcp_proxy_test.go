@@ -61,6 +61,7 @@ func hcpProxyTestGroups() []string {
 		return strings.Split(groups, ",")
 	}
 	return nil
+}
 
 // requireClusterProxyUserService accepts the kind e2e namespace as well as the
 // production layout, where cluster-proxy is co-located with the HCP proxy.
