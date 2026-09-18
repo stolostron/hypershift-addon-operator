@@ -63,7 +63,8 @@ const (
 	labelCreatedViaValue = "hcp-from-hub"
 
 	// labelHostedCluster records the owning HostedCluster name on every related resource.
-	labelHostedCluster = "hcp.ocm.io/hostedcluster"
+	labelHostedCluster        = "hcp.ocm.io/hostedcluster"
+	annotationExtraObjectGVKs = "hcp.ocm.io/extra-object-gvks"
 
 	// Spoke kube-apiserver path prefixes (constants — never built from request input).
 	apiPathPrefix         = "/apis/"
@@ -1381,6 +1382,17 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	ctx := r.Context()
 
 	hcName := req.HostedCluster.Name
+	extraObjectGVKs, err := json.Marshal(func() []schema.GroupVersionKind {
+		gvks := make([]schema.GroupVersionKind, 0, len(extraObjs))
+		for _, obj := range extraObjs {
+			gvks = append(gvks, obj.GroupVersionKind())
+		}
+		return gvks
+	}())
+	if err != nil {
+		p.writeJSONError(w, "failed to record extra objects", http.StatusInternalServerError)
+		return
+	}
 
 	// addProxyLabels merges the proxy-managed labels into an existing label map.
 	addProxyLabels := func(labels map[string]string) map[string]string {
@@ -1450,6 +1462,10 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	req.HostedCluster.APIVersion = hypershiftv1beta1.GroupVersion.String()
 	req.HostedCluster.Kind = "HostedCluster"
 	req.HostedCluster.Labels = addProxyLabels(req.HostedCluster.Labels)
+	if req.HostedCluster.Annotations == nil {
+		req.HostedCluster.Annotations = map[string]string{}
+	}
+	req.HostedCluster.Annotations[annotationExtraObjectGVKs] = string(extraObjectGVKs)
 	if err := p.createOnSpoke(ctx, hcpClient, spokeName, ns, resourceHostedClusters, req.HostedCluster); err != nil {
 		p.logSpokeHTTPFailure("failed to create HostedCluster", "name", hcName, "spoke", spokeName)
 		p.rollbackExtraObjectsOnSpoke(ctx, hcpClient, spokeName, ns, createdExtraObjs)
@@ -1515,7 +1531,8 @@ func (p *hcpProxy) handleDelete(w http.ResponseWriter, r *http.Request, ns, name
 
 	ctx := r.Context()
 	childCleanupFailed := p.deleteMatchingNodePools(ctx, hcpClient, ns, name, spokeName)
-	if p.deleteExtraObjectsForHostedCluster(ctx, hcpClient, ns, name, spokeName) {
+	hc, status, _ := p.fetchHostedCluster(ctx, hcpClient, ns, name, spokeName)
+	if status == http.StatusOK && p.deleteExtraObjectsForHostedCluster(ctx, hcpClient, ns, name, spokeName, hc) {
 		childCleanupFailed = true
 	}
 	if childCleanupFailed {
@@ -1601,17 +1618,23 @@ func (p *hcpProxy) deleteExtraObjectsForHostedCluster(
 	ctx context.Context,
 	hcpClient *http.Client,
 	ns, hcName, spokeName string,
+	hc *hypershiftv1beta1.HostedCluster,
 ) bool {
+	if hc == nil {
+		return true
+	}
+	if hc.Annotations[annotationExtraObjectGVKs] == "" {
+		return false
+	}
+	var gvks []schema.GroupVersionKind
+	if err := json.Unmarshal([]byte(hc.Annotations[annotationExtraObjectGVKs]), &gvks); err != nil {
+		p.log.Error(err, "failed to decode extra object inventory", "hostedCluster", hcName)
+		return true
+	}
 	failed := false
-	for _, resource := range p.discoverNamespacedSpokeResources(ctx, hcpClient, spokeName) {
-		// HostedClusters and NodePools have dedicated cleanup paths. Secrets are
-		// deliberately retained: ExtraObjects is the only generic create input.
-		if strings.HasSuffix(resource, "/"+resourceHostedClusters) ||
-			strings.HasSuffix(resource, "/"+resourceNodePools) ||
-			strings.HasSuffix(resource, "/"+resourceSecrets) {
-			continue
-		}
-		if p.deleteLabeledExtraObjects(ctx, hcpClient, ns, hcName, spokeName, resource) {
+	for _, gvk := range gvks {
+		resourcePath, err := extraObjectCollectionAPIPath(p.restMapper, ns, gvk)
+		if err != nil || p.deleteLabeledExtraObjects(ctx, hcpClient, ns, hcName, spokeName, resourcePath) {
 			failed = true
 		}
 	}

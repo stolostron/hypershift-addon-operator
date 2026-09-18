@@ -2456,6 +2456,11 @@ func Test_handleDelete_WhenLabeledExtraObjectsExist_ItShouldDeleteThemBeforeHost
 			}},
 		})
 	}
+	inventory, err := json.Marshal([]schema.GroupVersionKind{
+		{Version: "v1", Kind: "ConfigMap"},
+		{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role"},
+	})
+	require.NoError(t, err)
 	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api":
@@ -2467,6 +2472,10 @@ func Test_handleDelete_WhenLabeledExtraObjectsExist_ItShouldDeleteThemBeforeHost
 				Name:     "rbac.authorization.k8s.io",
 				Versions: []metav1.GroupVersionForDiscovery{{GroupVersion: "rbac.authorization.k8s.io/v1", Version: "v1"}},
 			}}})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/hostedclusters/my-hc"):
+			writeJSON(w, &hypershiftv1beta1.HostedCluster{ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{annotationExtraObjectGVKs: string(inventory)},
+			}})
 		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis/rbac.authorization.k8s.io/v1":
 			writeJSON(w, metav1.APIResourceList{APIResources: []metav1.APIResource{{Name: "roles", Namespaced: true}}})
 		case r.Method == http.MethodGet &&
