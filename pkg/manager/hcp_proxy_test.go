@@ -2445,6 +2445,17 @@ func Test_handleDelete_WhenLabeledExtraObjectsExist_ItShouldDeleteThemBeforeHost
 		w.Header().Set(headerContentType, contentTypeJSON)
 		require.NoError(t, json.NewEncoder(w).Encode(value))
 	}
+	writeObjectList := func(w http.ResponseWriter, apiVersion, listKind, kind, name string) {
+		writeJSON(w, map[string]interface{}{
+			"apiVersion": apiVersion,
+			"kind":       listKind,
+			"items": []map[string]interface{}{{
+				"apiVersion": apiVersion,
+				"kind":       kind,
+				"metadata":   map[string]interface{}{"name": name},
+			}},
+		})
+	}
 	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api":
@@ -2458,14 +2469,14 @@ func Test_handleDelete_WhenLabeledExtraObjectsExist_ItShouldDeleteThemBeforeHost
 			}}})
 		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis/rbac.authorization.k8s.io/v1":
 			writeJSON(w, metav1.APIResourceList{APIResources: []metav1.APIResource{{Name: "roles", Namespaced: true}}})
-		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api/v1/namespaces/clusters/configmaps":
+		case r.Method == http.MethodGet &&
+			r.URL.Path == "/spoke-1/api/v1/namespaces/clusters/configmaps":
 			selectors = append(selectors, r.URL.Query().Get("labelSelector"))
-			w.Header().Set(headerContentType, contentTypeJSON)
-			_, _ = io.WriteString(w, `{"apiVersion":"v1","kind":"ConfigMapList","items":[{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"user-ca-bundle"}}]}`)
-		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles":
+			writeObjectList(w, "v1", "ConfigMapList", "ConfigMap", "user-ca-bundle")
+		case r.Method == http.MethodGet &&
+			r.URL.Path == "/spoke-1/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles":
 			selectors = append(selectors, r.URL.Query().Get("labelSelector"))
-			w.Header().Set(headerContentType, contentTypeJSON)
-			_, _ = io.WriteString(w, `{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleList","items":[{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role","metadata":{"name":"capi-provider-role"}}]}`)
+			writeObjectList(w, "rbac.authorization.k8s.io/v1", "RoleList", "Role", "capi-provider-role")
 		case r.Method == http.MethodDelete:
 			deleted = append(deleted, r.URL.Path)
 			w.WriteHeader(http.StatusOK)
@@ -2492,7 +2503,9 @@ func Test_handleDelete_WhenLabeledExtraObjectsExist_ItShouldDeleteThemBeforeHost
 		assert.Contains(t, selector, labelHostedCluster+"=my-hc")
 		assert.Contains(t, selector, labelCreatedVia+"="+labelCreatedViaValue)
 	}
-	assert.Equal(t, "/spoke-1/apis/hypershift.openshift.io/v1beta1/namespaces/clusters/hostedclusters/my-hc", deleted[len(deleted)-1])
+	expectedHostedClusterPath := "/spoke-1/apis/hypershift.openshift.io/v1beta1/" +
+		"namespaces/clusters/hostedclusters/my-hc"
+	assert.Equal(t, expectedHostedClusterPath, deleted[len(deleted)-1])
 }
 
 func Test_handleDelete_WhenExtraObjectDeleteFails_ItShouldReturnFailureWithoutDeletingHostedCluster(t *testing.T) {
@@ -2500,6 +2513,17 @@ func Test_handleDelete_WhenExtraObjectDeleteFails_ItShouldReturnFailureWithoutDe
 	writeJSON := func(w http.ResponseWriter, value interface{}) {
 		w.Header().Set(headerContentType, contentTypeJSON)
 		require.NoError(t, json.NewEncoder(w).Encode(value))
+	}
+	writeConfigMapList := func(w http.ResponseWriter) {
+		writeJSON(w, map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "ConfigMapList",
+			"items": []map[string]interface{}{{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata":   map[string]interface{}{"name": "user-ca-bundle"},
+			}},
+		})
 	}
 	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -2510,8 +2534,7 @@ func Test_handleDelete_WhenExtraObjectDeleteFails_ItShouldReturnFailureWithoutDe
 		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis":
 			writeJSON(w, metav1.APIGroupList{})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/configmaps"):
-			w.Header().Set(headerContentType, contentTypeJSON)
-			_, _ = io.WriteString(w, `{"apiVersion":"v1","kind":"ConfigMapList","items":[{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"user-ca-bundle"}}]}`)
+			writeConfigMapList(w)
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/configmaps/user-ca-bundle"):
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = io.WriteString(w, `{"message":"sensitive spoke response"}`)

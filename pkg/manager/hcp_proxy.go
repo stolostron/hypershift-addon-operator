@@ -1675,7 +1675,9 @@ func (p *hcpProxy) deleteLabeledExtraObjects(
 		p.log.Error(err, "failed to build extra object list request", "path", collectionPath)
 		return true
 	}
-	req.URL.RawQuery = url.Values{"labelSelector": {labelHostedCluster + "=" + hcName + "," + labelCreatedVia + "=" + labelCreatedViaValue}}.Encode()
+	selector := labelHostedCluster + "=" + hcName + "," +
+		labelCreatedVia + "=" + labelCreatedViaValue
+	req.URL.RawQuery = url.Values{"labelSelector": {selector}}.Encode()
 	resp, err := doSpokeHTTP(hcpClient, req)
 	if err != nil {
 		p.logSpokeHTTPFailure("failed to list extra objects", "path", collectionPath, "spoke", spokeName)
@@ -1725,7 +1727,12 @@ func (p *hcpProxy) deleteLabeledExtraObjects(
 
 // getSpokeJSON performs a successful GET and decodes its response without ever
 // logging the response body.
-func (p *hcpProxy) getSpokeJSON(ctx context.Context, hcpClient *http.Client, spokeName, apiPath string, out interface{}) error {
+func (p *hcpProxy) getSpokeJSON(
+	ctx context.Context,
+	hcpClient *http.Client,
+	spokeName, apiPath string,
+	out interface{},
+) error {
 	req, err := p.newSpokeRequest(ctx, http.MethodGet, spokeName, apiPath, nil)
 	if err != nil {
 		return err
