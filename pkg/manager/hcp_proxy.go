@@ -1530,12 +1530,12 @@ func (p *hcpProxy) handleDelete(w http.ResponseWriter, r *http.Request, ns, name
 	}
 
 	ctx := r.Context()
-	childCleanupFailed := p.deleteMatchingNodePools(ctx, hcpClient, ns, name, spokeName)
+	associatedResourceCleanupFailed := p.deleteMatchingNodePools(ctx, hcpClient, ns, name, spokeName)
 	hc, status, _ := p.fetchHostedCluster(ctx, hcpClient, ns, name, spokeName)
 	if status == http.StatusOK && p.deleteExtraObjectsForHostedCluster(ctx, hcpClient, ns, name, spokeName, hc) {
-		childCleanupFailed = true
+		associatedResourceCleanupFailed = true
 	}
-	if childCleanupFailed {
+	if associatedResourceCleanupFailed {
 		p.writeJSONError(w, "failed to delete all resources associated with HostedCluster", http.StatusBadGateway)
 		return
 	}
