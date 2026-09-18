@@ -1422,6 +1422,17 @@ func Test_handleCreate_WhenExtraObjectsProvided_ItShouldPostThemBeforeHostedClus
 	assert.Equal(t, labelCreatedViaValue, cm.GetLabels()[labelCreatedVia], "ConfigMap must be stamped created-via")
 	assert.Equal(t, "my-hc", cm.GetLabels()[labelHostedCluster], "ConfigMap must be stamped with HostedCluster name")
 
+	var hostedCluster hypershiftv1beta1.HostedCluster
+	require.NoError(t, json.Unmarshal(posted[3].body, &hostedCluster), "HostedCluster body must be JSON")
+	var inventory []schema.GroupVersionKind
+	require.NoError(t, json.Unmarshal(
+		[]byte(hostedCluster.Annotations[annotationExtraObjectGVKs]), &inventory),
+		"HostedCluster must record the types of extra objects it created")
+	assert.ElementsMatch(t, []schema.GroupVersionKind{
+		{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role"},
+		{Version: "v1", Kind: "ConfigMap"},
+	}, inventory)
+
 	var bundle ResourceBundle
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &bundle), "create response must be a ResourceBundle")
 	require.Len(t, bundle.ExtraObjects, 2, "response must echo applied extra objects")
@@ -2436,6 +2447,178 @@ func Test_handleDelete_WhenMatchingNodePoolsExist_ItShouldDeleteThem(t *testing.
 	assert.Contains(t, joined, "/nodepools/my-hc-pool")
 	assert.NotContains(t, joined, "/nodepools/other-pool")
 	assert.Contains(t, joined, "/hostedclusters/my-hc")
+}
+
+func Test_handleDelete_WhenLabeledExtraObjectsExist_ItShouldDeleteThemBeforeHostedCluster(t *testing.T) {
+	var deleted []string
+	var selectors []string
+	writeJSON := func(w http.ResponseWriter, value interface{}) {
+		w.Header().Set(headerContentType, contentTypeJSON)
+		require.NoError(t, json.NewEncoder(w).Encode(value))
+	}
+	writeObjectList := func(w http.ResponseWriter, apiVersion, listKind, kind, name string) {
+		writeJSON(w, map[string]interface{}{
+			"apiVersion": apiVersion,
+			"kind":       listKind,
+			"items": []map[string]interface{}{{
+				"apiVersion": apiVersion,
+				"kind":       kind,
+				"metadata":   map[string]interface{}{"name": name},
+			}},
+		})
+	}
+	inventory, err := json.Marshal([]schema.GroupVersionKind{
+		{Version: "v1", Kind: "ConfigMap"},
+		{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role"},
+	})
+	require.NoError(t, err)
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api":
+			writeJSON(w, metav1.APIVersions{Versions: []string{"v1"}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api/v1":
+			writeJSON(w, metav1.APIResourceList{APIResources: []metav1.APIResource{{Name: "configmaps", Namespaced: true}}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis":
+			writeJSON(w, metav1.APIGroupList{Groups: []metav1.APIGroup{{
+				Name:     "rbac.authorization.k8s.io",
+				Versions: []metav1.GroupVersionForDiscovery{{GroupVersion: "rbac.authorization.k8s.io/v1", Version: "v1"}},
+			}}})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/hostedclusters/my-hc"):
+			writeJSON(w, &hypershiftv1beta1.HostedCluster{ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{annotationExtraObjectGVKs: string(inventory)},
+			}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis/rbac.authorization.k8s.io/v1":
+			writeJSON(w, metav1.APIResourceList{APIResources: []metav1.APIResource{{Name: "roles", Namespaced: true}}})
+		case r.Method == http.MethodGet &&
+			r.URL.Path == "/spoke-1/api/v1/namespaces/clusters/configmaps":
+			selectors = append(selectors, r.URL.Query().Get("labelSelector"))
+			writeObjectList(w, "v1", "ConfigMapList", "ConfigMap", "user-ca-bundle")
+		case r.Method == http.MethodGet &&
+			r.URL.Path == "/spoke-1/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles":
+			selectors = append(selectors, r.URL.Query().Get("labelSelector"))
+			writeObjectList(w, "rbac.authorization.k8s.io/v1", "RoleList", "Role", "capi-provider-role")
+		case r.Method == http.MethodDelete:
+			deleted = append(deleted, r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer spokeSrv.Close()
+
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, availableManagedCluster("spoke-1"))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodDelete, "/", nil)
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleDelete(w, r, "clusters", "my-hc", "spoke-1")
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.ElementsMatch(t, []string{
+		"/spoke-1/api/v1/namespaces/clusters/configmaps/user-ca-bundle",
+		"/spoke-1/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles/capi-provider-role",
+		"/spoke-1/apis/hypershift.openshift.io/v1beta1/namespaces/clusters/hostedclusters/my-hc",
+	}, deleted)
+	assert.Len(t, selectors, 2)
+	for _, selector := range selectors {
+		assert.Contains(t, selector, labelHostedCluster+"=my-hc")
+		assert.Contains(t, selector, labelCreatedVia+"="+labelCreatedViaValue)
+	}
+	expectedHostedClusterPath := "/spoke-1/apis/hypershift.openshift.io/v1beta1/" +
+		"namespaces/clusters/hostedclusters/my-hc"
+	assert.Equal(t, expectedHostedClusterPath, deleted[len(deleted)-1])
+}
+
+func Test_handleDelete_WhenExtraObjectDeleteFails_ItShouldReturnFailureWithoutDeletingHostedCluster(t *testing.T) {
+	hostedClusterDeleted := false
+	inventory, err := json.Marshal([]schema.GroupVersionKind{{Version: "v1", Kind: "ConfigMap"}})
+	require.NoError(t, err)
+	writeJSON := func(w http.ResponseWriter, value interface{}) {
+		w.Header().Set(headerContentType, contentTypeJSON)
+		require.NoError(t, json.NewEncoder(w).Encode(value))
+	}
+	writeConfigMapList := func(w http.ResponseWriter) {
+		writeJSON(w, map[string]interface{}{
+			"apiVersion": "v1",
+			"kind":       "ConfigMapList",
+			"items": []map[string]interface{}{{
+				"apiVersion": "v1",
+				"kind":       "ConfigMap",
+				"metadata":   map[string]interface{}{"name": "user-ca-bundle"},
+			}},
+		})
+	}
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api":
+			writeJSON(w, metav1.APIVersions{Versions: []string{"v1"}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api/v1":
+			writeJSON(w, metav1.APIResourceList{APIResources: []metav1.APIResource{{Name: "configmaps", Namespaced: true}}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis":
+			writeJSON(w, metav1.APIGroupList{})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/hostedclusters/my-hc"):
+			writeJSON(w, &hypershiftv1beta1.HostedCluster{ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{annotationExtraObjectGVKs: string(inventory)},
+			}})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/configmaps"):
+			writeConfigMapList(w)
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/configmaps/user-ca-bundle"):
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"message":"sensitive spoke response"}`)
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/hostedclusters/"):
+			hostedClusterDeleted = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer spokeSrv.Close()
+
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, availableManagedCluster("spoke-1"))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodDelete, "/", nil)
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleDelete(w, r, "clusters", "my-hc", "spoke-1")
+
+	assertStatusError(t, w, http.StatusBadGateway, "failed to delete all resources")
+	assert.NotContains(t, w.Body.String(), "sensitive spoke response")
+	assert.False(t, hostedClusterDeleted)
+}
+
+func Test_deleteExtraObjectsForHostedCluster_WhenInventoryIsMissing_ItShouldNotFail(t *testing.T) {
+	p := newTestProxy(t)
+	hc := &hypershiftv1beta1.HostedCluster{}
+
+	assert.False(t, p.deleteExtraObjectsForHostedCluster(
+		context.Background(), nil, "clusters", "my-hc", "spoke-1", hc))
+}
+
+func Test_deleteExtraObjectsForHostedCluster_WhenInventoryIsMalformed_ItShouldFail(t *testing.T) {
+	p := newTestProxy(t)
+	hc := &hypershiftv1beta1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+		annotationExtraObjectGVKs: "not-json",
+	}}}
+
+	assert.True(t, p.deleteExtraObjectsForHostedCluster(
+		context.Background(), nil, "clusters", "my-hc", "spoke-1", hc))
+}
+
+func Test_deleteExtraObjectsForHostedCluster_WhenInventoryHasUnmappedGVK_ItShouldFail(t *testing.T) {
+	p := newTestProxy(t)
+	inventory, err := json.Marshal([]schema.GroupVersionKind{{Group: "apps", Version: "v1", Kind: "Deployment"}})
+	require.NoError(t, err)
+	hc := &hypershiftv1beta1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+		annotationExtraObjectGVKs: string(inventory),
+	}}}
+
+	assert.True(t, p.deleteExtraObjectsForHostedCluster(
+		context.Background(), nil, "clusters", "my-hc", "spoke-1", hc))
+}
+
+func Test_deleteExtraObjectsForHostedCluster_WhenHostedClusterIsMissing_ItShouldFail(t *testing.T) {
+	p := newTestProxy(t)
+
+	assert.True(t, p.deleteExtraObjectsForHostedCluster(
+		context.Background(), nil, "clusters", "my-hc", "spoke-1", nil))
 }
 
 // --- createOrUpdateSecretOnSpoke ---
