@@ -831,6 +831,59 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 				return nil
 			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred(),
 				"ConfigMap %s must exist in namespace %s with proxy labels and data", cmName, hcNS)
+
+			ginkgo.By("DELETE HostedCluster through the HCP proxy")
+			deleteURL := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+
+				"/namespaces/"+hcNS+"/hostedclusters/"+hcName+"?hostingCluster="+defaultManagedCluster)
+			deleteReq, err := http.NewRequestWithContext(specCtx, http.MethodDelete, deleteURL, nil)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build DELETE request for HostedCluster with extraObjects")
+			deleteReq.Header.Set("X-Remote-User", "e2e-test-user")
+			deleteReq.Header.Set("X-Remote-Group", "system:masters")
+			deleteResp, err := client.Do(deleteReq)
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy delete with extraObjects")
+			deleteBody, readErr := io.ReadAll(deleteResp.Body)
+			_ = deleteResp.Body.Close()
+			gomega.Expect(readErr).ToNot(gomega.HaveOccurred(), "read DELETE response body")
+			gomega.Expect(deleteResp.StatusCode).To(gomega.Equal(http.StatusOK),
+				"DELETE response: %s", string(deleteBody))
+
+			ginkgo.By("Verifying ExtraObjects and HostedCluster are removed from the hosting cluster")
+			gomega.Eventually(func() error {
+				_, err := kubeClient.RbacV1().Roles(hcNS).Get(specCtx, roleName, metav1.GetOptions{})
+				if apierrors.IsNotFound(err) {
+					return nil
+				}
+				if err == nil {
+					return fmt.Errorf("Role %s still exists", roleName)
+				}
+				return err
+			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred(),
+				"Role %s must be deleted", roleName)
+			gomega.Eventually(func() error {
+				_, err := kubeClient.CoreV1().ConfigMaps(hcNS).Get(specCtx, cmName, metav1.GetOptions{})
+				if apierrors.IsNotFound(err) {
+					return nil
+				}
+				if err == nil {
+					return fmt.Errorf("ConfigMap %s still exists", cmName)
+				}
+				return err
+			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred(),
+				"ConfigMap %s must be deleted", cmName)
+			hcGVR := schema.GroupVersionResource{
+				Group: "hypershift.openshift.io", Version: "v1beta1", Resource: "hostedclusters",
+			}
+			gomega.Eventually(func() error {
+				_, err := dynamicClient.Resource(hcGVR).Namespace(hcNS).Get(specCtx, hcName, metav1.GetOptions{})
+				if apierrors.IsNotFound(err) {
+					return nil
+				}
+				if err == nil {
+					return fmt.Errorf("HostedCluster %s still exists", hcName)
+				}
+				return err
+			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred(),
+				"HostedCluster %s must be deleted", hcName)
 		})
 	})
 
