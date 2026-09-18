@@ -2438,6 +2438,103 @@ func Test_handleDelete_WhenMatchingNodePoolsExist_ItShouldDeleteThem(t *testing.
 	assert.Contains(t, joined, "/hostedclusters/my-hc")
 }
 
+func Test_handleDelete_WhenLabeledExtraObjectsExist_ItShouldDeleteThemBeforeHostedCluster(t *testing.T) {
+	var deleted []string
+	var selectors []string
+	writeJSON := func(w http.ResponseWriter, value interface{}) {
+		w.Header().Set(headerContentType, contentTypeJSON)
+		require.NoError(t, json.NewEncoder(w).Encode(value))
+	}
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api":
+			writeJSON(w, metav1.APIVersions{Versions: []string{"v1"}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api/v1":
+			writeJSON(w, metav1.APIResourceList{APIResources: []metav1.APIResource{{Name: "configmaps", Namespaced: true}}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis":
+			writeJSON(w, metav1.APIGroupList{Groups: []metav1.APIGroup{{
+				Name:     "rbac.authorization.k8s.io",
+				Versions: []metav1.GroupVersionForDiscovery{{GroupVersion: "rbac.authorization.k8s.io/v1", Version: "v1"}},
+			}}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis/rbac.authorization.k8s.io/v1":
+			writeJSON(w, metav1.APIResourceList{APIResources: []metav1.APIResource{{Name: "roles", Namespaced: true}}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api/v1/namespaces/clusters/configmaps":
+			selectors = append(selectors, r.URL.Query().Get("labelSelector"))
+			w.Header().Set(headerContentType, contentTypeJSON)
+			_, _ = io.WriteString(w, `{"apiVersion":"v1","kind":"ConfigMapList","items":[{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"user-ca-bundle"}}]}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles":
+			selectors = append(selectors, r.URL.Query().Get("labelSelector"))
+			w.Header().Set(headerContentType, contentTypeJSON)
+			_, _ = io.WriteString(w, `{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"RoleList","items":[{"apiVersion":"rbac.authorization.k8s.io/v1","kind":"Role","metadata":{"name":"capi-provider-role"}}]}`)
+		case r.Method == http.MethodDelete:
+			deleted = append(deleted, r.URL.Path)
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer spokeSrv.Close()
+
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, availableManagedCluster("spoke-1"))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodDelete, "/", nil)
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleDelete(w, r, "clusters", "my-hc", "spoke-1")
+
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.ElementsMatch(t, []string{
+		"/spoke-1/api/v1/namespaces/clusters/configmaps/user-ca-bundle",
+		"/spoke-1/apis/rbac.authorization.k8s.io/v1/namespaces/clusters/roles/capi-provider-role",
+		"/spoke-1/apis/hypershift.openshift.io/v1beta1/namespaces/clusters/hostedclusters/my-hc",
+	}, deleted)
+	assert.Len(t, selectors, 2)
+	for _, selector := range selectors {
+		assert.Contains(t, selector, labelHostedCluster+"=my-hc")
+		assert.Contains(t, selector, labelCreatedVia+"="+labelCreatedViaValue)
+	}
+	assert.Equal(t, "/spoke-1/apis/hypershift.openshift.io/v1beta1/namespaces/clusters/hostedclusters/my-hc", deleted[len(deleted)-1])
+}
+
+func Test_handleDelete_WhenExtraObjectDeleteFails_ItShouldReturnFailureWithoutDeletingHostedCluster(t *testing.T) {
+	hostedClusterDeleted := false
+	writeJSON := func(w http.ResponseWriter, value interface{}) {
+		w.Header().Set(headerContentType, contentTypeJSON)
+		require.NoError(t, json.NewEncoder(w).Encode(value))
+	}
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api":
+			writeJSON(w, metav1.APIVersions{Versions: []string{"v1"}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api/v1":
+			writeJSON(w, metav1.APIResourceList{APIResources: []metav1.APIResource{{Name: "configmaps", Namespaced: true}}})
+		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis":
+			writeJSON(w, metav1.APIGroupList{})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/configmaps"):
+			w.Header().Set(headerContentType, contentTypeJSON)
+			_, _ = io.WriteString(w, `{"apiVersion":"v1","kind":"ConfigMapList","items":[{"apiVersion":"v1","kind":"ConfigMap","metadata":{"name":"user-ca-bundle"}}]}`)
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/configmaps/user-ca-bundle"):
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"message":"sensitive spoke response"}`)
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/hostedclusters/"):
+			hostedClusterDeleted = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer spokeSrv.Close()
+
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, availableManagedCluster("spoke-1"))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodDelete, "/", nil)
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleDelete(w, r, "clusters", "my-hc", "spoke-1")
+
+	assertStatusError(t, w, http.StatusBadGateway, "failed to delete all resources")
+	assert.NotContains(t, w.Body.String(), "sensitive spoke response")
+	assert.False(t, hostedClusterDeleted)
+}
+
 // --- createOrUpdateSecretOnSpoke ---
 
 func Test_createOrUpdateSecretOnSpoke_WhenConflict_ItShouldPut(t *testing.T) {

@@ -1502,7 +1502,9 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	}
 }
 
-// handleDelete deletes the HostedCluster and all associated NodePools from the spoke.
+// handleDelete deletes the HostedCluster and all associated NodePools and ExtraObjects
+// from the spoke. Child cleanup is attempted in full before deleting the HostedCluster;
+// a failure is returned to the caller so it can be retried safely.
 func (p *hcpProxy) handleDelete(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	username, groups := whoIsTheCaller(r)
 	hcpClient, err := p.spokeHTTPClient(username, groups)
@@ -1512,7 +1514,14 @@ func (p *hcpProxy) handleDelete(w http.ResponseWriter, r *http.Request, ns, name
 	}
 
 	ctx := r.Context()
-	p.deleteMatchingNodePools(ctx, hcpClient, ns, name, spokeName)
+	childCleanupFailed := p.deleteMatchingNodePools(ctx, hcpClient, ns, name, spokeName)
+	if p.deleteExtraObjectsForHostedCluster(ctx, hcpClient, ns, name, spokeName) {
+		childCleanupFailed = true
+	}
+	if childCleanupFailed {
+		p.writeJSONError(w, "failed to delete all resources associated with HostedCluster", http.StatusBadGateway)
+		return
+	}
 
 	// Delete HostedCluster
 	delPath, err := hsNamedAPIPath(ns, resourceHostedClusters, name)
@@ -1539,14 +1548,19 @@ func (p *hcpProxy) handleDelete(w http.ResponseWriter, r *http.Request, ns, name
 }
 
 // deleteMatchingNodePools best-effort deletes NodePools whose spec.clusterName matches hcName.
+// It reports whether any delete request failed after attempting every matching NodePool.
 func (p *hcpProxy) deleteMatchingNodePools(
 	ctx context.Context,
 	hcpClient *http.Client,
 	ns, hcName, spokeName string,
-) {
+) bool {
+	failed := false
 	for _, np := range p.fetchNodePoolsForHC(ctx, hcpClient, ns, hcName, spokeName) {
-		p.deleteNodePool(ctx, hcpClient, ns, spokeName, np.Name)
+		if p.deleteNodePool(ctx, hcpClient, ns, spokeName, np.Name) {
+			failed = true
+		}
 	}
+	return failed
 }
 
 // deleteNodePool best-effort deletes a single NodePool on the spoke during HostedCluster cleanup.
@@ -1554,24 +1568,177 @@ func (p *hcpProxy) deleteNodePool(
 	ctx context.Context,
 	hcpClient *http.Client,
 	ns, spokeName, npName string,
-) {
+) bool {
 	delNPPath, err := hsNamedAPIPath(ns, resourceNodePools, npName)
 	if err != nil {
 		p.log.Error(err, "skipping NodePool with invalid name", "name", npName)
-		return
+		return true
 	}
 	delNPReq, err := p.newSpokeRequest(ctx, http.MethodDelete, spokeName, delNPPath, nil)
 	if err != nil {
 		p.log.Error(err, "failed to build NodePool delete request", "name", npName)
-		return
+		return true
 	}
 	delNPResp, err := doSpokeHTTP(hcpClient, delNPReq)
 	if err != nil {
-		p.log.Error(err, "failed to delete NodePool", "name", npName)
-		return
+		p.logSpokeHTTPFailure("failed to delete NodePool", "name", npName, "spoke", spokeName)
+		return true
 	}
 	_, _ = io.Copy(io.Discard, delNPResp.Body)
 	_ = delNPResp.Body.Close()
+	if delNPResp.StatusCode >= http.StatusMultipleChoices && delNPResp.StatusCode != http.StatusNotFound {
+		p.logSpokeHTTPFailure("failed to delete NodePool", "name", npName, "spoke", spokeName)
+		return true
+	}
+	return false
+}
+
+// deleteExtraObjectsForHostedCluster discovers namespaced spoke resources and
+// deletes objects carrying both proxy ownership labels. Discovery failures are
+// best-effort because a caller may not be allowed to discover unrelated APIs;
+// failures to list or delete an applicable resource are surfaced to the caller.
+func (p *hcpProxy) deleteExtraObjectsForHostedCluster(
+	ctx context.Context,
+	hcpClient *http.Client,
+	ns, hcName, spokeName string,
+) bool {
+	failed := false
+	for _, resource := range p.discoverNamespacedSpokeResources(ctx, hcpClient, spokeName) {
+		// HostedClusters and NodePools have dedicated cleanup paths. Secrets are
+		// deliberately retained: ExtraObjects is the only generic create input.
+		if strings.HasSuffix(resource, "/"+resourceHostedClusters) ||
+			strings.HasSuffix(resource, "/"+resourceNodePools) ||
+			strings.HasSuffix(resource, "/"+resourceSecrets) {
+			continue
+		}
+		if p.deleteLabeledExtraObjects(ctx, hcpClient, ns, hcName, spokeName, resource) {
+			failed = true
+		}
+	}
+	return failed
+}
+
+// discoverNamespacedSpokeResources returns collection API paths advertised by
+// the spoke. It intentionally skips subresources, which cannot be listed or
+// deleted as standalone objects.
+func (p *hcpProxy) discoverNamespacedSpokeResources(
+	ctx context.Context,
+	hcpClient *http.Client,
+	spokeName string,
+) []string {
+	var paths []string
+	addResources := func(apiPath string) {
+		var resources metav1.APIResourceList
+		if err := p.getSpokeJSON(ctx, hcpClient, spokeName, apiPath, &resources); err != nil {
+			p.logSpokeHTTPFailure("failed to discover spoke API resources", "path", apiPath, "spoke", spokeName)
+			return
+		}
+		for _, resource := range resources.APIResources {
+			if !resource.Namespaced || strings.Contains(resource.Name, "/") {
+				continue
+			}
+			paths = append(paths, apiPath+"/namespaces/{namespace}/"+resource.Name)
+		}
+	}
+
+	var coreVersions metav1.APIVersions
+	if err := p.getSpokeJSON(ctx, hcpClient, spokeName, "/api", &coreVersions); err != nil {
+		p.logSpokeHTTPFailure("failed to discover spoke core API versions", "spoke", spokeName)
+	} else {
+		for _, version := range coreVersions.Versions {
+			addResources("/api/" + version)
+		}
+	}
+
+	var groups metav1.APIGroupList
+	if err := p.getSpokeJSON(ctx, hcpClient, spokeName, "/apis", &groups); err != nil {
+		p.logSpokeHTTPFailure("failed to discover spoke API groups", "spoke", spokeName)
+		return paths
+	}
+	for _, group := range groups.Groups {
+		for _, version := range group.Versions {
+			addResources("/apis/" + group.Name + "/" + version.Version)
+		}
+	}
+	return paths
+}
+
+// deleteLabeledExtraObjects lists then deletes objects for one API resource.
+func (p *hcpProxy) deleteLabeledExtraObjects(
+	ctx context.Context,
+	hcpClient *http.Client,
+	ns, hcName, spokeName, resourcePath string,
+) bool {
+	collectionPath := strings.Replace(resourcePath, "{namespace}", ns, 1)
+	req, err := p.newSpokeRequest(ctx, http.MethodGet, spokeName, collectionPath, nil)
+	if err != nil {
+		p.log.Error(err, "failed to build extra object list request", "path", collectionPath)
+		return true
+	}
+	req.URL.RawQuery = url.Values{"labelSelector": {labelHostedCluster + "=" + hcName + "," + labelCreatedVia + "=" + labelCreatedViaValue}}.Encode()
+	resp, err := doSpokeHTTP(hcpClient, req)
+	if err != nil {
+		p.logSpokeHTTPFailure("failed to list extra objects", "path", collectionPath, "spoke", spokeName)
+		return true
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusMultipleChoices {
+		p.logSpokeHTTPFailure("failed to list extra objects", "path", collectionPath, "spoke", spokeName)
+		return true
+	}
+	var objects unstructured.UnstructuredList
+	if err := json.NewDecoder(resp.Body).Decode(&objects); err != nil {
+		p.logSpokeHTTPFailure("failed to decode extra object list", "path", collectionPath, "spoke", spokeName)
+		return true
+	}
+	failed := false
+	for i := range objects.Items {
+		obj := &objects.Items[i]
+		ident := obj.GetKind() + "/" + obj.GetName()
+		name, err := sanitizeProxyName(obj.GetName())
+		if err != nil {
+			p.log.Error(err, "skipping extra object with invalid name", "object", ident)
+			failed = true
+			continue
+		}
+		delReq, err := p.newSpokeRequest(ctx, http.MethodDelete, spokeName, collectionPath+"/"+name, nil)
+		if err != nil {
+			p.log.Error(err, "failed to build extra object delete request", "object", ident)
+			failed = true
+			continue
+		}
+		delResp, err := doSpokeHTTP(hcpClient, delReq)
+		if err != nil {
+			p.logSpokeHTTPFailure("failed to delete extra object", "object", ident, "spoke", spokeName)
+			failed = true
+			continue
+		}
+		_, _ = io.Copy(io.Discard, delResp.Body)
+		_ = delResp.Body.Close()
+		if delResp.StatusCode >= http.StatusMultipleChoices && delResp.StatusCode != http.StatusNotFound {
+			p.logSpokeHTTPFailure("failed to delete extra object", "object", ident, "spoke", spokeName)
+			failed = true
+		}
+	}
+	return failed
+}
+
+// getSpokeJSON performs a successful GET and decodes its response without ever
+// logging the response body.
+func (p *hcpProxy) getSpokeJSON(ctx context.Context, hcpClient *http.Client, spokeName, apiPath string, out interface{}) error {
+	req, err := p.newSpokeRequest(ctx, http.MethodGet, spokeName, apiPath, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := doSpokeHTTP(hcpClient, req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("spoke returned %d", resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
 }
 
 // handlePatchResources works like kubectl edit: accept a full ResourceBundle,
