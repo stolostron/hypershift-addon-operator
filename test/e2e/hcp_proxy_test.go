@@ -61,6 +61,20 @@ func hcpProxyTestGroups() []string {
 		return strings.Split(groups, ",")
 	}
 	return nil
+
+// requireClusterProxyUserService accepts the kind e2e namespace as well as the
+// production layout, where cluster-proxy is co-located with the HCP proxy.
+func requireClusterProxyUserService(ctx context.Context) {
+	for _, namespace := range []string{clusterProxyNamespace, hcpProxyNamespace} {
+		_, err := kubeClient.CoreV1().Services(namespace).Get(ctx, "cluster-proxy-addon-user", metav1.GetOptions{})
+		if err == nil {
+			return
+		}
+		if !apierrors.IsNotFound(err) {
+			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "get cluster-proxy-addon-user Service in namespace %s", namespace)
+		}
+	}
+	ginkgo.Skip("cluster-proxy-addon-user Service missing; deploy the cluster-proxy add-on")
 }
 
 var apiServicesGVR = schema.GroupVersionResource{
@@ -682,12 +696,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			specCtx := newSpecContext()
 
 			ginkgo.By("Ensuring OCM cluster-proxy user Service is present")
-			_, err := kubeClient.CoreV1().Services(clusterProxyNamespace).Get(
-				specCtx, "cluster-proxy-addon-user", metav1.GetOptions{})
-			if apierrors.IsNotFound(err) {
-				ginkgo.Skip("cluster-proxy-addon-user Service missing; run make deploy-cluster-proxy")
-			}
-			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "cluster-proxy-addon-user Service must exist for extraObjects e2e")
+			requireClusterProxyUserService(specCtx)
 
 			hcNS := fmt.Sprintf("e2e-hcp-proxy-extra-%d", time.Now().UnixNano())
 			const hcName = "e2e-hc-extra"
