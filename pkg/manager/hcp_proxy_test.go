@@ -1422,6 +1422,17 @@ func Test_handleCreate_WhenExtraObjectsProvided_ItShouldPostThemBeforeHostedClus
 	assert.Equal(t, labelCreatedViaValue, cm.GetLabels()[labelCreatedVia], "ConfigMap must be stamped created-via")
 	assert.Equal(t, "my-hc", cm.GetLabels()[labelHostedCluster], "ConfigMap must be stamped with HostedCluster name")
 
+	var hostedCluster hypershiftv1beta1.HostedCluster
+	require.NoError(t, json.Unmarshal(posted[3].body, &hostedCluster), "HostedCluster body must be JSON")
+	var inventory []schema.GroupVersionKind
+	require.NoError(t, json.Unmarshal(
+		[]byte(hostedCluster.Annotations[annotationExtraObjectGVKs]), &inventory),
+		"HostedCluster must record the types of extra objects it created")
+	assert.ElementsMatch(t, []schema.GroupVersionKind{
+		{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role"},
+		{Version: "v1", Kind: "ConfigMap"},
+	}, inventory)
+
 	var bundle ResourceBundle
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &bundle), "create response must be a ResourceBundle")
 	require.Len(t, bundle.ExtraObjects, 2, "response must echo applied extra objects")
@@ -2519,6 +2530,8 @@ func Test_handleDelete_WhenLabeledExtraObjectsExist_ItShouldDeleteThemBeforeHost
 
 func Test_handleDelete_WhenExtraObjectDeleteFails_ItShouldReturnFailureWithoutDeletingHostedCluster(t *testing.T) {
 	hostedClusterDeleted := false
+	inventory, err := json.Marshal([]schema.GroupVersionKind{{Version: "v1", Kind: "ConfigMap"}})
+	require.NoError(t, err)
 	writeJSON := func(w http.ResponseWriter, value interface{}) {
 		w.Header().Set(headerContentType, contentTypeJSON)
 		require.NoError(t, json.NewEncoder(w).Encode(value))
@@ -2542,6 +2555,10 @@ func Test_handleDelete_WhenExtraObjectDeleteFails_ItShouldReturnFailureWithoutDe
 			writeJSON(w, metav1.APIResourceList{APIResources: []metav1.APIResource{{Name: "configmaps", Namespaced: true}}})
 		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/apis":
 			writeJSON(w, metav1.APIGroupList{})
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/hostedclusters/my-hc"):
+			writeJSON(w, &hypershiftv1beta1.HostedCluster{ObjectMeta: metav1.ObjectMeta{
+				Annotations: map[string]string{annotationExtraObjectGVKs: string(inventory)},
+			}})
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/configmaps"):
 			writeConfigMapList(w)
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/configmaps/user-ca-bundle"):
@@ -2565,6 +2582,43 @@ func Test_handleDelete_WhenExtraObjectDeleteFails_ItShouldReturnFailureWithoutDe
 	assertStatusError(t, w, http.StatusBadGateway, "failed to delete all resources")
 	assert.NotContains(t, w.Body.String(), "sensitive spoke response")
 	assert.False(t, hostedClusterDeleted)
+}
+
+func Test_deleteExtraObjectsForHostedCluster_WhenInventoryIsMissing_ItShouldNotFail(t *testing.T) {
+	p := newTestProxy(t)
+	hc := &hypershiftv1beta1.HostedCluster{}
+
+	assert.False(t, p.deleteExtraObjectsForHostedCluster(
+		context.Background(), nil, "clusters", "my-hc", "spoke-1", hc))
+}
+
+func Test_deleteExtraObjectsForHostedCluster_WhenInventoryIsMalformed_ItShouldFail(t *testing.T) {
+	p := newTestProxy(t)
+	hc := &hypershiftv1beta1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+		annotationExtraObjectGVKs: "not-json",
+	}}}
+
+	assert.True(t, p.deleteExtraObjectsForHostedCluster(
+		context.Background(), nil, "clusters", "my-hc", "spoke-1", hc))
+}
+
+func Test_deleteExtraObjectsForHostedCluster_WhenInventoryHasUnmappedGVK_ItShouldFail(t *testing.T) {
+	p := newTestProxy(t)
+	inventory, err := json.Marshal([]schema.GroupVersionKind{{Group: "apps", Version: "v1", Kind: "Deployment"}})
+	require.NoError(t, err)
+	hc := &hypershiftv1beta1.HostedCluster{ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+		annotationExtraObjectGVKs: string(inventory),
+	}}}
+
+	assert.True(t, p.deleteExtraObjectsForHostedCluster(
+		context.Background(), nil, "clusters", "my-hc", "spoke-1", hc))
+}
+
+func Test_deleteExtraObjectsForHostedCluster_WhenHostedClusterIsMissing_ItShouldFail(t *testing.T) {
+	p := newTestProxy(t)
+
+	assert.True(t, p.deleteExtraObjectsForHostedCluster(
+		context.Background(), nil, "clusters", "my-hc", "spoke-1", nil))
 }
 
 // --- createOrUpdateSecretOnSpoke ---

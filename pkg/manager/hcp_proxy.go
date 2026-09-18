@@ -1610,10 +1610,8 @@ func (p *hcpProxy) deleteNodePool(
 	return false
 }
 
-// deleteExtraObjectsForHostedCluster discovers namespaced spoke resources and
-// deletes objects carrying both proxy ownership labels. Discovery failures are
-// best-effort because a caller may not be allowed to discover unrelated APIs;
-// failures to list or delete an applicable resource are surfaced to the caller.
+// deleteExtraObjectsForHostedCluster deletes the resource types recorded during
+// creation that carry both proxy ownership labels.
 func (p *hcpProxy) deleteExtraObjectsForHostedCluster(
 	ctx context.Context,
 	hcpClient *http.Client,
@@ -1639,51 +1637,6 @@ func (p *hcpProxy) deleteExtraObjectsForHostedCluster(
 		}
 	}
 	return failed
-}
-
-// discoverNamespacedSpokeResources returns collection API paths advertised by
-// the spoke. It intentionally skips subresources, which cannot be listed or
-// deleted as standalone objects.
-func (p *hcpProxy) discoverNamespacedSpokeResources(
-	ctx context.Context,
-	hcpClient *http.Client,
-	spokeName string,
-) []string {
-	var paths []string
-	addResources := func(apiPath string) {
-		var resources metav1.APIResourceList
-		if err := p.getSpokeJSON(ctx, hcpClient, spokeName, apiPath, &resources); err != nil {
-			p.logSpokeHTTPFailure("failed to discover spoke API resources", "path", apiPath, "spoke", spokeName)
-			return
-		}
-		for _, resource := range resources.APIResources {
-			if !resource.Namespaced || strings.Contains(resource.Name, "/") {
-				continue
-			}
-			paths = append(paths, apiPath+"/namespaces/{namespace}/"+resource.Name)
-		}
-	}
-
-	var coreVersions metav1.APIVersions
-	if err := p.getSpokeJSON(ctx, hcpClient, spokeName, "/api", &coreVersions); err != nil {
-		p.logSpokeHTTPFailure("failed to discover spoke core API versions", "spoke", spokeName)
-	} else {
-		for _, version := range coreVersions.Versions {
-			addResources("/api/" + version)
-		}
-	}
-
-	var groups metav1.APIGroupList
-	if err := p.getSpokeJSON(ctx, hcpClient, spokeName, "/apis", &groups); err != nil {
-		p.logSpokeHTTPFailure("failed to discover spoke API groups", "spoke", spokeName)
-		return paths
-	}
-	for _, group := range groups.Groups {
-		for _, version := range group.Versions {
-			addResources("/apis/" + group.Name + "/" + version.Version)
-		}
-	}
-	return paths
 }
 
 // deleteLabeledExtraObjects lists then deletes objects for one API resource.
@@ -1746,29 +1699,6 @@ func (p *hcpProxy) deleteLabeledExtraObjects(
 		}
 	}
 	return failed
-}
-
-// getSpokeJSON performs a successful GET and decodes its response without ever
-// logging the response body.
-func (p *hcpProxy) getSpokeJSON(
-	ctx context.Context,
-	hcpClient *http.Client,
-	spokeName, apiPath string,
-	out interface{},
-) error {
-	req, err := p.newSpokeRequest(ctx, http.MethodGet, spokeName, apiPath, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := doSpokeHTTP(hcpClient, req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("spoke returned %d", resp.StatusCode)
-	}
-	return json.NewDecoder(resp.Body).Decode(out)
 }
 
 // handlePatchResources works like kubectl edit: accept a full ResourceBundle,
