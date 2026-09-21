@@ -1183,6 +1183,49 @@ func Test_handleGetResources_WhenSpokeReturnsCluster_ItShouldReturnBundle(t *tes
 	assert.Len(t, bundle.NodePools, 1)
 }
 
+func Test_handleGetResources_WhenNodePoolListFails_ItShouldReturnBadGateway(t *testing.T) {
+	hcJSON, err := json.Marshal(&hypershiftv1beta1.HostedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "my-hc", Namespace: "clusters"},
+	})
+	require.NoError(t, err)
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set(headerContentType, contentTypeJSON)
+		if strings.Contains(r.URL.Path, "/nodepools") {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = io.WriteString(w, `{"message":"nodepool list is forbidden"}`)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(hcJSON)
+	}))
+	defer spokeSrv.Close()
+
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, availableManagedCluster("spoke-1"))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodGet, "/", nil)
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleGetResources(w, r, "clusters", "my-hc", "spoke-1")
+
+	assertStatusError(t, w, http.StatusBadGateway, "spoke returned 403")
+}
+
+func Test_fetchNodePoolsForHC_WhenResponseIsInvalid_ItShouldReturnInternalServerError(t *testing.T) {
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, `not-json`)
+	}))
+	defer spokeSrv.Close()
+
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, availableManagedCluster("spoke-1"))
+	nodePools, status, errMsg := p.fetchNodePoolsForHC(
+		context.Background(), spokeSrv.Client(), "clusters", "my-hc", "spoke-1",
+	)
+
+	assert.Nil(t, nodePools)
+	assert.Equal(t, http.StatusInternalServerError, status)
+	assert.Contains(t, errMsg, "failed to decode NodePools")
+}
+
 // --- handleDelete ---
 
 func Test_handleDelete_WhenSpokeAccepts_ItShouldProxy200(t *testing.T) {

@@ -308,11 +308,12 @@ deploy-cluster-proxy: ensure-helm ## Install OCM cluster-proxy into open-cluster
 	PATH="$(GOBIN):$$PATH" hack/install_cluster_proxy.sh
 
 .PHONY: deploy-hypershift-crds
-deploy-hypershift-crds: ## Apply HostedCluster CRD so spoke create e2e can succeed.
+deploy-hypershift-crds: ## Apply the HyperShift CRDs used by the spoke proxy e2e tests.
 	# Server-side apply avoids the client-side last-applied-configuration
 	# annotation size limit on this large CRD.
 	$(KUBECTL) apply --server-side --force-conflicts \
 	  -f hack/crds/hypershift.openshift.io_hostedclusters.yaml
+	$(KUBECTL) apply -f test/e2e/nodepool-crd.yaml
 
 .PHONY: ensure-helm
 ensure-helm: ## Install helm into $(GOBIN) if not already on PATH.
