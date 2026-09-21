@@ -1532,7 +1532,19 @@ func (p *hcpProxy) handleDelete(w http.ResponseWriter, r *http.Request, ns, name
 	ctx := r.Context()
 	associatedResourceCleanupFailed := p.deleteMatchingNodePools(ctx, hcpClient, ns, name, spokeName)
 	hc, status, _ := p.fetchHostedCluster(ctx, hcpClient, ns, name, spokeName)
-	if status == http.StatusOK && p.deleteExtraObjectsForHostedCluster(ctx, hcpClient, ns, name, spokeName, hc) {
+	switch status {
+	case http.StatusOK:
+		if p.deleteExtraObjectsForHostedCluster(ctx, hcpClient, ns, name, spokeName, hc) {
+			associatedResourceCleanupFailed = true
+		}
+	case http.StatusNotFound:
+		if associatedResourceCleanupFailed {
+			p.writeJSONError(w, "failed to delete all resources associated with HostedCluster", http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+		return
+	default:
 		associatedResourceCleanupFailed = true
 	}
 	if associatedResourceCleanupFailed {
@@ -1571,8 +1583,12 @@ func (p *hcpProxy) deleteMatchingNodePools(
 	hcpClient *http.Client,
 	ns, hcName, spokeName string,
 ) bool {
+	nodePools, status, _ := p.fetchNodePoolsForHC(ctx, hcpClient, ns, hcName, spokeName)
+	if status != http.StatusOK {
+		return true
+	}
 	failed := false
-	for _, np := range p.fetchNodePoolsForHC(ctx, hcpClient, ns, hcName, spokeName) {
+	for _, np := range nodePools {
 		if p.deleteNodePool(ctx, hcpClient, ns, spokeName, np.Name) {
 			failed = true
 		}
@@ -1820,7 +1836,12 @@ func (p *hcpProxy) handleGetResources(w http.ResponseWriter, r *http.Request, ns
 		return
 	}
 	bundle.HostedCluster = hc
-	bundle.NodePools = p.fetchNodePoolsForHC(ctx, hcpClient, ns, name, spokeName)
+	nodePools, status, errMsg := p.fetchNodePoolsForHC(ctx, hcpClient, ns, name, spokeName)
+	if status != http.StatusOK {
+		p.writeJSONError(w, errMsg, status)
+		return
+	}
+	bundle.NodePools = nodePools
 
 	w.Header().Set(headerContentType, contentTypeJSON)
 	if err := json.NewEncoder(w).Encode(bundle); err != nil {
@@ -1902,26 +1923,34 @@ func (p *hcpProxy) fetchNodePoolsForHC(
 	ctx context.Context,
 	hcpClient *http.Client,
 	ns, hcName, spokeName string,
-) []hypershiftv1beta1.NodePool {
+) ([]hypershiftv1beta1.NodePool, int, string) {
 	npPath, err := hsCollectionAPIPath(ns, resourceNodePools)
 	if err != nil {
-		return nil
+		return nil, http.StatusBadRequest, err.Error()
 	}
 	npReq, err := p.newSpokeRequest(ctx, http.MethodGet, spokeName, npPath, nil)
 	if err != nil {
-		return nil
+		return nil, http.StatusInternalServerError, "failed to build spoke request: " + err.Error()
 	}
 	npResp, err := doSpokeHTTP(hcpClient, npReq)
 	if err != nil {
-		return nil
+		return nil, http.StatusBadGateway, "spoke request failed: " + err.Error()
 	}
 	defer npResp.Body.Close()
 	if npResp.StatusCode != http.StatusOK {
-		return nil
+		body, readErr := io.ReadAll(npResp.Body)
+		if readErr != nil {
+			return nil, http.StatusInternalServerError, "failed to read NodePool response: " + readErr.Error()
+		}
+		msg := spokeHTTPStatusMessage(body)
+		if msg != "" {
+			return nil, http.StatusBadGateway, fmt.Sprintf("spoke returned %d: %s", npResp.StatusCode, msg)
+		}
+		return nil, http.StatusBadGateway, fmt.Sprintf("spoke returned %d for NodePools", npResp.StatusCode)
 	}
 	var npList hypershiftv1beta1.NodePoolList
-	if json.NewDecoder(npResp.Body).Decode(&npList) != nil {
-		return nil
+	if err := json.NewDecoder(npResp.Body).Decode(&npList); err != nil {
+		return nil, http.StatusInternalServerError, "failed to decode NodePools: " + err.Error()
 	}
 	var out []hypershiftv1beta1.NodePool
 	for _, np := range npList.Items {
@@ -1929,7 +1958,7 @@ func (p *hcpProxy) fetchNodePoolsForHC(
 			out = append(out, np)
 		}
 	}
-	return out
+	return out, http.StatusOK, ""
 }
 
 // statusCodeInt32 converts an HTTP status code to int32 without integer overflow.

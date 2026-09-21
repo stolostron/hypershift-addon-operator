@@ -1187,6 +1187,14 @@ func Test_handleGetResources_WhenSpokeReturnsCluster_ItShouldReturnBundle(t *tes
 
 func Test_handleDelete_WhenSpokeAccepts_ItShouldProxy200(t *testing.T) {
 	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/nodepools") {
+			require.NoError(t, json.NewEncoder(w).Encode(&hypershiftv1beta1.NodePoolList{}))
+			return
+		}
+		if r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/hostedclusters/") {
+			require.NoError(t, json.NewEncoder(w).Encode(&hypershiftv1beta1.HostedCluster{}))
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer spokeSrv.Close()
@@ -2474,6 +2482,8 @@ func Test_handleDelete_WhenLabeledExtraObjectsExist_ItShouldDeleteThemBeforeHost
 	require.NoError(t, err)
 	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/nodepools"):
+			writeJSON(w, &hypershiftv1beta1.NodePoolList{})
 		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api":
 			writeJSON(w, metav1.APIVersions{Versions: []string{"v1"}})
 		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api/v1":
@@ -2549,6 +2559,8 @@ func Test_handleDelete_WhenExtraObjectDeleteFails_ItShouldReturnFailureWithoutDe
 	}
 	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/nodepools"):
+			writeJSON(w, &hypershiftv1beta1.NodePoolList{})
 		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api":
 			writeJSON(w, metav1.APIVersions{Versions: []string{"v1"}})
 		case r.Method == http.MethodGet && r.URL.Path == "/spoke-1/api/v1":
@@ -2582,6 +2594,87 @@ func Test_handleDelete_WhenExtraObjectDeleteFails_ItShouldReturnFailureWithoutDe
 	assertStatusError(t, w, http.StatusBadGateway, "failed to delete all resources")
 	assert.NotContains(t, w.Body.String(), "sensitive spoke response")
 	assert.False(t, hostedClusterDeleted)
+}
+
+func Test_handleDelete_WhenNodePoolListFails_ItShouldNotDeleteHostedCluster(t *testing.T) {
+	hostedClusterDeleted := false
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/nodepools"):
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/hostedclusters/"):
+			require.NoError(t, json.NewEncoder(w).Encode(&hypershiftv1beta1.HostedCluster{}))
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/hostedclusters/"):
+			hostedClusterDeleted = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer spokeSrv.Close()
+
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, availableManagedCluster("spoke-1"))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodDelete, "/", nil)
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleDelete(w, r, "clusters", "my-hc", "spoke-1")
+
+	assertStatusError(t, w, http.StatusBadGateway, "failed to delete all resources")
+	assert.False(t, hostedClusterDeleted)
+}
+
+func Test_handleDelete_WhenHostedClusterFetchFails_ItShouldNotDeleteHostedCluster(t *testing.T) {
+	hostedClusterDeleted := false
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/nodepools"):
+			require.NoError(t, json.NewEncoder(w).Encode(&hypershiftv1beta1.NodePoolList{}))
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/hostedclusters/"):
+			w.WriteHeader(http.StatusInternalServerError)
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/hostedclusters/"):
+			hostedClusterDeleted = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer spokeSrv.Close()
+
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, availableManagedCluster("spoke-1"))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodDelete, "/", nil)
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleDelete(w, r, "clusters", "my-hc", "spoke-1")
+
+	assertStatusError(t, w, http.StatusBadGateway, "failed to delete all resources")
+	assert.False(t, hostedClusterDeleted)
+}
+
+func Test_handleDelete_WhenHostedClusterIsMissing_ItShouldSucceed(t *testing.T) {
+	deleteAttempted := false
+	spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/nodepools"):
+			require.NoError(t, json.NewEncoder(w).Encode(&hypershiftv1beta1.NodePoolList{}))
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/hostedclusters/"):
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodDelete:
+			deleteAttempted = true
+			w.WriteHeader(http.StatusOK)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer spokeSrv.Close()
+
+	p := newTestProxyWithSpokeURL(t, spokeSrv.URL, availableManagedCluster("spoke-1"))
+	w := httptest.NewRecorder()
+	r := httptest.NewRequest(http.MethodDelete, "/", nil)
+	r.Header.Set("X-Remote-User", "alice")
+	p.handleDelete(w, r, "clusters", "my-hc", "spoke-1")
+
+	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.False(t, deleteAttempted)
 }
 
 func Test_deleteExtraObjectsForHostedCluster_WhenInventoryIsMissing_ItShouldNotFail(t *testing.T) {
