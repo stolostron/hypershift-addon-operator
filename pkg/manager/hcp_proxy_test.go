@@ -2724,7 +2724,7 @@ func Test_deleteExtraObjectsForHostedCluster_WhenInventoryIsMissing_ItShouldNotF
 	p := newTestProxy(t)
 	hc := &hypershiftv1beta1.HostedCluster{}
 
-	assert.False(t, p.deleteExtraObjectsForHostedCluster(
+	assert.NoError(t, p.deleteExtraObjectsForHostedCluster(
 		context.Background(), nil, "clusters", "my-hc", "spoke-1", hc))
 }
 
@@ -2734,7 +2734,7 @@ func Test_deleteExtraObjectsForHostedCluster_WhenInventoryIsMalformed_ItShouldFa
 		annotationExtraObjectGVKs: "not-json",
 	}}}
 
-	assert.True(t, p.deleteExtraObjectsForHostedCluster(
+	assert.Error(t, p.deleteExtraObjectsForHostedCluster(
 		context.Background(), nil, "clusters", "my-hc", "spoke-1", hc))
 }
 
@@ -2746,14 +2746,14 @@ func Test_deleteExtraObjectsForHostedCluster_WhenInventoryHasUnmappedGVK_ItShoul
 		annotationExtraObjectGVKs: string(inventory),
 	}}}
 
-	assert.True(t, p.deleteExtraObjectsForHostedCluster(
+	assert.Error(t, p.deleteExtraObjectsForHostedCluster(
 		context.Background(), nil, "clusters", "my-hc", "spoke-1", hc))
 }
 
 func Test_deleteExtraObjectsForHostedCluster_WhenHostedClusterIsMissing_ItShouldFail(t *testing.T) {
 	p := newTestProxy(t)
 
-	assert.True(t, p.deleteExtraObjectsForHostedCluster(
+	assert.Error(t, p.deleteExtraObjectsForHostedCluster(
 		context.Background(), nil, "clusters", "my-hc", "spoke-1", nil))
 }
 
