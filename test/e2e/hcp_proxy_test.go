@@ -63,6 +63,22 @@ func hcpProxyTestGroups() []string {
 	return nil
 }
 
+// setHCPProxyTestIdentity adds the request-header identity used by direct proxy
+// tests. Explicit environment groups override per-test defaults, including with
+// an empty HCP_PROXY_TEST_GROUPS value when the caller should have no groups.
+func setHCPProxyTestIdentity(req *http.Request, defaultGroups ...string) {
+	req.Header.Set("X-Remote-User", hcpProxyTestUser())
+	groups := defaultGroups
+	if _, configured := os.LookupEnv("HCP_PROXY_TEST_GROUPS"); configured {
+		groups = hcpProxyTestGroups()
+	}
+	for _, group := range groups {
+		if group = strings.TrimSpace(group); group != "" {
+			req.Header.Add("X-Remote-Group", group)
+		}
+	}
+}
+
 // requireClusterProxyUserService accepts the kind e2e namespace as well as the
 // production layout, where cluster-proxy is co-located with the HCP proxy.
 func requireClusterProxyUserService(ctx context.Context) {
@@ -194,10 +210,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 				"/namespaces/clusters/version?hostingCluster="+defaultManagedCluster)
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
-			req.Header.Set("X-Remote-User", hcpProxyTestUser())
-			for _, group := range hcpProxyTestGroups() {
-				req.Header.Add("X-Remote-Group", group)
-			}
+			setHCPProxyTestIdentity(req)
 
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
@@ -233,7 +246,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			// Add X-Remote-User so it passes the auth check and fails on health
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
-			req.Header.Set("X-Remote-User", "e2e-test-user")
+			setHCPProxyTestIdentity(req)
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 			defer resp.Body.Close()
@@ -251,7 +264,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Remote-User", "e2e-test-user")
+			setHCPProxyTestIdentity(req)
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 			defer resp.Body.Close()
@@ -266,7 +279,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Remote-User", "e2e-test-user")
+			setHCPProxyTestIdentity(req)
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 			defer resp.Body.Close()
@@ -285,7 +298,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build POST request for extraObjects validation")
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Remote-User", "e2e-test-user")
+			setHCPProxyTestIdentity(req)
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy for extraObjects validation")
 			defer resp.Body.Close()
@@ -305,7 +318,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Remote-User", "e2e-test-user")
+			setHCPProxyTestIdentity(req)
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred())
 			defer resp.Body.Close()
@@ -316,12 +329,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			specCtx := newSpecContext()
 
 			ginkgo.By("Ensuring OCM cluster-proxy user Service is present")
-			_, err := kubeClient.CoreV1().Services(clusterProxyNamespace).Get(
-				specCtx, "cluster-proxy-addon-user", metav1.GetOptions{})
-			if apierrors.IsNotFound(err) {
-				ginkgo.Skip("cluster-proxy-addon-user Service missing; run make deploy-cluster-proxy")
-			}
-			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "cluster-proxy-addon-user Service must exist for HCP proxy e2e")
+			requireClusterProxyUserService(specCtx)
 
 			hcNS := fmt.Sprintf("e2e-hcp-proxy-%d", time.Now().UnixNano())
 			const hcName = "e2e-hc"
@@ -396,8 +404,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			req, err := http.NewRequestWithContext(specCtx, http.MethodPost, url, bytes.NewReader(body))
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build POST create HostedCluster request")
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Remote-User", "e2e-test-user")
-			req.Header.Set("X-Remote-Group", "system:masters")
+			setHCPProxyTestIdentity(req, "system:masters")
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy create HostedCluster")
 			defer resp.Body.Close()
@@ -431,12 +438,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			specCtx := newSpecContext()
 
 			ginkgo.By("Ensuring OCM cluster-proxy user Service is present")
-			_, err := kubeClient.CoreV1().Services(clusterProxyNamespace).Get(
-				specCtx, "cluster-proxy-addon-user", metav1.GetOptions{})
-			if apierrors.IsNotFound(err) {
-				ginkgo.Skip("cluster-proxy-addon-user Service missing; run make deploy-cluster-proxy")
-			}
-			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "cluster-proxy-addon-user Service must exist for HCP proxy e2e")
+			requireClusterProxyUserService(specCtx)
 
 			hcNS := fmt.Sprintf("e2e-hcp-proxy-validate-%d", time.Now().UnixNano())
 			const hcName = "e2e-hc-validate"
@@ -464,8 +466,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			ginkgo.By("GET /validate with a free HostedCluster name returns 200 Success")
 			req, err := http.NewRequestWithContext(specCtx, http.MethodGet, validateBase, nil)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build GET /validate request")
-			req.Header.Set("X-Remote-User", "e2e-test-user")
-			req.Header.Set("X-Remote-Group", "system:masters")
+			setHCPProxyTestIdentity(req, "system:masters")
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy GET /validate")
 			defer resp.Body.Close()
@@ -487,8 +488,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			archURL := validateBase + "&arch=" + hostingArch
 			archReq, err := http.NewRequestWithContext(specCtx, http.MethodGet, archURL, nil)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build GET /validate request with matching arch")
-			archReq.Header.Set("X-Remote-User", "e2e-test-user")
-			archReq.Header.Set("X-Remote-Group", "system:masters")
+			setHCPProxyTestIdentity(archReq, "system:masters")
 			archResp, err := client.Do(archReq)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy GET /validate with matching arch")
 			defer archResp.Body.Close()
@@ -515,12 +515,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			specCtx := newSpecContext()
 
 			ginkgo.By("Ensuring OCM cluster-proxy user Service is present")
-			_, err := kubeClient.CoreV1().Services(clusterProxyNamespace).Get(
-				specCtx, "cluster-proxy-addon-user", metav1.GetOptions{})
-			if apierrors.IsNotFound(err) {
-				ginkgo.Skip("cluster-proxy-addon-user Service missing; run make deploy-cluster-proxy")
-			}
-			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "cluster-proxy-addon-user Service must exist for HCP proxy e2e")
+			requireClusterProxyUserService(specCtx)
 
 			hcNS := fmt.Sprintf("e2e-hcp-proxy-dup-%d", time.Now().UnixNano())
 			const hcName = "e2e-hc-dup"
@@ -594,8 +589,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			req, err := http.NewRequestWithContext(specCtx, http.MethodPost, url, bytes.NewReader(body))
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build first POST create request")
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Remote-User", "e2e-test-user")
-			req.Header.Set("X-Remote-Group", "system:masters")
+			setHCPProxyTestIdentity(req, "system:masters")
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy first create")
 			defer resp.Body.Close()
@@ -609,8 +603,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 				"/namespaces/"+hcNS+"/hostedclusters/"+hcName+"/validate?hostingCluster="+defaultManagedCluster)
 			dupReq, err := http.NewRequestWithContext(specCtx, http.MethodGet, validateURL, nil)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build GET /validate request")
-			dupReq.Header.Set("X-Remote-User", "e2e-test-user")
-			dupReq.Header.Set("X-Remote-Group", "system:masters")
+			setHCPProxyTestIdentity(dupReq, "system:masters")
 			dupResp, err := client.Do(dupReq)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy GET /validate")
 			defer dupResp.Body.Close()
@@ -626,12 +619,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			specCtx := newSpecContext()
 
 			ginkgo.By("Ensuring OCM cluster-proxy user Service is present")
-			_, err := kubeClient.CoreV1().Services(clusterProxyNamespace).Get(
-				specCtx, "cluster-proxy-addon-user", metav1.GetOptions{})
-			if apierrors.IsNotFound(err) {
-				ginkgo.Skip("cluster-proxy-addon-user Service missing; run make deploy-cluster-proxy")
-			}
-			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "cluster-proxy-addon-user Service must exist for HCP proxy e2e")
+			requireClusterProxyUserService(specCtx)
 
 			hcNS := fmt.Sprintf("e2e-hcp-proxy-arch-%d", time.Now().UnixNano())
 			const hcName = "e2e-hc-arch"
@@ -673,8 +661,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			ginkgo.By("GET /validate with a mismatched NodePool arch reports 400 without applying anything")
 			req, err := http.NewRequestWithContext(specCtx, http.MethodGet, validateURL, nil)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build GET /validate request with arch mismatch")
-			req.Header.Set("X-Remote-User", "e2e-test-user")
-			req.Header.Set("X-Remote-Group", "system:masters")
+			setHCPProxyTestIdentity(req, "system:masters")
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy GET /validate with arch mismatch")
 			defer resp.Body.Close()
@@ -791,8 +778,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			req, err := http.NewRequestWithContext(specCtx, http.MethodPost, url, bytes.NewReader(body))
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build POST create request with extraObjects")
 			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("X-Remote-User", "e2e-test-user")
-			req.Header.Set("X-Remote-Group", "system:masters")
+			setHCPProxyTestIdentity(req, "system:masters")
 			resp, err := client.Do(req)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy create with extraObjects")
 			defer resp.Body.Close()
@@ -847,8 +833,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 				"/namespaces/"+hcNS+"/hostedclusters/"+hcName+"?hostingCluster="+defaultManagedCluster)
 			deleteReq, err := http.NewRequestWithContext(specCtx, http.MethodDelete, deleteURL, nil)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build DELETE request for HostedCluster with extraObjects")
-			deleteReq.Header.Set("X-Remote-User", "e2e-test-user")
-			deleteReq.Header.Set("X-Remote-Group", "system:masters")
+			setHCPProxyTestIdentity(deleteReq, "system:masters")
 			deleteResp, err := client.Do(deleteReq)
 			gomega.Expect(err).ToNot(gomega.HaveOccurred(), "call HCP proxy delete with extraObjects")
 			deleteBody, readErr := io.ReadAll(deleteResp.Body)
