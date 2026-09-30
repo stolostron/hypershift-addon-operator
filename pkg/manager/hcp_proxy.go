@@ -25,6 +25,7 @@ import (
 	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 	mcev1 "github.com/stolostron/backplane-operator/api/v1"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -140,12 +141,12 @@ type CreateRequest struct {
 	// Each Secret is created on the spoke before the HostedCluster.
 	Secrets []corev1.Secret `json:"secrets,omitempty"`
 
-	// ExtraObjects holds non-secret resources from `hcp create cluster --render`
-	// that are not HostedCluster/NodePool/Secret (e.g. Agent capi-provider-role
-	// Role, --additional-trust-bundle ConfigMap). Applied on the spoke after
-	// Secrets and before the HostedCluster so the hypershift-operator can
-	// reference them immediately. Created as the impersonated caller; spoke
-	// RBAC is the user's, not the manager ServiceAccount.
+	// ExtraObjects holds only rbac.authorization.k8s.io/v1 Role and v1 ConfigMap
+	// resources from `hcp create cluster --render` (Agent capi-provider-role,
+	// --additional-trust-bundle, AWS proxy CA). Other GVKs are rejected before
+	// any spoke writes. Applied after Secrets and before the HostedCluster so
+	// the hypershift-operator can reference them immediately. Created as the
+	// impersonated caller; spoke RBAC is the user's, not the manager ServiceAccount.
 	ExtraObjects []runtime.RawExtension `json:"extraObjects,omitempty"`
 }
 
@@ -1338,7 +1339,7 @@ func (t *impersonatingTransport) RoundTrip(req *http.Request) (*http.Response, e
 //
 //  0. Namespace     (auto-created, idempotent — 409 is silently ignored)
 //  1. Secrets       (pull-secret, ssh-key, any cloud-provider STS secrets, ...)
-//  2. ExtraObjects  (Roles, ConfigMaps, …; 409 ignored; other failures abort)
+//  2. ExtraObjects  (Roles and ConfigMaps only; 409 ignored; other failures abort)
 //  3. HostedCluster (stamped with labelCreatedVia; spec.pullSecret already set by caller)
 //  4. NodePool(s)   (each stamped with labelCreatedVia)
 //
@@ -1425,7 +1426,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 		}
 	}
 
-	// 2. Extra objects (Role, ConfigMap, …) before HostedCluster so HO can
+	// 2. Extra objects (Role and ConfigMap only) before HostedCluster so HO can
 	// reference them (e.g. capi-provider-role) as soon as the HC exists.
 	var createdExtraObjs []*unstructured.Unstructured
 	var appliedExtraObjs []*unstructured.Unstructured
@@ -2109,8 +2110,8 @@ func (p *hcpProxy) createOnSpoke(
 	return p.postOnSpoke(ctx, httpClient, spokeName, resource, apiPath, obj)
 }
 
-// createUnstructuredOnSpoke POSTs a generic namespaced object (Role, ConfigMap, …)
-// to the spoke kube-apiserver via cluster-proxy.
+// createUnstructuredOnSpoke POSTs an allowed Role or ConfigMap to the spoke
+// kube-apiserver via cluster-proxy after decodeExtraObjects validates its GVK.
 func (p *hcpProxy) createUnstructuredOnSpoke(
 	ctx context.Context,
 	httpClient *http.Client,
@@ -2240,8 +2241,9 @@ func spokeHTTPErrorForWhat(statusCode int, what string, respBody []byte) error {
 	return spokeHTTPError(statusCode, what, respBody)
 }
 
-// decodeExtraObjects unmarshals ExtraObjects entries, skipping empty payloads
-// and kinds that already have dedicated CreateRequest fields.
+// decodeExtraObjects unmarshals ExtraObjects entries and validates the entire
+// list against the allowlist before handleCreate performs any spoke writes.
+// Empty payloads are skipped; all non-allowlisted GVKs are rejected.
 func decodeExtraObjects(raws []runtime.RawExtension) ([]*unstructured.Unstructured, error) {
 	if len(raws) > maxExtraObjects {
 		return nil, fmt.Errorf("extraObjects exceeds maximum of %d", maxExtraObjects)
@@ -2262,8 +2264,9 @@ func decodeExtraObjects(raws []runtime.RawExtension) ([]*unstructured.Unstructur
 		if gvk.Kind == "" || gvk.Version == "" {
 			return nil, fmt.Errorf("extraObjects[%d]: missing apiVersion or kind", i)
 		}
-		if isDedicatedCreateGVK(gvk) {
-			continue
+		if !isAllowedExtraObjectGVK(gvk) {
+			return nil, fmt.Errorf("extraObjects[%d]: kind %q with apiVersion %q is not allowed",
+				i, obj.GetKind(), obj.GetAPIVersion())
 		}
 		if _, err := sanitizeProxyName(obj.GetName()); err != nil {
 			return nil, fmt.Errorf("extraObjects[%d]: %w", i, err)
@@ -2289,14 +2292,13 @@ func extraObjectsToRaw(objs []*unstructured.Unstructured) ([]runtime.RawExtensio
 	return out, nil
 }
 
-// isDedicatedCreateGVK reports whether gvk is represented by a dedicated CreateRequest
-// field rather than extraObjects (core Secret/Namespace, HyperShift HC/NodePool).
-func isDedicatedCreateGVK(gvk schema.GroupVersionKind) bool {
+// isAllowedExtraObjectGVK is the explicit allowlist for hcp create cluster --render
+// resources without dedicated CreateRequest fields. Keep the supported set in sync
+// with docs/management/from-hub-cli.md; new rendered kinds need explicit review.
+func isAllowedExtraObjectGVK(gvk schema.GroupVersionKind) bool {
 	switch gvk {
-	case schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Secret"},
-		schema.GroupVersionKind{Group: "", Version: "v1", Kind: "Namespace"},
-		hypershiftv1beta1.GroupVersion.WithKind("HostedCluster"),
-		hypershiftv1beta1.GroupVersion.WithKind("NodePool"):
+	case corev1.SchemeGroupVersion.WithKind("ConfigMap"),
+		rbacv1.SchemeGroupVersion.WithKind("Role"):
 		return true
 	default:
 		return false
