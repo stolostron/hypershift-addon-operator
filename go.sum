@@ -1142,6 +1142,8 @@ kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6
 kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90/go.mod h1:018lASpFYBsYN6XwmA2TIrPCx6e0gviTd/ZNtSitKgc=
 open-cluster-management.io/addon-framework v0.9.4-0.20250218075951-35f514c124f6 h1:4Hla3604OJpoW76HKKZmB1qIggoWOpSY7Lcqz+z8RqQ=
 open-cluster-management.io/addon-framework v0.9.4-0.20250218075951-35f514c124f6/go.mod h1:LDkGLGTQh+sthF1qWlv87iMeAuRPsNEMK31O14kMneA=
+open-cluster-management.io/addon-framework v1.2.1-0.20260929202110-4e19a6272683 h1:xkqxGdn9DmSVxst/GyN5+jAYmpo97wZle/VmBao7wL0=
+open-cluster-management.io/addon-framework v1.2.1-0.20260929202110-4e19a6272683/go.mod h1:G/LdNon2+WfT5csN/DYDfmdcbd+AOJW/2Baw4Qyn9Wk=
 open-cluster-management.io/api v0.13.0 h1:dlcJEZlNlE0DmSDctK2s7iWKg9l+Tgb0V78Z040nMuk=
 open-cluster-management.io/api v0.13.0/go.mod h1:CuCPEzXDvOyxBB0H1d1eSeajbHqaeGEKq9c63vQc63w=
 open-cluster-management.io/sdk-go v0.13.1-0.20240416030555-aa744f426379 h1:8jXVHfgy+wgXq1mrWC1mTieoP77WsAAHNpzILMIzWB0=
