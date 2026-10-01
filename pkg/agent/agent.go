@@ -379,10 +379,13 @@ func (o *AgentOptions) runControllerManager(ctx context.Context) error {
 		localClusterName: aCtrl.localClusterName,
 		log:              o.Log.WithName("label-agent"),
 	}
-
-	if err = labelAgent.SetupWithManager(mgr); err != nil {
+	labelAgentSkipped, err := setupSpokeLabelAgent(mgr.GetRESTMapper(), labelAgent, mgr)
+	if err != nil {
 		metrics.AddonAgentFailedToStartBool.Set(1)
-		return fmt.Errorf("unable to create label agent controller: %v", err)
+		return err
+	}
+	if labelAgentSkipped {
+		log.Info("ManagedCluster API not available on spoke cluster, skipping label agent")
 	}
 
 	return mgr.Start(ctrl.SetupSignalHandler())
