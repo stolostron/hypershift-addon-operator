@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"os"
 	"testing"
 
@@ -14,12 +15,15 @@ import (
 	"go.uber.org/zap"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	k8sscheme "k8s.io/client-go/kubernetes/scheme"
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
@@ -47,6 +51,108 @@ func Test_isACMInstalled_NonOpenShiftCluster(t *testing.T) {
 	acmInstalled, err := controller.isACMInstalled(context.TODO())
 	assert.NoError(t, err, "should not error on non-OpenShift cluster")
 	assert.True(t, acmInstalled, "should assume ACM is installed on non-OpenShift cluster")
+}
+
+// brokenRESTMapper simulates a non-NoMatch discovery failure from RESTMapping.
+type brokenRESTMapper struct {
+	err error
+}
+
+func (b brokenRESTMapper) KindFor(_ schema.GroupVersionResource) (schema.GroupVersionKind, error) {
+	return schema.GroupVersionKind{}, b.err
+}
+
+func (b brokenRESTMapper) KindsFor(_ schema.GroupVersionResource) ([]schema.GroupVersionKind, error) {
+	return nil, b.err
+}
+
+func (b brokenRESTMapper) ResourceFor(_ schema.GroupVersionResource) (schema.GroupVersionResource, error) {
+	return schema.GroupVersionResource{}, b.err
+}
+
+func (b brokenRESTMapper) ResourcesFor(_ schema.GroupVersionResource) ([]schema.GroupVersionResource, error) {
+	return nil, b.err
+}
+
+func (b brokenRESTMapper) RESTMapping(_ schema.GroupKind, _ ...string) (*meta.RESTMapping, error) {
+	return nil, b.err
+}
+
+func (b brokenRESTMapper) RESTMappings(_ schema.GroupKind, _ ...string) ([]*meta.RESTMapping, error) {
+	return nil, b.err
+}
+
+func (b brokenRESTMapper) ResourceSingularizer(_ string) (string, error) {
+	return "", b.err
+}
+
+func Test_spokeHasManagedClusterAPI(t *testing.T) {
+	gvk := clusterv1.SchemeGroupVersion.WithKind("ManagedCluster")
+
+	withMC := meta.NewDefaultRESTMapper([]schema.GroupVersion{clusterv1.SchemeGroupVersion})
+	withMC.Add(gvk, meta.RESTScopeRoot)
+	hasAPI, err := spokeHasManagedClusterAPI(withMC)
+	assert.NoError(t, err)
+	assert.True(t, hasAPI, "mapper with ManagedCluster GVK should enable label-agent registration")
+
+	withoutMC := meta.NewDefaultRESTMapper(nil)
+	hasAPI, err = spokeHasManagedClusterAPI(withoutMC)
+	assert.NoError(t, err)
+	assert.False(t, hasAPI, "NoMatch means API absent; label agent should be skipped on ROSA-like spoke")
+
+	hasAPI, err = spokeHasManagedClusterAPI(brokenRESTMapper{err: errors.New("discovery unavailable")})
+	assert.Error(t, err, "transient discovery errors must fail startup instead of skipping label agent")
+	assert.False(t, hasAPI)
+}
+
+type stubLabelAgentSetup struct {
+	setupErr error
+	called   bool
+}
+
+func (s *stubLabelAgentSetup) SetupWithManager(_ ctrl.Manager) error {
+	s.called = true
+	return s.setupErr
+}
+
+func Test_setupSpokeLabelAgent(t *testing.T) {
+	gvk := clusterv1.SchemeGroupVersion.WithKind("ManagedCluster")
+	withMC := meta.NewDefaultRESTMapper([]schema.GroupVersion{clusterv1.SchemeGroupVersion})
+	withMC.Add(gvk, meta.RESTScopeRoot)
+	withoutMC := meta.NewDefaultRESTMapper(nil)
+
+	t.Run("skip when spoke lacks ManagedCluster API", func(t *testing.T) {
+		setup := &stubLabelAgentSetup{}
+		labelAgentSkipped, err := setupSpokeLabelAgent(withoutMC, setup, nil)
+		assert.NoError(t, err)
+		assert.True(t, labelAgentSkipped, "ROSA-like spoke should skip label agent without calling setup")
+		assert.False(t, setup.called)
+	})
+
+	t.Run("fail when discovery errors", func(t *testing.T) {
+		setup := &stubLabelAgentSetup{}
+		labelAgentSkipped, err := setupSpokeLabelAgent(
+			brokenRESTMapper{err: errors.New("discovery unavailable")}, setup, nil)
+		assert.Error(t, err)
+		assert.False(t, labelAgentSkipped)
+		assert.False(t, setup.called)
+	})
+
+	t.Run("register when API is present", func(t *testing.T) {
+		setup := &stubLabelAgentSetup{}
+		labelAgentSkipped, err := setupSpokeLabelAgent(withMC, setup, nil)
+		assert.NoError(t, err)
+		assert.False(t, labelAgentSkipped)
+		assert.True(t, setup.called, "label agent setup must run when ManagedCluster API exists")
+	})
+
+	t.Run("propagate label agent setup failure", func(t *testing.T) {
+		setup := &stubLabelAgentSetup{setupErr: errors.New("controller build failed")}
+		labelAgentSkipped, err := setupSpokeLabelAgent(withMC, setup, nil)
+		assert.Error(t, err)
+		assert.False(t, labelAgentSkipped)
+		assert.True(t, setup.called)
+	})
 }
 
 func Test_getSelfManagedClusterName(t *testing.T) {
