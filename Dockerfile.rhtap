@@ -16,7 +16,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
     go build -mod=readonly -o bin/hypershift-addon cmd/main.go
 
-# PQC-enabled UBI9 runtime (OpenSSL DEFAULT:PQ) for ACM 5.0 / MCE 5.0.
+# PQC-enabled UBI9 runtime (OpenSSL DEFAULT:PQ) for ACM 5.2 / MCE 5.2.
 # The image is published on registry.redhat.io (same as backplane-operator ACM-41650);
 # it is not available on registry.access.redhat.com or registry.ci.openshift.org.
 FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest
@@ -27,8 +27,8 @@ COPY --from=builder /go/src/github.com/stolostron/hypershift-addon-operator/bin/
 LABEL com.redhat.component="multicluster-engine-hypershift-addon-operator-container" \
       url="https://github.com/stolostron/hypershift-addon-operator" \
       name="multicluster-engine/hypershift-addon-rhel9-operator" \
-      cpe="cpe:/a:redhat:multicluster_engine:5.0::el9" \
-      version="5.0" \
+      cpe="cpe:/a:redhat:multicluster_engine:5.2::el9" \
+      version="5.2" \
       summary="multicluster-engine-hypershift-addon-operator" \
       io.openshift.tags="data,images" \
       io.k8s.display-name="multicluster-engine-hypershift-addon-operator" \
