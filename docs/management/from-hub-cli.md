@@ -88,7 +88,7 @@ Mirrors `hcp create cluster --render` output:
   "hostedCluster": { "...": "HostedCluster object" },
   "nodePools": [ { "...": "NodePool object" } ],
   "secrets": [ { "...": "Secret object" } ],
-  "extraObjects": [ { "...": "Role, ConfigMap, or other non-secret object" } ]
+  "extraObjects": [ { "...": "rbac.authorization.k8s.io/v1 Role or v1 ConfigMap" } ]
 }
 ```
 
@@ -97,7 +97,21 @@ Mirrors `hcp create cluster --render` output:
 | `hostedCluster` | yes | Full HostedCluster; `spec.pullSecret.name` / `spec.sshKey.name` must match Secrets in the request |
 | `nodePools` | no | One or more NodePools (`--render` may emit several) |
 | `secrets` | no | Pull secret, SSH key, cloud credential / STS secrets |
-| `extraObjects` | no | Non-secret objects from `--render` (Agent `capi-provider-role` Role, `--additional-trust-bundle` ConfigMap, …). Applied in the HostedCluster namespace after Secrets and before the HostedCluster. Create failures abort the request, roll back any extra objects created in the same request, and treat 409 AlreadyExists as already present. |
+| `extraObjects` | no | Only `rbac.authorization.k8s.io/v1` Role and `v1` ConfigMap objects from `--render`. Applied in the HostedCluster namespace after Secrets and before the HostedCluster. Create failures abort the request, roll back any extra objects created in the same request, and treat 409 AlreadyExists as already present. |
+
+The proxy validates the entire `extraObjects` list against a fixed allowlist
+before writing any resources to the hosting cluster:
+
+- `rbac.authorization.k8s.io/v1`, kind `Role`: Agent `capi-provider-role`.
+- `v1`, kind `ConfigMap`: `--additional-trust-bundle` and AWS proxy CA bundles.
+
+Every other GVK is rejected with `400 Bad Request`; the error identifies the
+entry index, kind, and `apiVersion`. This includes `RoleBinding`,
+`ClusterRoleBinding`, all cluster-scoped kinds, and custom API groups or versions
+using the same kind names. Secrets, HostedClusters, and NodePools must use their
+dedicated request fields; they are rejected if included in `extraObjects`.
+The Namespace is created automatically. Adding a new rendered resource kind
+requires explicitly extending the server allowlist.
 
 `handleCreate` itself does **not** pre-check name collisions or NodePool
 architecture — callers that want that should call the dedicated `/validate`
@@ -226,7 +240,7 @@ only; returned when `arch` was supplied):
   "namespace": { "...": "Namespace object" },
   "hostedCluster": { "...": "HostedCluster object" },
   "nodePools": [ { "...": "NodePool object" } ],
-  "extraObjects": [ { "...": "Role, ConfigMap, or other non-secret object" } ]
+  "extraObjects": [ { "...": "rbac.authorization.k8s.io/v1 Role or v1 ConfigMap" } ]
 }
 ```
 
@@ -312,7 +326,7 @@ Each platform subcommand accepts the **same flags** as the corresponding
 ### How it works internally
 
 1. Runs `hcp create cluster <platform>` in render mode (`--render --render-sensitive`) to produce YAML.
-2. Parses the YAML to extract `HostedCluster`, `NodePool(s)`, `Secret`, and remaining documents (`Role`, `ConfigMap`, …).
+2. Parses the YAML to extract `HostedCluster`, `NodePool(s)`, `Secret`, and extra objects (`Role` or `ConfigMap`). The proxy rejects other extra-object GVKs before any spoke writes.
 3. Stamps client-side labels (see [Resource labels](#resource-labels)).
 4. Calls `GET .../hostedclusters/{name}/validate` (duplicate HostedCluster name, NodePool CPU architecture) before rendering/POSTing infrastructure, then POSTs a `CreateRequest` to the HCP proxy's create endpoint, which creates the resources in dependency order:
    `Namespace → Secrets → ExtraObjects → HostedCluster → NodePool(s)`
