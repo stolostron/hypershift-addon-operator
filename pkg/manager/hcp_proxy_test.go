@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1660,6 +1661,70 @@ func Test_handleCreate_WhenExtraObjectMissingKind_ItShouldReturn400(t *testing.T
 	assert.Contains(t, w.Body.String(), "Kind", "error must explain the ExtraObjects contract")
 }
 
+func Test_handleCreate_WhenExtraObjectNotAllowed_ItShouldRejectBeforeSpokeWrites(t *testing.T) {
+	for _, tt := range []struct {
+		apiVersion string
+		kind       string
+	}{
+		{apiVersion: "rbac.authorization.k8s.io/v1", kind: "RoleBinding"},
+		{apiVersion: "rbac.authorization.k8s.io/v1", kind: "ClusterRoleBinding"},
+		{apiVersion: "rbac.authorization.k8s.io/v1", kind: "ClusterRole"},
+		{apiVersion: "v1", kind: "ServiceAccount"},
+		{apiVersion: "v1", kind: "Pod"},
+		{apiVersion: "v1", kind: "Node"},
+		{apiVersion: "apps/v1", kind: "Deployment"},
+		{apiVersion: "networking.k8s.io/v1", kind: "NetworkPolicy"},
+		{apiVersion: "example.com/v1", kind: "Role"},
+		{apiVersion: "example.com/v1", kind: "ConfigMap"},
+		{apiVersion: "example.com/v1", kind: "Secret"},
+		{apiVersion: "rbac.authorization.k8s.io/v1beta1", kind: "Role"},
+		{apiVersion: "v2", kind: "ConfigMap"},
+		{apiVersion: "v1", kind: "ConfigMapList"},
+		{apiVersion: "v1", kind: "Secret"},
+		{apiVersion: "v1", kind: "Namespace"},
+		{apiVersion: "hypershift.openshift.io/v1beta1", kind: "HostedCluster"},
+		{apiVersion: "hypershift.openshift.io/v1beta1", kind: "NodePool"},
+	} {
+		t.Run(tt.apiVersion+"/"+tt.kind, func(t *testing.T) {
+			var spokeRequests atomic.Int32
+			spokeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				spokeRequests.Add(1)
+				w.WriteHeader(http.StatusCreated)
+				_, _ = io.WriteString(w, `{}`)
+			}))
+			t.Cleanup(spokeSrv.Close)
+			p := newTestProxyWithSpokeURL(t, spokeSrv.URL, availableManagedCluster("spoke-1"))
+
+			body, err := json.Marshal(CreateRequest{
+				HostedCluster: &hypershiftv1beta1.HostedCluster{
+					ObjectMeta: metav1.ObjectMeta{Name: "my-hc"},
+				},
+				Secrets: []corev1.Secret{{ObjectMeta: metav1.ObjectMeta{Name: "pull-secret"}}},
+				ExtraObjects: []runtime.RawExtension{
+					mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
+					mustRawObject(t, "v1", "ConfigMap", "user-ca-bundle"),
+					mustRawObject(t, tt.apiVersion, tt.kind, "denied-object"),
+				},
+			})
+			require.NoError(t, err)
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+			r.Header.Set("X-Remote-User", "alice")
+			p.handleCreate(w, r, "clusters", "spoke-1")
+
+			assert.Zero(t, spokeRequests.Load(), "validate all extra objects before any spoke request")
+			require.Equal(t, http.StatusBadRequest, w.Code, w.Body.String())
+			var status metav1.Status
+			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &status))
+			assert.Equal(t, metav1.StatusReasonBadRequest, status.Reason)
+			assert.Equal(t, int32(http.StatusBadRequest), status.Code)
+			assert.Contains(t, status.Message, "extraObjects[2]")
+			assert.Contains(t, status.Message, fmt.Sprintf("kind %q", tt.kind))
+			assert.Contains(t, status.Message, fmt.Sprintf("apiVersion %q", tt.apiVersion))
+		})
+	}
+}
+
 func Test_extraObjectCollectionAPIPath_WhenRoleAndConfigMap_ItShouldBuildNamespacedPaths(t *testing.T) {
 	mapper := newTestRESTMapper()
 	rolePath, err := extraObjectCollectionAPIPath(mapper, "clusters", schema.GroupVersionKind{
@@ -1689,31 +1754,20 @@ func Test_extraObjectCollectionAPIPath_WhenNetworkPolicy_ItShouldUseCorrectPlura
 		"NetworkPolicy plural must be networkpolicies, not an UnsafeGuessKind plural")
 }
 
-func Test_decodeExtraObjects_WhenDedicatedKind_ItShouldSkip(t *testing.T) {
+func Test_decodeExtraObjects_WhenAllowedKinds_ItShouldDecode(t *testing.T) {
 	objs, err := decodeExtraObjects([]runtime.RawExtension{
-		mustRawObject(t, "v1", "Secret", "pull-secret"),
+		mustRawObject(t, "rbac.authorization.k8s.io/v1", "Role", "capi-provider-role"),
 		mustRawObject(t, "v1", "ConfigMap", "user-ca-bundle"),
 		{Raw: []byte{}},
 	})
 	require.NoError(t, err, "valid extra objects must decode")
-	require.Len(t, objs, 1, "Secret is a dedicated CreateRequest field and must be skipped")
-	assert.Equal(t, "ConfigMap", objs[0].GetKind(), "only non-dedicated kinds remain after filtering")
-	assert.Equal(t, "user-ca-bundle", objs[0].GetName(), "decoded ConfigMap name must match input")
-}
-
-func Test_decodeExtraObjects_WhenCustomSecretKind_ItShouldNotSkip(t *testing.T) {
-	raw, err := json.Marshal(map[string]interface{}{
-		"apiVersion": "example.com/v1",
-		"kind":       "Secret",
-		"metadata":   map[string]interface{}{"name": "custom-secret"},
-	})
-	require.NoError(t, err, "marshal custom Secret fixture")
-	objs, err := decodeExtraObjects([]runtime.RawExtension{{Raw: raw}})
-	require.NoError(t, err, "non-core Secret kind must not be filtered as dedicated")
-	require.Len(t, objs, 1, "custom Secret CRD must pass through generic extra-object handling")
-	assert.Equal(t, "example.com/v1", objs[0].GetAPIVersion(), "custom Secret must retain its API group")
-	assert.Equal(t, "Secret", objs[0].GetKind(), "custom Secret kind must not be filtered as core v1 Secret")
-	assert.Equal(t, "custom-secret", objs[0].GetName(), "custom Secret name must match input")
+	require.Len(t, objs, 2, "empty payloads must be skipped")
+	assert.Equal(t, schema.GroupVersionKind{
+		Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role",
+	}, objs[0].GroupVersionKind())
+	assert.Equal(t, "capi-provider-role", objs[0].GetName())
+	assert.Equal(t, schema.GroupVersionKind{Version: "v1", Kind: "ConfigMap"}, objs[1].GroupVersionKind())
+	assert.Equal(t, "user-ca-bundle", objs[1].GetName())
 }
 
 // --- handleGetResources ---

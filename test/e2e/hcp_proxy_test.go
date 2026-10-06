@@ -308,6 +308,126 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			gomega.Expect(string(respBody)).To(gomega.ContainSubstring("Kind"))
 		})
 
+		ginkgo.DescribeTable("should reject non-allowlisted extraObjects before spoke writes",
+			ginkgo.Label("extra-objects-allowlist"),
+			func(apiVersion, kind string, existingNamespace bool) {
+				specCtx := newSpecContext()
+				// The suite's Kubernetes clients access the hub directly, so checking
+				// spoke resources requires the self-managed local-cluster topology.
+				if defaultManagedCluster != "local-cluster" {
+					ginkgo.Skip("extraObjects write checks require the local-cluster hosting cluster")
+				}
+				requireClusterProxyUserService(specCtx)
+
+				hcNS := fmt.Sprintf("e2e-hcp-proxy-denied-%d", time.Now().UnixNano())
+				const hcName = "e2e-hc-denied"
+				_, err := kubeClient.CoreV1().Namespaces().Get(specCtx, hcNS, metav1.GetOptions{})
+				gomega.Expect(apierrors.IsNotFound(err)).To(gomega.BeTrue(), "test namespace must be absent: %v", err)
+				ginkgo.DeferCleanup(func() {
+					err := kubeClient.CoreV1().Namespaces().Delete(specCtx, hcNS, metav1.DeleteOptions{})
+					if !apierrors.IsNotFound(err) {
+						gomega.Expect(err).ToNot(gomega.HaveOccurred(), "delete test namespace %s", hcNS)
+					}
+				})
+				if existingNamespace {
+					_, err = kubeClient.CoreV1().Namespaces().Create(specCtx,
+						&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: hcNS}}, metav1.CreateOptions{})
+					gomega.Expect(err).ToNot(gomega.HaveOccurred(), "create test namespace")
+				}
+
+				// Put valid objects before the denied entry to catch validation that
+				// runs after Namespace/Secret creation or partway through extraObjects.
+				body := []byte(fmt.Sprintf(`{
+				  "hostedCluster": {"metadata": {"name": %q}},
+				  "secrets": [{
+				    "apiVersion": "v1", "kind": "Secret",
+				    "metadata": {"name": "pull-secret"},
+				    "type": "kubernetes.io/dockerconfigjson",
+				    "data": {".dockerconfigjson": "eyJhdXRocyI6e319"}
+				  }],
+				  "extraObjects": [
+				    {
+				      "apiVersion": "rbac.authorization.k8s.io/v1", "kind": "Role",
+				      "metadata": {"name": "capi-provider-role"},
+				      "rules": [{"apiGroups": ["agent-install.openshift.io"],
+				        "resources": ["agents"], "verbs": ["get", "list", "watch"]}]
+				    },
+				    {
+				      "apiVersion": "v1", "kind": "ConfigMap",
+				      "metadata": {"name": "user-ca-bundle"},
+				      "data": {"ca-bundle.crt": "test-ca"}
+				    },
+				    {"apiVersion": %q, "kind": %q, "metadata": {"name": "denied-object"}}
+				  ]
+				}`, hcName, apiVersion, kind))
+				url := proxyURL(proxyHost, "/apis/"+hcpProxyAPIGroup+"/"+hcpProxyAPIVersion+
+					"/namespaces/"+hcNS+"/hostedclusters?hostingCluster="+defaultManagedCluster)
+				req, err := http.NewRequestWithContext(specCtx, http.MethodPost, url, bytes.NewReader(body))
+				gomega.Expect(err).ToNot(gomega.HaveOccurred(), "build POST with denied extra object")
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Remote-User", "e2e-test-user")
+				req.Header.Set("X-Remote-Group", "system:masters")
+
+				ginkgo.By("Rejecting " + apiVersion + " " + kind + " with a Kubernetes BadRequest status")
+				resp, err := insecureHTTPClient().Do(req)
+				gomega.Expect(err).ToNot(gomega.HaveOccurred(), "POST denied extra object")
+				defer resp.Body.Close()
+				respBody, err := io.ReadAll(resp.Body)
+				gomega.Expect(err).ToNot(gomega.HaveOccurred(), "read rejection response")
+				gomega.Expect(resp.StatusCode).To(gomega.Equal(http.StatusBadRequest), "response: %s", respBody)
+				var status metav1.Status
+				gomega.Expect(json.Unmarshal(respBody, &status)).To(gomega.Succeed())
+				gomega.Expect(status.Kind).To(gomega.Equal("Status"))
+				gomega.Expect(status.Reason).To(gomega.Equal(metav1.StatusReasonBadRequest))
+				gomega.Expect(status.Code).To(gomega.Equal(int32(http.StatusBadRequest)))
+				gomega.Expect(status.Message).To(gomega.ContainSubstring("extraObjects[2]"))
+				gomega.Expect(status.Message).To(gomega.ContainSubstring(fmt.Sprintf("kind %q", kind)))
+				gomega.Expect(status.Message).To(gomega.ContainSubstring(fmt.Sprintf("apiVersion %q", apiVersion)))
+
+				ginkgo.By("Verifying the request created no resources on the hosting cluster")
+				if !existingNamespace {
+					_, err = kubeClient.CoreV1().Namespaces().Get(specCtx, hcNS, metav1.GetOptions{})
+					gomega.Expect(apierrors.IsNotFound(err)).To(gomega.BeTrue(), "namespace must remain absent: %v", err)
+				}
+				for _, resource := range []struct {
+					gvr  schema.GroupVersionResource
+					name string
+				}{
+					{schema.GroupVersionResource{Version: "v1", Resource: "secrets"}, "pull-secret"},
+					{schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}, "user-ca-bundle"},
+					{schema.GroupVersionResource{
+						Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles",
+					}, "capi-provider-role"},
+					{schema.GroupVersionResource{
+						Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "rolebindings",
+					}, "denied-object"},
+					{schema.GroupVersionResource{
+						Group: "hypershift.openshift.io", Version: "v1beta1", Resource: "hostedclusters",
+					}, hcName},
+				} {
+					_, err := dynamicClient.Resource(resource.gvr).Namespace(hcNS).
+						Get(specCtx, resource.name, metav1.GetOptions{})
+					gomega.Expect(apierrors.IsNotFound(err)).To(gomega.BeTrue(),
+						"%s/%s must remain absent: %v", resource.gvr.Resource, resource.name, err)
+				}
+			},
+			ginkgo.Entry("RoleBinding", "rbac.authorization.k8s.io/v1", "RoleBinding", false),
+			ginkgo.Entry("ClusterRoleBinding", "rbac.authorization.k8s.io/v1", "ClusterRoleBinding", false),
+			ginkgo.Entry("ClusterRole", "rbac.authorization.k8s.io/v1", "ClusterRole", false),
+			ginkgo.Entry("ServiceAccount", "v1", "ServiceAccount", false),
+			ginkgo.Entry("Deployment", "apps/v1", "Deployment", false),
+			ginkgo.Entry("NetworkPolicy", "networking.k8s.io/v1", "NetworkPolicy", false),
+			ginkgo.Entry("Role in a custom API group", "example.com/v1", "Role", false),
+			ginkgo.Entry("ConfigMap in a custom API group", "example.com/v1", "ConfigMap", false),
+			ginkgo.Entry("Role with an unsupported version", "rbac.authorization.k8s.io/v1beta1", "Role", false),
+			ginkgo.Entry("ConfigMap with an unsupported version", "v2", "ConfigMap", false),
+			ginkgo.Entry("Secret in extraObjects", "v1", "Secret", false),
+			ginkgo.Entry("Namespace in extraObjects", "v1", "Namespace", false),
+			ginkgo.Entry("HostedCluster in extraObjects", "hypershift.openshift.io/v1beta1", "HostedCluster", false),
+			ginkgo.Entry("NodePool in extraObjects", "hypershift.openshift.io/v1beta1", "NodePool", false),
+			ginkgo.Entry("RoleBinding in an existing namespace", "rbac.authorization.k8s.io/v1", "RoleBinding", true),
+		)
+
 		ginkgo.It("should return 400 when POST body omits hostedCluster", func() {
 			// On kind, clusterview is absent so permission check is skipped;
 			// local-cluster is Available and handleCreate rejects the empty body.
@@ -791,7 +911,16 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 			gomega.Expect(json.Unmarshal(respBody, &bundle)).To(gomega.Succeed(), "decode create response bundle")
 			extra, ok := bundle["extraObjects"].([]interface{})
 			gomega.Expect(ok).To(gomega.BeTrue(), "response should include extraObjects")
-			gomega.Expect(extra).To(gomega.HaveLen(2), "response should echo both extra objects")
+			gomega.Expect(extra).To(gomega.ConsistOf(
+				gomega.And(
+					gomega.HaveKeyWithValue("apiVersion", "rbac.authorization.k8s.io/v1"),
+					gomega.HaveKeyWithValue("kind", "Role"),
+				),
+				gomega.And(
+					gomega.HaveKeyWithValue("apiVersion", "v1"),
+					gomega.HaveKeyWithValue("kind", "ConfigMap"),
+				),
+			), "response should echo both allowlisted GVKs")
 
 			ginkgo.By("Verifying capi-provider-role exists on the hosting cluster")
 			gomega.Eventually(func() error {
@@ -879,7 +1008,7 @@ var _ = ginkgo.Describe("HCP Proxy", func() {
 				return err
 			}, eventuallyTimeout, eventuallyInterval).ShouldNot(gomega.HaveOccurred(),
 				"HostedCluster %s must be deleted", hcName)
-		})
+		}, ginkgo.Label("extra-objects-allowlist"))
 	})
 
 	// ----------------------------------------------------------------
