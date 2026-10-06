@@ -152,7 +152,7 @@ require (
 	// an always-latest pseudo-version module); pinning a reproducible
 	// pseudo-version here is an approved exception to the tagged-release policy.
 	golang.org/x/exp v0.0.0-20250210185358-939b2ce775ac // indirect
-	golang.org/x/mod v0.38.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
@@ -160,7 +160,7 @@ require (
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.11.0 // indirect
-	golang.org/x/tools v0.48.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.4.0 // indirect
 	// google.golang.org/genproto has no stable tagged releases (maintainers
 	// intentionally do not tag semver releases); pinning reproducible
