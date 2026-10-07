@@ -9,11 +9,21 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 )
+
+func degradedConditionReason(addon addonv1alpha1.ManagedClusterAddOn) string {
+	cond := meta.FindStatusCondition(addon.Status.Conditions, string(addonv1alpha1.ManagedClusterAddOnConditionDegraded))
+	if cond == nil {
+		return ""
+	}
+	return cond.Reason
+}
 
 var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 	ctx := context.Background()
@@ -78,15 +88,15 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 
 			addon = addonv1alpha1.ManagedClusterAddOn{}
 			Eventually(func() bool {
+				if err := reconcileAddonStatus(ctx, ctrl.Request{NamespacedName: operatorDeploymentNsn}); err != nil {
+					return false
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: localClusterName, Name: util.AddonControllerName},
 					&addon); err != nil {
 					return false
 				}
-				if len(addon.Status.Conditions) == 0 {
-					return false
-				}
-				return addon.Status.Conditions[0].Reason == degradedReasonHypershiftDeployed
+				return degradedConditionReason(addon) == degradedReasonHypershiftDeployed
 			}).Should(BeTrue())
 
 			By("Creating the external dns secret")
@@ -104,15 +114,15 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 
 			addon = addonv1alpha1.ManagedClusterAddOn{}
 			Eventually(func() bool {
+				if err := reconcileAddonStatus(ctx, ctrl.Request{NamespacedName: operatorDeploymentNsn}); err != nil {
+					return false
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: localClusterName, Name: util.AddonControllerName},
 					&addon); err != nil {
 					return false
 				}
-				if len(addon.Status.Conditions) == 0 {
-					return false
-				}
-				return addon.Status.Conditions[0].Reason == degradedReasonOperatorNotAllAvailableReplicas+","+degradedReasonExternalDNSNotFound
+				return degradedConditionReason(addon) == degradedReasonOperatorNotAllAvailableReplicas+","+degradedReasonExternalDNSNotFound
 			}).Should(BeTrue())
 
 			By("Creating the Hypershift external dns deployment")
@@ -149,15 +159,15 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 
 			addon = addonv1alpha1.ManagedClusterAddOn{}
 			Eventually(func() bool {
+				if err := reconcileAddonStatus(ctx, ctrl.Request{NamespacedName: externalDNSDeploymentNsn}); err != nil {
+					return false
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: localClusterName, Name: util.AddonControllerName},
 					&addon); err != nil {
 					return false
 				}
-				if len(addon.Status.Conditions) == 0 {
-					return false
-				}
-				return addon.Status.Conditions[0].Reason == degradedReasonOperatorNotAllAvailableReplicas+","+degradedReasonExternalDNSNotAllAvailableReplicas
+				return degradedConditionReason(addon) == degradedReasonOperatorNotAllAvailableReplicas+","+degradedReasonExternalDNSNotAllAvailableReplicas
 			}).Should(BeTrue())
 
 			By("Adding finalizers to the Hypershift operator and external dns deployments")
@@ -173,15 +183,15 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 
 			addon = addonv1alpha1.ManagedClusterAddOn{}
 			Eventually(func() bool {
+				if err := reconcileAddonStatus(ctx, ctrl.Request{NamespacedName: operatorDeploymentNsn}); err != nil {
+					return false
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: localClusterName, Name: util.AddonControllerName},
 					&addon); err != nil {
 					return false
 				}
-				if len(addon.Status.Conditions) == 0 {
-					return false
-				}
-				return addon.Status.Conditions[0].Reason == degradedReasonOperatorDeleted+","+degradedReasonExternalDNSDeleted
+				return degradedConditionReason(addon) == degradedReasonOperatorDeleted+","+degradedReasonExternalDNSDeleted
 			}).Should(BeTrue())
 		})
 	})
