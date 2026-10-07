@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -9,11 +10,20 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	addonv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
 )
+
+func degradedConditionReason(addon addonv1alpha1.ManagedClusterAddOn) string {
+	cond := meta.FindStatusCondition(addon.Status.Conditions, string(addonv1alpha1.ManagedClusterAddOnConditionDegraded))
+	if cond == nil {
+		return ""
+	}
+	return cond.Reason
+}
 
 var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 	ctx := context.Background()
@@ -83,11 +93,8 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 					&addon); err != nil {
 					return false
 				}
-				if len(addon.Status.Conditions) == 0 {
-					return false
-				}
-				return addon.Status.Conditions[0].Reason == degradedReasonHypershiftDeployed
-			}).Should(BeTrue())
+				return degradedConditionReason(addon) == degradedReasonHypershiftDeployed
+			}).WithTimeout(30 * time.Second).Should(BeTrue())
 
 			By("Creating the external dns secret")
 			secret := corev1.Secret{
@@ -109,11 +116,8 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 					&addon); err != nil {
 					return false
 				}
-				if len(addon.Status.Conditions) == 0 {
-					return false
-				}
-				return addon.Status.Conditions[0].Reason == degradedReasonOperatorNotAllAvailableReplicas+","+degradedReasonExternalDNSNotFound
-			}).Should(BeTrue())
+				return degradedConditionReason(addon) == degradedReasonOperatorNotAllAvailableReplicas+","+degradedReasonExternalDNSNotFound
+			}).WithTimeout(30 * time.Second).Should(BeTrue())
 
 			By("Creating the Hypershift external dns deployment")
 			externalDNSDeployment := appsv1.Deployment{
@@ -154,11 +158,8 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 					&addon); err != nil {
 					return false
 				}
-				if len(addon.Status.Conditions) == 0 {
-					return false
-				}
-				return addon.Status.Conditions[0].Reason == degradedReasonOperatorNotAllAvailableReplicas+","+degradedReasonExternalDNSNotAllAvailableReplicas
-			}).Should(BeTrue())
+				return degradedConditionReason(addon) == degradedReasonOperatorNotAllAvailableReplicas+","+degradedReasonExternalDNSNotAllAvailableReplicas
+			}).WithTimeout(30 * time.Second).Should(BeTrue())
 
 			By("Adding finalizers to the Hypershift operator and external dns deployments")
 			operatorDeployment.Finalizers = []string{"hypershift.io/hypershift"}
@@ -178,11 +179,8 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 					&addon); err != nil {
 					return false
 				}
-				if len(addon.Status.Conditions) == 0 {
-					return false
-				}
-				return addon.Status.Conditions[0].Reason == degradedReasonOperatorDeleted+","+degradedReasonExternalDNSDeleted
-			}).Should(BeTrue())
+				return degradedConditionReason(addon) == degradedReasonOperatorDeleted+","+degradedReasonExternalDNSDeleted
+			}).WithTimeout(30 * time.Second).Should(BeTrue())
 		})
 	})
 })

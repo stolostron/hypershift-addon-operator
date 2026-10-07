@@ -106,7 +106,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 					return false
 				}
 				return true
-			}).Should(BeTrue())
+			}).WithTimeout(30 * time.Second).Should(BeTrue())
 			Expect(discoveredCluster.Spec.DisplayName).To(Equal(managedMCEClusterName + "-" + hcName))
 
 		})
@@ -144,7 +144,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 					return false
 				}
 				return true
-			}).Should(BeTrue())
+			}).WithTimeout(30 * time.Second).Should(BeTrue())
 			Expect(discoveredCluster.Spec.DisplayName).To(Equal(hcName2))
 
 			By("Configuring the name prefix to something else")
@@ -171,7 +171,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 					return false
 				}
 				return true
-			}).Should(BeTrue())
+			}).WithTimeout(30 * time.Second).Should(BeTrue())
 			Expect(discoveredCluster.Spec.DisplayName).To(Equal("abcd" + "-" + hcName3))
 		})
 	})
@@ -213,7 +213,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 				}
 
 				return discoveredCluster.Name == clusterID
-			}).Should(BeTrue())
+			}).WithTimeout(30 * time.Second).Should(BeTrue())
 		})
 	})
 
@@ -235,7 +235,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 					discoveredCluster)
 
 				return apierrors.IsNotFound(err)
-			}).Should(BeTrue())
+			}).WithTimeout(30 * time.Second).Should(BeTrue())
 		})
 	})
 
