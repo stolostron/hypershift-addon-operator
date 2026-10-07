@@ -1,6 +1,6 @@
 module github.com/stolostron/hypershift-addon-operator
 
-go 1.25.13
+go 1.26.6
 
 require (
 	github.com/ghodss/yaml v1.0.1-0.20220118164431-d8423dcdf344
@@ -185,7 +185,7 @@ require (
 	// an always-latest pseudo-version module); pinning a reproducible
 	// pseudo-version here is an approved exception to the tagged-release policy.
 	golang.org/x/exp v0.0.0-20251009144603-d2f985daa21b // indirect
-	golang.org/x/mod v0.38.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
@@ -193,7 +193,7 @@ require (
 	golang.org/x/term v0.45.0 // indirect
 	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
-	golang.org/x/tools v0.48.0 // indirect
+	golang.org/x/tools v0.49.0 // indirect
 	gomodules.xyz/jsonpatch/v2 v2.5.0 // indirect
 	// google.golang.org/genproto has no stable tagged releases (maintainers
 	// intentionally do not tag semver releases); pinning reproducible
