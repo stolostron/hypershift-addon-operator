@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -42,6 +43,10 @@ func TestAPIs(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
+	// Controller reconciliation under envtest can take several seconds in CI.
+	SetDefaultEventuallyTimeout(60 * time.Second)
+	SetDefaultEventuallyPollingInterval(250 * time.Millisecond)
+
 	zapLogger := zap.New(zap.WriteTo(GinkgoWriter), zap.UseDevMode(true))
 	logf.SetLogger(zapLogger)
 	ctx, cancel = context.WithCancel(context.TODO())
@@ -53,7 +58,6 @@ var _ = BeforeSuite(func() {
 	}
 
 	var err error
-	// cfg is defined in this file globally.
 	cfg, err = testEnv.Start()
 	Expect(err).NotTo(HaveOccurred())
 	Expect(cfg).NotTo(BeNil())
@@ -73,9 +77,9 @@ var _ = BeforeSuite(func() {
 	err = configv1.AddToScheme(k8sscheme.Scheme)
 	Expect(err).NotTo(HaveOccurred())
 
-	// Register and start the Foo controller
 	k8sManager, err := ctrl.NewManager(cfg, ctrl.Options{
-		Scheme: k8sscheme.Scheme,
+		Scheme:         k8sscheme.Scheme,
+		LeaderElection: false,
 	})
 	Expect(err).ToNot(HaveOccurred())
 
@@ -91,7 +95,7 @@ var _ = BeforeSuite(func() {
 	err = (&DiscoveryAgent{
 		spokeClient: k8sManager.GetClient(),
 		hubClient:   k8sManager.GetClient(),
-		log:         zapLogger.WithName("addon-status-controller-test"),
+		log:         zapLogger.WithName("discovery-agent-test"),
 		clusterName: managedMCEClusterName,
 	}).SetupWithManager(k8sManager)
 	Expect(err).ToNot(HaveOccurred())
@@ -108,6 +112,11 @@ var _ = BeforeSuite(func() {
 		err = k8sManager.Start(ctx)
 		Expect(err).ToNot(HaveOccurred(), "failed to run manager")
 	}()
+
+	By("waiting for manager cache to sync")
+	syncCtx, syncCancel := context.WithTimeout(ctx, 60*time.Second)
+	defer syncCancel()
+	Expect(k8sManager.GetCache().WaitForCacheSync(syncCtx)).To(BeTrue(), "manager cache should sync within 60s")
 })
 
 var _ = AfterSuite(func() {

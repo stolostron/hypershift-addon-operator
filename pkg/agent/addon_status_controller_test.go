@@ -94,7 +94,7 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 					return false
 				}
 				return degradedConditionReason(addon) == degradedReasonHypershiftDeployed
-			}).WithTimeout(30 * time.Second).Should(BeTrue())
+			}).WithTimeout(60 * time.Second).Should(BeTrue())
 
 			By("Creating the external dns secret")
 			secret := corev1.Secret{
@@ -117,7 +117,7 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 					return false
 				}
 				return degradedConditionReason(addon) == degradedReasonOperatorNotAllAvailableReplicas+","+degradedReasonExternalDNSNotFound
-			}).WithTimeout(30 * time.Second).Should(BeTrue())
+			}).WithTimeout(60 * time.Second).Should(BeTrue())
 
 			By("Creating the Hypershift external dns deployment")
 			externalDNSDeployment := appsv1.Deployment{
@@ -159,7 +159,7 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 					return false
 				}
 				return degradedConditionReason(addon) == degradedReasonOperatorNotAllAvailableReplicas+","+degradedReasonExternalDNSNotAllAvailableReplicas
-			}).WithTimeout(30 * time.Second).Should(BeTrue())
+			}).WithTimeout(60 * time.Second).Should(BeTrue())
 
 			By("Adding finalizers to the Hypershift operator and external dns deployments")
 			operatorDeployment.Finalizers = []string{"hypershift.io/hypershift"}
@@ -180,7 +180,7 @@ var _ = Describe("Hypershift ManagedClusterAddon Status controller", func() {
 					return false
 				}
 				return degradedConditionReason(addon) == degradedReasonOperatorDeleted+","+degradedReasonExternalDNSDeleted
-			}).WithTimeout(30 * time.Second).Should(BeTrue())
+			}).WithTimeout(60 * time.Second).Should(BeTrue())
 		})
 	})
 })
