@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-logr/zapr"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
@@ -262,6 +263,130 @@ func TestNoHCReconcile(t *testing.T) {
 	assert.Nil(t, err, "err not expected when no associated hosted cluster")
 	assert.Equal(t, time.Duration(2)*time.Minute, result.RequeueAfter)
 
+}
+
+func TestKlusterletReconcileUsesManagedClusterAnnotation(t *testing.T) {
+	ctx := context.Background()
+	spokeClient := initClient()
+	zapLog, _ := zap.NewDevelopment()
+
+	controller := &ExternalSecretController{
+		spokeClient:      spokeClient,
+		hubClient:        spokeClient,
+		clusterName:      "local-cluster",
+		localClusterName: "local-cluster",
+		log:              zapr.NewLogger(zapLog),
+	}
+
+	managedClusterName := "2t7192ri4bclqv3lndk83fgrr9eda9td"
+	hostedCluster := getHostedCluster(types.NamespacedName{
+		Name:      "fm-ci-mdutg-yn",
+		Namespace: "clusters",
+	})
+	hostedCluster.Annotations = map[string]string{
+		util.ManagedClusterAnnoKey: managedClusterName,
+	}
+	klusterlet := &operatorapiv1.Klusterlet{
+		ObjectMeta: metav1.ObjectMeta{Name: "klusterlet-" + managedClusterName},
+		Spec: operatorapiv1.KlusterletSpec{
+			DeployOption: operatorapiv1.KlusterletDeployOption{
+				Mode: operatorapiv1.InstallModeHosted,
+			},
+		},
+	}
+
+	assert.NoError(t, spokeClient.Create(ctx, hostedCluster))
+	assert.NoError(t, spokeClient.Create(ctx, klusterlet))
+
+	result, err := controller.Reconcile(ctx, ctrl.Request{
+		NamespacedName: types.NamespacedName{Name: klusterlet.Name},
+	})
+	assert.NoError(t, err)
+	assert.Zero(t, result.RequeueAfter)
+
+	gotHostedCluster := &hyperv1beta1.HostedCluster{}
+	assert.NoError(t, spokeClient.Get(ctx, client.ObjectKeyFromObject(hostedCluster), gotHostedCluster))
+	assert.Contains(t, gotHostedCluster.Annotations, hcAnnotation)
+}
+
+func TestFindHostedClusterForKlusterlet(t *testing.T) {
+	managedClusterName := "managed-cluster-id"
+
+	testCases := []struct {
+		name              string
+		hostedClusters    []hyperv1beta1.HostedCluster
+		discoveredName    string
+		expectedName      string
+		expectedNamespace string
+	}{
+		{
+			name: "annotation match takes priority over name",
+			hostedClusters: []hyperv1beta1.HostedCluster{
+				{ObjectMeta: metav1.ObjectMeta{Name: managedClusterName, Namespace: "wrong"}},
+				{ObjectMeta: metav1.ObjectMeta{
+					Name: "generated-rosa-name", Namespace: "clusters",
+					Annotations: map[string]string{util.ManagedClusterAnnoKey: managedClusterName},
+				}},
+			},
+			expectedName:      "generated-rosa-name",
+			expectedNamespace: "clusters",
+		},
+		{
+			name: "infra ID fallback",
+			hostedClusters: []hyperv1beta1.HostedCluster{
+				{
+					ObjectMeta: metav1.ObjectMeta{Name: "generated-name", Namespace: "clusters"},
+					Spec:       hyperv1beta1.HostedClusterSpec{InfraID: managedClusterName},
+				},
+			},
+			expectedName:      "generated-name",
+			expectedNamespace: "clusters",
+		},
+		{
+			name: "legacy name fallback",
+			hostedClusters: []hyperv1beta1.HostedCluster{
+				{ObjectMeta: metav1.ObjectMeta{Name: managedClusterName, Namespace: "clusters"}},
+			},
+			expectedName:      managedClusterName,
+			expectedNamespace: "clusters",
+		},
+		{
+			name:           "discovered hosted cluster name fallback",
+			discoveredName: "hosted-cluster-name",
+			hostedClusters: []hyperv1beta1.HostedCluster{
+				{ObjectMeta: metav1.ObjectMeta{Name: "hosted-cluster-name", Namespace: "clusters"}},
+			},
+			expectedName:      "hosted-cluster-name",
+			expectedNamespace: "clusters",
+		},
+		{
+			name: "conflicting annotation rejects name fallback",
+			hostedClusters: []hyperv1beta1.HostedCluster{
+				{ObjectMeta: metav1.ObjectMeta{
+					Name: managedClusterName, Namespace: "clusters",
+					Annotations: map[string]string{util.ManagedClusterAnnoKey: "another-managed-cluster"},
+				}},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			result := findHostedClusterForKlusterlet(
+				&hyperv1beta1.HostedClusterList{Items: tc.hostedClusters},
+				managedClusterName,
+				tc.discoveredName,
+			)
+
+			if tc.expectedName == "" {
+				assert.Nil(t, result)
+				return
+			}
+			assert.NotNil(t, result)
+			assert.Equal(t, tc.expectedName, result.Name)
+			assert.Equal(t, tc.expectedNamespace, result.Namespace)
+		})
+	}
 }
 
 func initErrorHCClient() (client.Client, *runtime.Scheme) {
