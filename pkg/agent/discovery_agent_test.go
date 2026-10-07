@@ -15,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const managedMCEClusterName = "managed-mce"
@@ -96,6 +97,9 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 			Expect(k8sClient.Status().Update(ctx, newHC)).Should(Succeed())
 
 			Eventually(func() bool {
+				if err := reconcileDiscoveryAgent(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}); err != nil {
+					return false
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID},
 					discoveredCluster); err != nil {
@@ -103,7 +107,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 				}
 				return true
 			}).Should(BeTrue())
-			//Expect(discoveredCluster.Spec.OpenshiftVersion).To(Equal("0.0.0")) // No version available yet
+			Expect(discoveredCluster.Spec.DisplayName).To(Equal(managedMCEClusterName + "-" + hcName))
 
 		})
 	})
@@ -130,6 +134,9 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 
 			discoveredCluster := &discoveryv1.DiscoveredCluster{}
 			Eventually(func() bool {
+				if err := reconcileDiscoveryAgent(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}); err != nil {
+					return false
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID},
 					discoveredCluster); err != nil {
@@ -162,6 +169,9 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 
 			discoveredCluster := &discoveryv1.DiscoveredCluster{}
 			Eventually(func() bool {
+				if err := reconcileDiscoveryAgent(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}); err != nil {
+					return false
+				}
 				err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID},
 					discoveredCluster)

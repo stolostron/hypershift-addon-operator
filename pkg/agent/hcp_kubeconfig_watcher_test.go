@@ -11,6 +11,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const testHcNamespace = "hc-test-1"
@@ -106,13 +107,16 @@ var _ = Describe("Hosted cluster kubeconfig secret change watcher", Ordered, fun
 			Expect(k8sClient.Update(ctx, newKubeconfig)).Should(Succeed())
 
 			Eventually(func() string {
+				if err := reconcileHcpKubeconfigWatcher(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: testHcNamespace, Name: adminKubeconfigSecret}}); err != nil {
+					return ""
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: testHcNamespace, Name: testHcName},
 					hostedCluster); err != nil {
 					return ""
 				}
 				return hostedCluster.Annotations[hcAnnotation]
-			}).WithTimeout(10 * time.Second).ShouldNot(Equal(""))
+			}).ShouldNot(Equal(""))
 		})
 	})
 })
