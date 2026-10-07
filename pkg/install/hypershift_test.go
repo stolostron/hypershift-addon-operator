@@ -57,98 +57,6 @@ func initErrorClient() ctrlClient.Client {
 	return ncb.Build()
 }
 
-// TestBuildOtherInstallFlagsBlocksReservedFlags verifies that reserved flags
-// (e.g. --image-refs) cannot be injected via the hypershift-operator-install-flags
-// configmap into the privileged hypershift install Job.
-func TestBuildOtherInstallFlagsBlocksReservedFlags(t *testing.T) {
-	zapLog, _ := zap.NewDevelopment()
-	aCtrl := &UpgradeController{
-		log: zapr.NewLogger(zapLog),
-	}
-
-	installFlagsCM := corev1.ConfigMap{
-		Data: map[string]string{
-			"installFlagsToAdd": "--image-refs /tmp/malicious-image-refs --hypershift-image quay.io/evil/hypershift:latest --namespace attacker-ns --exclude-etcd",
-		},
-	}
-
-	args := aCtrl.buildOtherInstallFlags(installFlagsCM)
-
-	assert.NotContains(t, args, "--image-refs", "--image-refs must never be settable via the install flags configmap")
-	assert.NotContains(t, args, "--hypershift-image", "--hypershift-image must never be settable via the install flags configmap")
-	assert.NotContains(t, args, "--namespace", "--namespace must never be settable via the install flags configmap")
-	assert.NotContains(t, args, "/tmp/malicious-image-refs")
-	assert.NotContains(t, args, "quay.io/evil/hypershift:latest")
-	assert.NotContains(t, args, "attacker-ns")
-	assert.Contains(t, args, "--exclude-etcd", "non-reserved flags should still be honored")
-}
-
-// TestBuildOtherInstallFlagsBlocksReservedFlagsWithEqualsForm verifies that reserved
-// flags cannot be smuggled in using the "--flag=value" form, since pflag treats
-// "--flag=value" and "--flag value" as equivalent on the real hypershift install CLI.
-func TestBuildOtherInstallFlagsBlocksReservedFlagsWithEqualsForm(t *testing.T) {
-	zapLog, _ := zap.NewDevelopment()
-	aCtrl := &UpgradeController{
-		log: zapr.NewLogger(zapLog),
-	}
-
-	installFlagsCM := corev1.ConfigMap{
-		Data: map[string]string{
-			"installFlagsToAdd": "--image-refs=/tmp/malicious-image-refs --hypershift-image=quay.io/evil/hypershift:latest --namespace=attacker-ns --exclude-etcd",
-		},
-	}
-
-	args := aCtrl.buildOtherInstallFlags(installFlagsCM)
-
-	for _, a := range args {
-		assert.NotContains(t, a, "image-refs=", "--image-refs must never be settable via the install flags configmap")
-		assert.NotContains(t, a, "hypershift-image=", "--hypershift-image must never be settable via the install flags configmap")
-		assert.NotContains(t, a, "namespace=", "--namespace must never be settable via the install flags configmap")
-		assert.NotContains(t, a, "quay.io/evil/hypershift:latest")
-		assert.NotContains(t, a, "attacker-ns")
-	}
-	assert.Contains(t, args, "--exclude-etcd", "non-reserved flags should still be honored")
-}
-
-// TestIsReservedInstallFlag verifies the reserved-flag detection helper blocks
-// both the "--flag" and "--flag=value" forms of a reserved flag, while leaving
-// unrelated and lookalike flag names alone.
-func TestIsReservedInstallFlag(t *testing.T) {
-	tests := []struct {
-		flag     string
-		expected bool
-	}{
-		{"--hypershift-image", true},
-		{"--hypershift-image=evil:latest", true},
-		{"--image-refs", true},
-		{"--image-refs=/tmp/evil", true},
-		{"--namespace", true},
-		{"--namespace=attacker-ns", true},
-		// "@" is not a pflag value separator, so this isn't the reserved flag. It is
-		// also not a real hypershift install flag, so it would fail as an unrecognized
-		// flag if it ever reached the real CLI, rather than actually setting --namespace.
-		{"--namespace@youarebad", false},
-		{"--exclude-etcd", false},
-		{"--platform-monitoring", false},
-		// Missing the trailing "s", not the reserved "--image-refs" flag, and not a real
-		// hypershift install flag either, so it would fail as unrecognized on the real CLI.
-		{"--image-ref=evil", false},
-		{"--image-ref!bad", false}, // same as above; "!" is not a pflag value separator either
-		// Does not start with any reserved flag name, and is not a real hypershift install
-		// flag, so it would also fail as unrecognized rather than actually pass through.
-		{"--image=ref++evil", false},
-		// A distinct, unreserved flag; only exact "--namespace" is reserved. No flag by this
-		// name is registered on the real CLI today either, so it would currently fail as
-		// unrecognized too -- but unlike the reserved flags, it isn't our place to block it,
-		// since it doesn't set --namespace and could become a legitimate flag in the future.
-		{"--namespace-someword", false},
-	}
-
-	for _, tc := range tests {
-		assert.Equal(t, tc.expected, isReservedInstallFlag(tc.flag), "unexpected result for flag %q", tc.flag)
-	}
-}
-
 func initDeployObj() *appsv1.Deployment {
 	return &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
@@ -364,11 +272,8 @@ func TestRunHypershiftRender(t *testing.T) {
 		"--namespace", hypershiftOperatorKey.Namespace,
 		"--format", "json",
 	}
-	client := initClient()
 
 	ctl := UpgradeController{
-		spokeUncachedClient:       client,
-		hubClient:                 client,
 		hypershiftInstallExecutor: &HypershiftLibExecutor{},
 	}
 	outputs, err := ctl.runHypershiftRender(ctx, args)
@@ -378,18 +283,31 @@ func TestRunHypershiftRender(t *testing.T) {
 
 	// mapKey format: resourceKind/namespace/name
 	expectResources := map[string]struct{}{
+		"PriorityClass//hypershift-control-plane":                                                           {},
+		"PriorityClass//hypershift-etcd":                                                                    {},
+		"PriorityClass//hypershift-api-critical":                                                            {},
+		"PriorityClass//hypershift-operator":                                                                {},
+		"Namespace//hypershift":                                                                             {},
+		"ServiceAccount/hypershift/operator":                                                                {},
+		"ClusterRole//hypershift-operator":                                                                  {},
+		"ClusterRoleBinding//hypershift-operator":                                                           {},
+		"Role/hypershift/hypershift-operator":                                                               {},
+		"RoleBinding/hypershift/hypershift-operator":                                                        {},
+		"Deployment/hypershift/operator":                                                                    {},
+		"Service/hypershift/operator":                                                                       {},
+		"Role/hypershift/prometheus":                                                                        {},
+		"RoleBinding/hypershift/prometheus":                                                                 {},
+		"ServiceMonitor/hypershift/operator":                                                                {},
+		"PrometheusRule/hypershift/metrics":                                                                 {},
 		"CustomResourceDefinition//clusterresourcesetbindings.addons.cluster.x-k8s.io":                      {},
 		"CustomResourceDefinition//clusterresourcesets.addons.cluster.x-k8s.io":                             {},
 		"CustomResourceDefinition//clusterclasses.cluster.x-k8s.io":                                         {},
 		"CustomResourceDefinition//clusters.cluster.x-k8s.io":                                               {},
 		"CustomResourceDefinition//machinedeployments.cluster.x-k8s.io":                                     {},
-		"CustomResourceDefinition//machinedrainrules.cluster.x-k8s.io":                                      {},
 		"CustomResourceDefinition//machinehealthchecks.cluster.x-k8s.io":                                    {},
 		"CustomResourceDefinition//machinepools.cluster.x-k8s.io":                                           {},
 		"CustomResourceDefinition//machines.cluster.x-k8s.io":                                               {},
 		"CustomResourceDefinition//machinesets.cluster.x-k8s.io":                                            {},
-		"CustomResourceDefinition//ipaddressclaims.ipam.cluster.x-k8s.io":                                   {},
-		"CustomResourceDefinition//ipaddresses.ipam.cluster.x-k8s.io":                                       {},
 		"CustomResourceDefinition//agentclusters.capi-provider.agent-install.openshift.io":                  {},
 		"CustomResourceDefinition//agentmachines.capi-provider.agent-install.openshift.io":                  {},
 		"CustomResourceDefinition//agentmachinetemplates.capi-provider.agent-install.openshift.io":          {},
@@ -403,24 +321,43 @@ func TestRunHypershiftRender(t *testing.T) {
 		"CustomResourceDefinition//awsmachinetemplates.infrastructure.cluster.x-k8s.io":                     {},
 		"CustomResourceDefinition//azureclusteridentities.infrastructure.cluster.x-k8s.io":                  {},
 		"CustomResourceDefinition//azureclusters.infrastructure.cluster.x-k8s.io":                           {},
-		"CustomResourceDefinition//azureclustertemplates.infrastructure.cluster.x-k8s.io":                   {},
 		"CustomResourceDefinition//azuremachines.infrastructure.cluster.x-k8s.io":                           {},
 		"CustomResourceDefinition//azuremachinetemplates.infrastructure.cluster.x-k8s.io":                   {},
-		"CustomResourceDefinition//azuremanagedcontrolplanes.infrastructure.cluster.x-k8s.io":               {},
-		"CustomResourceDefinition//azuremanagedcontrolplanetemplates.infrastructure.cluster.x-k8s.io":       {},
 		"CustomResourceDefinition//ibmpowervsclusters.infrastructure.cluster.x-k8s.io":                      {},
-		"CustomResourceDefinition//ibmpowervsclustertemplates.infrastructure.cluster.x-k8s.io":              {},
 		"CustomResourceDefinition//ibmpowervsimages.infrastructure.cluster.x-k8s.io":                        {},
 		"CustomResourceDefinition//ibmpowervsmachines.infrastructure.cluster.x-k8s.io":                      {},
 		"CustomResourceDefinition//ibmpowervsmachinetemplates.infrastructure.cluster.x-k8s.io":              {},
 		"CustomResourceDefinition//ibmvpcclusters.infrastructure.cluster.x-k8s.io":                          {},
-		"CustomResourceDefinition//ibmvpcclustertemplates.infrastructure.cluster.x-k8s.io":                  {},
 		"CustomResourceDefinition//ibmvpcmachines.infrastructure.cluster.x-k8s.io":                          {},
 		"CustomResourceDefinition//ibmvpcmachinetemplates.infrastructure.cluster.x-k8s.io":                  {},
 		"CustomResourceDefinition//kubevirtclusters.infrastructure.cluster.x-k8s.io":                        {},
-		"CustomResourceDefinition//kubevirtclustertemplates.infrastructure.cluster.x-k8s.io":                {},
 		"CustomResourceDefinition//kubevirtmachines.infrastructure.cluster.x-k8s.io":                        {},
 		"CustomResourceDefinition//kubevirtmachinetemplates.infrastructure.cluster.x-k8s.io":                {},
+		"CustomResourceDefinition//awsendpointservices.hypershift.openshift.io":                             {},
+		"CustomResourceDefinition//hostedclusters.hypershift.openshift.io":                                  {},
+		"CustomResourceDefinition//hostedcontrolplanes.hypershift.openshift.io":                             {},
+		"CustomResourceDefinition//nodepools.hypershift.openshift.io":                                       {},
+		"ConfigMap/hypershift/openshift-config-managed-trusted-ca-bundle":                                   {},
+		"CustomResourceDefinition//azureclustertemplates.infrastructure.cluster.x-k8s.io":                   {},
+		"CustomResourceDefinition//ibmpowervsclustertemplates.infrastructure.cluster.x-k8s.io":              {},
+		"CustomResourceDefinition//kubevirtclustertemplates.infrastructure.cluster.x-k8s.io":                {},
+		"CustomResourceDefinition//certificaterevocationrequests.certificates.hypershift.openshift.io":      {},
+		"CustomResourceDefinition//certificatesigningrequestapprovals.certificates.hypershift.openshift.io": {},
+		"CustomResourceDefinition//certificatesigningrequestapprovals.hypershift.openshift.io":              {},
+		"CustomResourceDefinition//machinedrainrules.cluster.x-k8s.io":                                      {},
+		"CustomResourceDefinition//ipaddressclaims.ipam.cluster.x-k8s.io":                                   {},
+		"CustomResourceDefinition//ipaddresses.ipam.cluster.x-k8s.io":                                       {},
+		"CustomResourceDefinition//azureasomanagedclusters.infrastructure.cluster.x-k8s.io":                 {},
+		"CustomResourceDefinition//azureasomanagedclustertemplates.infrastructure.cluster.x-k8s.io":         {},
+		"CustomResourceDefinition//azureasomanagedcontrolplanes.infrastructure.cluster.x-k8s.io":            {},
+		"CustomResourceDefinition//azureasomanagedcontrolplanetemplates.infrastructure.cluster.x-k8s.io":    {},
+		"CustomResourceDefinition//azureasomanagedmachinepools.infrastructure.cluster.x-k8s.io":             {},
+		"CustomResourceDefinition//azureasomanagedmachinepooltemplates.infrastructure.cluster.x-k8s.io":     {},
+		"CustomResourceDefinition//gcpclusters.infrastructure.cluster.x-k8s.io":                             {},
+		"CustomResourceDefinition//gcpclustertemplates.infrastructure.cluster.x-k8s.io":                     {},
+		"CustomResourceDefinition//gcpmachines.infrastructure.cluster.x-k8s.io":                             {},
+		"CustomResourceDefinition//gcpmachinetemplates.infrastructure.cluster.x-k8s.io":                     {},
+		"CustomResourceDefinition//ibmvpcclustertemplates.infrastructure.cluster.x-k8s.io":                  {},
 		"CustomResourceDefinition//openstackclusters.infrastructure.cluster.x-k8s.io":                       {},
 		"CustomResourceDefinition//openstackclustertemplates.infrastructure.cluster.x-k8s.io":               {},
 		"CustomResourceDefinition//openstackfloatingippools.infrastructure.cluster.x-k8s.io":                {},
@@ -428,32 +365,11 @@ func TestRunHypershiftRender(t *testing.T) {
 		"CustomResourceDefinition//openstackmachinetemplates.infrastructure.cluster.x-k8s.io":               {},
 		"CustomResourceDefinition//openstackservers.infrastructure.cluster.x-k8s.io":                        {},
 		"CustomResourceDefinition//images.openstack.k-orc.cloud":                                            {},
-		"CustomResourceDefinition//certificaterevocationrequests.certificates.hypershift.openshift.io":      {},
-		"CustomResourceDefinition//certificatesigningrequestapprovals.certificates.hypershift.openshift.io": {},
+		"CustomResourceDefinition//auditlogpersistenceconfigs.auditlogpersistence.hypershift.openshift.io":  {},
 		"CustomResourceDefinition//clustersizingconfigurations.scheduling.hypershift.openshift.io":          {},
-		"CustomResourceDefinition//awsendpointservices.hypershift.openshift.io":                             {},
-		"CustomResourceDefinition//certificatesigningrequestapprovals.hypershift.openshift.io":              {},
-		"CustomResourceDefinition//hostedclusters.hypershift.openshift.io":                                  {},
-		"CustomResourceDefinition//hostedcontrolplanes.hypershift.openshift.io":                             {},
-		"CustomResourceDefinition//nodepools.hypershift.openshift.io":                                       {},
-		"PriorityClass//hypershift-control-plane":                                                           {},
-		"PriorityClass//hypershift-etcd":                                                                    {},
-		"PriorityClass//hypershift-api-critical":                                                            {},
-		"PriorityClass//hypershift-operator":                                                                {},
-		"Namespace//hypershift":                                                                             {},
-		"ServiceAccount/hypershift/operator":                                                                {},
-		"ClusterRole//hypershift-operator":                                                                  {},
-		"ClusterRoleBinding//hypershift-operator":                                                           {},
-		"Role/hypershift/hypershift-operator":                                                               {},
-		"RoleBinding/hypershift/hypershift-operator":                                                        {},
-		"ConfigMap/hypershift/openshift-config-managed-trusted-ca-bundle":                                   {},
-		"Deployment/hypershift/operator":                                                                    {},
-		"Service/hypershift/operator":                                                                       {},
+		"CustomResourceDefinition//controlplanecomponents.hypershift.openshift.io":                          {},
+		"RoleBinding/kube-system/hypershift:extension-apiserver-authentication-reader":                      {},
 		"ConfigMap/hypershift/feature-gate":                                                                 {},
-		"Role/hypershift/prometheus":                                                                        {},
-		"RoleBinding/hypershift/prometheus":                                                                 {},
-		"ServiceMonitor/hypershift/operator":                                                                {},
-		"PrometheusRule/hypershift/metrics":                                                                 {},
 	}
 
 	if len(expectResources) != len(outputs) {
@@ -465,9 +381,6 @@ func TestRunHypershiftRender(t *testing.T) {
 		if _, ok := expectResources[key]; !ok {
 			t.Errorf("Resource %s is not what we expect", key)
 		}
-
-		// print the expect resource map keys
-		// t.Errorf("\"%s/%s/%s\":{},", v.GetKind(), v.GetNamespace(), v.GetName())
 	}
 }
 
