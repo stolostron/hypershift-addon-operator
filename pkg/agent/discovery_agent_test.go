@@ -15,6 +15,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 const managedMCEClusterName = "managed-mce"
@@ -100,13 +101,16 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 			Expect(k8sClient.Status().Update(ctx, newHC)).Should(Succeed())
 
 			Eventually(func() bool {
+				if err := reconcileDiscoveryAgent(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}); err != nil {
+					return false
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID},
 					discoveredCluster); err != nil {
 					return false
 				}
 				return true
-			}).WithTimeout(30 * time.Second).Should(BeTrue())
+			}).Should(BeTrue())
 			Expect(discoveredCluster.Spec.DisplayName).To(Equal(managedMCEClusterName + "-" + hcName))
 
 		})
@@ -138,13 +142,16 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 
 			discoveredCluster := &discoveryv1.DiscoveredCluster{}
 			Eventually(func() bool {
+				if err := reconcileDiscoveryAgent(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName2}}); err != nil {
+					return false
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID2},
 					discoveredCluster); err != nil {
 					return false
 				}
 				return true
-			}).WithTimeout(30 * time.Second).Should(BeTrue())
+			}).Should(BeTrue())
 			Expect(discoveredCluster.Spec.DisplayName).To(Equal(hcName2))
 
 			By("Configuring the name prefix to something else")
@@ -165,13 +172,16 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 
 			discoveredCluster = &discoveryv1.DiscoveredCluster{}
 			Eventually(func() bool {
+				if err := reconcileDiscoveryAgent(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName3}}); err != nil {
+					return false
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID3},
 					discoveredCluster); err != nil {
 					return false
 				}
 				return true
-			}).WithTimeout(30 * time.Second).Should(BeTrue())
+			}).Should(BeTrue())
 			Expect(discoveredCluster.Spec.DisplayName).To(Equal("abcd" + "-" + hcName3))
 		})
 	})
@@ -198,6 +208,9 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 
 			discoveredCluster := &discoveryv1.DiscoveredCluster{}
 			Eventually(func() bool {
+				if err := reconcileDiscoveryAgent(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}); err != nil {
+					return false
+				}
 				if err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID},
 					discoveredCluster); err != nil {
@@ -213,7 +226,7 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 				}
 
 				return discoveredCluster.Name == clusterID
-			}).WithTimeout(30 * time.Second).Should(BeTrue())
+			}).Should(BeTrue())
 		})
 	})
 
@@ -230,12 +243,15 @@ var _ = Describe("Hosted cluster discovery agent", Ordered, func() {
 
 			discoveredCluster := &discoveryv1.DiscoveredCluster{}
 			Eventually(func() bool {
+				if err := reconcileDiscoveryAgent(ctx, ctrl.Request{NamespacedName: types.NamespacedName{Namespace: hcNamespace, Name: hcName}}); err != nil {
+					return false
+				}
 				err := k8sClient.Get(ctx,
 					types.NamespacedName{Namespace: managedMCEClusterName, Name: clusterID},
 					discoveredCluster)
 
 				return apierrors.IsNotFound(err)
-			}).WithTimeout(30 * time.Second).Should(BeTrue())
+			}).Should(BeTrue())
 		})
 	})
 
