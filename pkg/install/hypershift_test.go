@@ -408,11 +408,9 @@ func TestRunHypershiftRender(t *testing.T) {
 		"CustomResourceDefinition//awsclusters.infrastructure.cluster.x-k8s.io":                             {},
 		"CustomResourceDefinition//awsclusterstaticidentities.infrastructure.cluster.x-k8s.io":              {},
 		"CustomResourceDefinition//awsclustertemplates.infrastructure.cluster.x-k8s.io":                     {},
-		"CustomResourceDefinition//awsfargateprofiles.infrastructure.cluster.x-k8s.io":                      {},
 		"CustomResourceDefinition//awsmachinepools.infrastructure.cluster.x-k8s.io":                         {},
 		"CustomResourceDefinition//awsmachines.infrastructure.cluster.x-k8s.io":                             {},
 		"CustomResourceDefinition//awsmachinetemplates.infrastructure.cluster.x-k8s.io":                     {},
-		"CustomResourceDefinition//awsmanagedmachinepools.infrastructure.cluster.x-k8s.io":                  {},
 		"CustomResourceDefinition//azureclusteridentities.infrastructure.cluster.x-k8s.io":                  {},
 		"CustomResourceDefinition//azureclusters.infrastructure.cluster.x-k8s.io":                           {},
 		"CustomResourceDefinition//azuremachines.infrastructure.cluster.x-k8s.io":                           {},
@@ -432,16 +430,38 @@ func TestRunHypershiftRender(t *testing.T) {
 		"CustomResourceDefinition//hostedcontrolplanes.hypershift.openshift.io":                             {},
 		"CustomResourceDefinition//nodepools.hypershift.openshift.io":                                       {},
 		"ConfigMap/hypershift/openshift-config-managed-trusted-ca-bundle":                                   {},
-		"CustomResourceDefinition//awsmanagedclusters.infrastructure.cluster.x-k8s.io":                      {},
 		"CustomResourceDefinition//azureclustertemplates.infrastructure.cluster.x-k8s.io":                   {},
-		"CustomResourceDefinition//azuremanagedclusters.infrastructure.cluster.x-k8s.io":                    {},
-		"CustomResourceDefinition//azuremanagedcontrolplanes.infrastructure.cluster.x-k8s.io":               {},
-		"CustomResourceDefinition//azuremanagedmachinepools.infrastructure.cluster.x-k8s.io":                {},
 		"CustomResourceDefinition//ibmpowervsclustertemplates.infrastructure.cluster.x-k8s.io":              {},
 		"CustomResourceDefinition//kubevirtclustertemplates.infrastructure.cluster.x-k8s.io":                {},
 		"CustomResourceDefinition//certificaterevocationrequests.certificates.hypershift.openshift.io":      {},
 		"CustomResourceDefinition//certificatesigningrequestapprovals.certificates.hypershift.openshift.io": {},
 		"CustomResourceDefinition//certificatesigningrequestapprovals.hypershift.openshift.io":              {},
+		"CustomResourceDefinition//machinedrainrules.cluster.x-k8s.io":                                      {},
+		"CustomResourceDefinition//ipaddressclaims.ipam.cluster.x-k8s.io":                                   {},
+		"CustomResourceDefinition//ipaddresses.ipam.cluster.x-k8s.io":                                       {},
+		"CustomResourceDefinition//azureasomanagedclusters.infrastructure.cluster.x-k8s.io":                 {},
+		"CustomResourceDefinition//azureasomanagedclustertemplates.infrastructure.cluster.x-k8s.io":         {},
+		"CustomResourceDefinition//azureasomanagedcontrolplanes.infrastructure.cluster.x-k8s.io":            {},
+		"CustomResourceDefinition//azureasomanagedcontrolplanetemplates.infrastructure.cluster.x-k8s.io":    {},
+		"CustomResourceDefinition//azureasomanagedmachinepools.infrastructure.cluster.x-k8s.io":             {},
+		"CustomResourceDefinition//azureasomanagedmachinepooltemplates.infrastructure.cluster.x-k8s.io":     {},
+		"CustomResourceDefinition//gcpclusters.infrastructure.cluster.x-k8s.io":                             {},
+		"CustomResourceDefinition//gcpclustertemplates.infrastructure.cluster.x-k8s.io":                     {},
+		"CustomResourceDefinition//gcpmachines.infrastructure.cluster.x-k8s.io":                             {},
+		"CustomResourceDefinition//gcpmachinetemplates.infrastructure.cluster.x-k8s.io":                     {},
+		"CustomResourceDefinition//ibmvpcclustertemplates.infrastructure.cluster.x-k8s.io":                  {},
+		"CustomResourceDefinition//openstackclusters.infrastructure.cluster.x-k8s.io":                       {},
+		"CustomResourceDefinition//openstackclustertemplates.infrastructure.cluster.x-k8s.io":               {},
+		"CustomResourceDefinition//openstackfloatingippools.infrastructure.cluster.x-k8s.io":                {},
+		"CustomResourceDefinition//openstackmachines.infrastructure.cluster.x-k8s.io":                       {},
+		"CustomResourceDefinition//openstackmachinetemplates.infrastructure.cluster.x-k8s.io":               {},
+		"CustomResourceDefinition//openstackservers.infrastructure.cluster.x-k8s.io":                        {},
+		"CustomResourceDefinition//images.openstack.k-orc.cloud":                                            {},
+		"CustomResourceDefinition//auditlogpersistenceconfigs.auditlogpersistence.hypershift.openshift.io":  {},
+		"CustomResourceDefinition//clustersizingconfigurations.scheduling.hypershift.openshift.io":          {},
+		"CustomResourceDefinition//controlplanecomponents.hypershift.openshift.io":                          {},
+		"RoleBinding/kube-system/hypershift:extension-apiserver-authentication-reader":                      {},
+		"ConfigMap/hypershift/feature-gate":                                                                 {},
 	}
 
 	if len(expectResources) != len(outputs) {
@@ -453,9 +473,6 @@ func TestRunHypershiftRender(t *testing.T) {
 		if _, ok := expectResources[key]; !ok {
 			t.Errorf("Resource %s is not what we expect", key)
 		}
-
-		// print the expect resource map keys
-		// t.Errorf("\"%s/%s/%s\":{},", v.GetKind(), v.GetNamespace(), v.GetName())
 	}
 }
 
