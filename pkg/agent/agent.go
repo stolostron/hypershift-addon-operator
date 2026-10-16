@@ -1556,7 +1556,9 @@ func (o *AgentOptions) runCleanup(ctx context.Context, uCtrl *install.UpgradeCon
 	return nil
 }
 
-func (c *agentController) appendCertAuthDataInKubeConfig(ctx context.Context, kubeconfig []byte, certNs, certName string) ([]byte, error) {
+func (c *agentController) appendCertAuthDataInKubeConfig(
+	ctx context.Context, kubeconfig []byte, certNs, certName string,
+) ([]byte, error) {
 	secret := &corev1.Secret{}
 	if err := c.spokeClient.Get(ctx, types.NamespacedName{Namespace: certNs, Name: certName}, secret); err != nil {
 		c.log.Info(fmt.Sprintf("failed to get secret for serving certificate %v/%v", certNs, certName))
