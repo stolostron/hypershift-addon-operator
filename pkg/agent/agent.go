@@ -845,19 +845,19 @@ func (c *agentController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 
 				}
 
-				// Replace certificate-authority-data from admin-kubeconfig
+				// Append serving certificate data to certificate-authority-data from admin-kubeconfig
 				servingCert := getServingCert(hc)
 				if servingCert != "" {
 					kubeconfig := hubMirrorSecret.Data["kubeconfig"]
 
-					updatedKubeconfig, err := c.replaceCertAuthDataInKubeConfig(ctx, kubeconfig, hc.Namespace, servingCert)
+					updatedKubeconfig, err := c.appendCertAuthDataInKubeConfig(ctx, kubeconfig, hc.Namespace, servingCert)
 					if err != nil {
 						lastErr = err
-						c.log.Info("failed to replace certificate-authority-data from kubeconfig")
+						c.log.Info("failed to append certificate-authority-data from kubeconfig")
 						continue
 					}
 
-					c.log.Info(fmt.Sprintf("Replaced certificate-authority-data from secret: %v", hubMirrorSecret.Name))
+					c.log.Info(fmt.Sprintf("Appended certificate-authority-data from secret: %v", hubMirrorSecret.Name))
 
 					hubMirrorSecret.Data["kubeconfig"] = updatedKubeconfig
 				}
@@ -1588,7 +1588,7 @@ func (o *AgentOptions) runCleanup(ctx context.Context, uCtrl *install.UpgradeCon
 	return nil
 }
 
-func (c *agentController) replaceCertAuthDataInKubeConfig(ctx context.Context, kubeconfig []byte, certNs, certName string) ([]byte, error) {
+func (c *agentController) appendCertAuthDataInKubeConfig(ctx context.Context, kubeconfig []byte, certNs, certName string) ([]byte, error) {
 	secret := &corev1.Secret{}
 	if err := c.spokeClient.Get(ctx, types.NamespacedName{Namespace: certNs, Name: certName}, secret); err != nil {
 		c.log.Info(fmt.Sprintf("failed to get secret for serving certificate %v/%v", certNs, certName))
@@ -1610,7 +1610,11 @@ func (c *agentController) replaceCertAuthDataInKubeConfig(ctx context.Context, k
 	}
 
 	for _, v := range config.Clusters {
-		v.CertificateAuthorityData = tlsCrt
+		if len(v.CertificateAuthorityData) > 0 {
+			v.CertificateAuthorityData = append(v.CertificateAuthorityData, '\n')
+		}
+
+		v.CertificateAuthorityData = append(v.CertificateAuthorityData, tlsCrt...)
 	}
 
 	updatedConfig, err := clientcmd.Write(*config)
