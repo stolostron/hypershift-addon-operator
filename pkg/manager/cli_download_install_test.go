@@ -454,6 +454,28 @@ func (suite *CLIDownloadTestSuite) TestRetryCSV() {
 
 }
 
+func TestGetHypershiftCLIDownloadImage(t *testing.T) {
+	log := zapr.NewLogger(zap.NewNop())
+
+	t.Run("redhat-operators related image name", func(t *testing.T) {
+		csv := getTestMCECSV("v2.17.4", true)
+		if got := getHypershiftCLIDownloadImage(csv, log); got != "https://hypershift.cli.image.io" {
+			t.Fatalf("expected production catalog image, got %q", got)
+		}
+	})
+
+	t.Run("ART catalog related image name", func(t *testing.T) {
+		const artImage = "registry.redhat.io/multicluster-engine/hypershift-cli-rhel9@sha256:abc"
+		csv := getTestMCECSV("v2.17.4", false)
+		csv.Spec.RelatedImages = []operatorsv1alpha1.RelatedImage{
+			{Name: hypershiftCLIRelatedImageNameART, Image: artImage},
+		}
+		if got := getHypershiftCLIDownloadImage(csv, log); got != artImage {
+			t.Fatalf("expected ART catalog image %q, got %q", artImage, got)
+		}
+	})
+}
+
 func TestCLIDownloadTestSuite(t *testing.T) {
 	suite.Run(t, new(CLIDownloadTestSuite))
 }
