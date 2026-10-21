@@ -36,7 +36,16 @@ const (
 	// where ClusterServiceVersion objects do not exist so the image cannot be discovered by
 	// reading the live CSV.
 	HypershiftCLIImageEnvVar = "HYPERSHIFT_CLI_IMAGE_NAME"
+
+	// MCE CSV spec.relatedImages[].name values for the HCP CLI download image (catalog-dependent).
+	hypershiftCLIRelatedImageNameProduction = "hypershift_cli"
+	hypershiftCLIRelatedImageNameART        = "hypershift-cli-rhel9"
 )
+
+var hypershiftCLIDownloadRelatedImageNames = []string{
+	hypershiftCLIRelatedImageNameProduction,
+	hypershiftCLIRelatedImageNameART,
+}
 
 func EnableHypershiftCLIDownload(ctx context.Context, hubclient client.Client, log logr.Logger) error {
 	// Prefer the explicit image override so this also works for OLM v1 installs where no
@@ -50,7 +59,7 @@ func EnableHypershiftCLIDownload(ctx context.Context, hubclient client.Client, l
 			return fmt.Errorf("get MCE CSV: %w", err)
 		}
 
-		// check if the CSV has hypershift_cli image, which is the downstream case
+		// check if the CSV lists a known HCP CLI download related image (downstream / ART catalogs)
 		cliDownloadImage = getHypershiftCLIDownloadImage(csv, log)
 	}
 
@@ -150,9 +159,14 @@ func GetMCECSV(
 
 func getHypershiftCLIDownloadImage(csv *operatorsv1alpha1.ClusterServiceVersion, log logr.Logger) string {
 	for _, relatedImage := range csv.Spec.RelatedImages {
-		if strings.EqualFold(relatedImage.Name, "hypershift_cli") && relatedImage.Image != "" {
-			log.Info("the hcp CLI download image was found in the CSV " + relatedImage.Image)
-			return relatedImage.Image
+		if relatedImage.Image == "" {
+			continue
+		}
+		for _, name := range hypershiftCLIDownloadRelatedImageNames {
+			if strings.EqualFold(relatedImage.Name, name) {
+				log.Info("the hcp CLI download image was found in the CSV " + relatedImage.Image)
+				return relatedImage.Image
+			}
 		}
 	}
 
