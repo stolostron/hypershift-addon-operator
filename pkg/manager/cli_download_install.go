@@ -29,7 +29,16 @@ import (
 const (
 	NewCLIDownloadResourceName = "hcp-cli-download"
 	OldCLIDownloadResourceName = "hypershift-cli-download"
+
+	// MCE CSV spec.relatedImages[].name values for the HCP CLI download image (catalog-dependent).
+	hypershiftCLIRelatedImageNameProduction = "hypershift_cli"
+	hypershiftCLIRelatedImageNameART        = "hypershift-cli-rhel9"
 )
+
+var hypershiftCLIDownloadRelatedImageNames = []string{
+	hypershiftCLIRelatedImageNameProduction,
+	hypershiftCLIRelatedImageNameART,
+}
 
 func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error {
 	// get the current version of MCE CSV from multicluster-engine namespace
@@ -54,7 +63,7 @@ func EnableHypershiftCLIDownload(hubclient client.Client, log logr.Logger) error
 		return err
 	}
 
-	// check if the CSV has hypershift_cli image, which is the downstream case
+	// check if the CSV lists a known HCP CLI download related image (downstream / ART catalogs)
 	cliDownloadImage := getHypershiftCLIDownloadImage(csv, log)
 	if cliDownloadImage == "" {
 		// in upstream build, there is no hcp CLI download image
@@ -117,9 +126,14 @@ func GetMCECSV(hubclient client.Client, log logr.Logger) (*operatorsv1alpha1.Clu
 
 func getHypershiftCLIDownloadImage(csv *operatorsv1alpha1.ClusterServiceVersion, log logr.Logger) string {
 	for _, relatedImage := range csv.Spec.RelatedImages {
-		if strings.EqualFold(relatedImage.Name, "hypershift_cli") && relatedImage.Image != "" {
-			log.Info("the hcp CLI download image was found in the CSV " + relatedImage.Image)
-			return relatedImage.Image
+		if relatedImage.Image == "" {
+			continue
+		}
+		for _, name := range hypershiftCLIDownloadRelatedImageNames {
+			if strings.EqualFold(relatedImage.Name, name) {
+				log.Info("the hcp CLI download image was found in the CSV " + relatedImage.Image)
+				return relatedImage.Image
+			}
 		}
 	}
 
