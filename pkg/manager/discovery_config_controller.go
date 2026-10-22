@@ -397,39 +397,55 @@ func (r *DiscoveryConfigController) createOrUpdateAddonConfigMap(ctx context.Con
 }
 
 // createOrUpdateDiscoveryAddonConfig creates or updates the addon-ns-config AddOnDeploymentConfig
-// as described in discovering_hostedclusters.md
+// as described in discovering_hostedclusters.md. Namespace isolation and disabling label sync to
+// ClusterClaims are combined in this single config so work-manager does not receive conflicting
+// AddOnDeploymentConfig references.
 func (r *DiscoveryConfigController) createOrUpdateDiscoveryAddonConfig(ctx context.Context, log logr.Logger) error {
-	discoveryAddonConfig := &addonapiv1alpha1.AddOnDeploymentConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "addon-ns-config",
-			Namespace: "multicluster-engine",
-		},
-		Spec: addonapiv1alpha1.AddOnDeploymentConfigSpec{
-			AgentInstallNamespace: "open-cluster-management-agent-addon-discovery",
-		},
-	}
+	const (
+		discoveryAddonConfigName      = "addon-ns-config"
+		discoveryAddonConfigNamespace = "multicluster-engine"
+		discoveryAgentInstallNS       = "open-cluster-management-agent-addon-discovery"
+		syncLabelsToClusterClaimsVar  = "enableSyncLabelsToClusterClaims"
+		syncLabelsToClusterClaimsVal  = "false"
+	)
 
-	// Try to get existing AddOnDeploymentConfig
 	existingConfig := &addonapiv1alpha1.AddOnDeploymentConfig{}
-	err := r.Get(ctx, client.ObjectKey{Name: "addon-ns-config", Namespace: "multicluster-engine"}, existingConfig)
+	err := r.Get(ctx, client.ObjectKey{Name: discoveryAddonConfigName, Namespace: discoveryAddonConfigNamespace}, existingConfig)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// Create new AddOnDeploymentConfig
-			log.Info("Creating discovery addon deployment config", "name", "addon-ns-config")
-			return r.Create(ctx, discoveryAddonConfig)
+		if !apierrors.IsNotFound(err) {
+			return err
 		}
-		return err
+
+		discoveryAddonConfig := &addonapiv1alpha1.AddOnDeploymentConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryAddonConfigName,
+				Namespace: discoveryAddonConfigNamespace,
+			},
+			Spec: addonapiv1alpha1.AddOnDeploymentConfigSpec{
+				AgentInstallNamespace: discoveryAgentInstallNS,
+				CustomizedVariables: []addonapiv1alpha1.CustomizedVariable{
+					{Name: syncLabelsToClusterClaimsVar, Value: syncLabelsToClusterClaimsVal},
+				},
+			},
+		}
+		log.Info("Creating discovery addon deployment config", "name", discoveryAddonConfigName)
+		return r.Create(ctx, discoveryAddonConfig)
 	}
 
-	// Update existing AddOnDeploymentConfig if needed
-	if existingConfig.Spec.AgentInstallNamespace != "open-cluster-management-agent-addon-discovery" {
-		existingConfig.Spec.AgentInstallNamespace = "open-cluster-management-agent-addon-discovery"
-		log.Info("Updating discovery addon deployment config", "name", "addon-ns-config")
-		return r.Update(ctx, existingConfig)
+	needsUpdate := existingConfig.Spec.AgentInstallNamespace != discoveryAgentInstallNS
+	if !needsUpdate {
+		needsUpdate = getCustomizedVariableValue(existingConfig, syncLabelsToClusterClaimsVar) != syncLabelsToClusterClaimsVal
 	}
 
-	log.V(1).Info("Discovery addon deployment config is up to date", "name", "addon-ns-config")
-	return nil
+	if !needsUpdate {
+		log.V(1).Info("Discovery addon deployment config is up to date", "name", discoveryAddonConfigName)
+		return nil
+	}
+
+	existingConfig.Spec.AgentInstallNamespace = discoveryAgentInstallNS
+	setCustomizedVariable(existingConfig, syncLabelsToClusterClaimsVar, syncLabelsToClusterClaimsVal)
+	log.Info("Updating discovery addon deployment config", "name", discoveryAddonConfigName)
+	return r.Update(ctx, existingConfig)
 }
 
 // removeDiscoveryAddonConfig removes the addon-ns-config AddOnDeploymentConfig when configureMceImport is disabled
@@ -852,12 +868,33 @@ func (r *DiscoveryConfigController) isACMInstalled(ctx context.Context) (bool, e
 
 // getConfigureMceImportValue returns the value of the configureMceImport custom variable
 func getConfigureMceImportValue(addonConfig *addonapiv1alpha1.AddOnDeploymentConfig) string {
+	value := getCustomizedVariableValue(addonConfig, "configureMceImport")
+	if value == "" {
+		return "not-set"
+	}
+	return value
+}
+
+func getCustomizedVariableValue(addonConfig *addonapiv1alpha1.AddOnDeploymentConfig, name string) string {
 	for _, variable := range addonConfig.Spec.CustomizedVariables {
-		if variable.Name == "configureMceImport" {
+		if variable.Name == name {
 			return variable.Value
 		}
 	}
-	return "not-set"
+	return ""
+}
+
+func setCustomizedVariable(addonConfig *addonapiv1alpha1.AddOnDeploymentConfig, name, value string) {
+	for i, variable := range addonConfig.Spec.CustomizedVariables {
+		if variable.Name == name {
+			addonConfig.Spec.CustomizedVariables[i].Value = value
+			return
+		}
+	}
+	addonConfig.Spec.CustomizedVariables = append(addonConfig.Spec.CustomizedVariables, addonapiv1alpha1.CustomizedVariable{
+		Name:  name,
+		Value: value,
+	})
 }
 
 // hasConfigureMceImportEnabled checks if the configureMceImport custom variable is set to true
