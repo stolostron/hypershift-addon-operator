@@ -417,7 +417,8 @@ func (r *DiscoveryConfigController) createOrUpdateDiscoveryAddonConfig(ctx conte
 	}, existingConfig)
 	if err != nil {
 		if !apierrors.IsNotFound(err) {
-			return err
+			return fmt.Errorf("get discovery AddOnDeploymentConfig %s/%s: %w",
+				discoveryAddonConfigNamespace, discoveryAddonConfigName, err)
 		}
 
 		discoveryAddonConfig := &addonapiv1alpha1.AddOnDeploymentConfig{
@@ -433,7 +434,11 @@ func (r *DiscoveryConfigController) createOrUpdateDiscoveryAddonConfig(ctx conte
 			},
 		}
 		log.Info("Creating discovery addon deployment config", "name", discoveryAddonConfigName)
-		return r.Create(ctx, discoveryAddonConfig)
+		if err := r.Create(ctx, discoveryAddonConfig); err != nil {
+			return fmt.Errorf("create discovery AddOnDeploymentConfig %s/%s: %w",
+				discoveryAddonConfigNamespace, discoveryAddonConfigName, err)
+		}
+		return nil
 	}
 
 	needsUpdate := existingConfig.Spec.AgentInstallNamespace != discoveryAgentInstallNS
@@ -450,7 +455,11 @@ func (r *DiscoveryConfigController) createOrUpdateDiscoveryAddonConfig(ctx conte
 	existingConfig.Spec.AgentInstallNamespace = discoveryAgentInstallNS
 	setCustomizedVariable(existingConfig, enableSyncLabelsToClusterClaimsName, enableSyncLabelsToClusterClaimsFalse)
 	log.Info("Updating discovery addon deployment config", "name", discoveryAddonConfigName)
-	return r.Update(ctx, existingConfig)
+	if err := r.Update(ctx, existingConfig); err != nil {
+		return fmt.Errorf("update discovery AddOnDeploymentConfig %s/%s: %w",
+			discoveryAddonConfigNamespace, discoveryAddonConfigName, err)
+	}
+	return nil
 }
 
 // removeDiscoveryAddonConfig removes the addon-ns-config AddOnDeploymentConfig when configureMceImport is disabled
