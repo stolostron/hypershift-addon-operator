@@ -32,6 +32,15 @@ type DiscoveryConfigController struct {
 	OperatorNamespace string
 }
 
+const (
+	discoveryAddonConfigName      = "addon-ns-config"
+	discoveryAddonConfigNamespace = "multicluster-engine"
+	discoveryAgentInstallNS       = "open-cluster-management-agent-addon-discovery"
+
+	enableSyncLabelsToClusterClaimsName  = "enableSyncLabelsToClusterClaims"
+	enableSyncLabelsToClusterClaimsFalse = "false"
+)
+
 // Reconcile implements the reconcile.Reconciler interface
 func (r *DiscoveryConfigController) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	log := r.Log.WithValues("addondeploymentconfig", req.NamespacedName)
@@ -78,7 +87,7 @@ func (r *DiscoveryConfigController) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Only process if in multicluster-engine namespace
-	if addonConfig.Namespace != "multicluster-engine" {
+	if addonConfig.Namespace != discoveryAddonConfigNamespace {
 		log.V(1).Info("Skipping addon deployment config not in multicluster-engine namespace", "namespace", addonConfig.Namespace)
 		return ctrl.Result{}, nil
 	}
@@ -397,38 +406,57 @@ func (r *DiscoveryConfigController) createOrUpdateAddonConfigMap(ctx context.Con
 }
 
 // createOrUpdateDiscoveryAddonConfig creates or updates the addon-ns-config AddOnDeploymentConfig
-// as described in discovering_hostedclusters.md
+// as described in discovering_hostedclusters.md. Namespace isolation and disabling label sync to
+// ClusterClaims are combined in this single config so work-manager does not receive conflicting
+// AddOnDeploymentConfig references.
 func (r *DiscoveryConfigController) createOrUpdateDiscoveryAddonConfig(ctx context.Context, log logr.Logger) error {
-	discoveryAddonConfig := &addonapiv1alpha1.AddOnDeploymentConfig{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "addon-ns-config",
-			Namespace: "multicluster-engine",
-		},
-		Spec: addonapiv1alpha1.AddOnDeploymentConfigSpec{
-			AgentInstallNamespace: "open-cluster-management-agent-addon-discovery",
-		},
-	}
-
-	// Try to get existing AddOnDeploymentConfig
 	existingConfig := &addonapiv1alpha1.AddOnDeploymentConfig{}
-	err := r.Get(ctx, client.ObjectKey{Name: "addon-ns-config", Namespace: "multicluster-engine"}, existingConfig)
+	err := r.Get(ctx, client.ObjectKey{
+		Name:      discoveryAddonConfigName,
+		Namespace: discoveryAddonConfigNamespace,
+	}, existingConfig)
 	if err != nil {
-		if apierrors.IsNotFound(err) {
-			// Create new AddOnDeploymentConfig
-			log.Info("Creating discovery addon deployment config", "name", "addon-ns-config")
-			return r.Create(ctx, discoveryAddonConfig)
+		if !apierrors.IsNotFound(err) {
+			return fmt.Errorf("get discovery AddOnDeploymentConfig %s/%s: %w",
+				discoveryAddonConfigNamespace, discoveryAddonConfigName, err)
 		}
-		return err
+
+		discoveryAddonConfig := &addonapiv1alpha1.AddOnDeploymentConfig{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      discoveryAddonConfigName,
+				Namespace: discoveryAddonConfigNamespace,
+			},
+			Spec: addonapiv1alpha1.AddOnDeploymentConfigSpec{
+				AgentInstallNamespace: discoveryAgentInstallNS,
+				CustomizedVariables: []addonapiv1alpha1.CustomizedVariable{
+					{Name: enableSyncLabelsToClusterClaimsName, Value: enableSyncLabelsToClusterClaimsFalse},
+				},
+			},
+		}
+		log.Info("Creating discovery addon deployment config", "name", discoveryAddonConfigName)
+		if err := r.Create(ctx, discoveryAddonConfig); err != nil {
+			return fmt.Errorf("create discovery AddOnDeploymentConfig %s/%s: %w",
+				discoveryAddonConfigNamespace, discoveryAddonConfigName, err)
+		}
+		return nil
 	}
 
-	// Update existing AddOnDeploymentConfig if needed
-	if existingConfig.Spec.AgentInstallNamespace != "open-cluster-management-agent-addon-discovery" {
-		existingConfig.Spec.AgentInstallNamespace = "open-cluster-management-agent-addon-discovery"
-		log.Info("Updating discovery addon deployment config", "name", "addon-ns-config")
-		return r.Update(ctx, existingConfig)
+	syncLabelsValue := getCustomizedVariableValue(existingConfig, enableSyncLabelsToClusterClaimsName)
+	needsUpdate := existingConfig.Spec.AgentInstallNamespace != discoveryAgentInstallNS ||
+		syncLabelsValue != enableSyncLabelsToClusterClaimsFalse
+
+	if !needsUpdate {
+		log.V(1).Info("Discovery addon deployment config is up to date", "name", discoveryAddonConfigName)
+		return nil
 	}
 
-	log.V(1).Info("Discovery addon deployment config is up to date", "name", "addon-ns-config")
+	existingConfig.Spec.AgentInstallNamespace = discoveryAgentInstallNS
+	setCustomizedVariable(existingConfig, enableSyncLabelsToClusterClaimsName, enableSyncLabelsToClusterClaimsFalse)
+	log.Info("Updating discovery addon deployment config", "name", discoveryAddonConfigName)
+	if err := r.Update(ctx, existingConfig); err != nil {
+		return fmt.Errorf("update discovery AddOnDeploymentConfig %s/%s: %w",
+			discoveryAddonConfigNamespace, discoveryAddonConfigName, err)
+	}
 	return nil
 }
 
@@ -436,23 +464,26 @@ func (r *DiscoveryConfigController) createOrUpdateDiscoveryAddonConfig(ctx conte
 func (r *DiscoveryConfigController) removeDiscoveryAddonConfig(ctx context.Context, log logr.Logger) error {
 	discoveryAddonConfig := &addonapiv1alpha1.AddOnDeploymentConfig{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "addon-ns-config",
-			Namespace: "multicluster-engine",
+			Name:      discoveryAddonConfigName,
+			Namespace: discoveryAddonConfigNamespace,
 		},
 	}
 
-	err := r.Get(ctx, client.ObjectKey{Name: "addon-ns-config", Namespace: "multicluster-engine"}, discoveryAddonConfig)
+	err := r.Get(ctx, client.ObjectKey{
+		Name:      discoveryAddonConfigName,
+		Namespace: discoveryAddonConfigNamespace,
+	}, discoveryAddonConfig)
 	if err != nil {
 		if apierrors.IsNotFound(err) {
 			// Already doesn't exist, nothing to do
-			log.V(1).Info("Discovery addon deployment config already doesn't exist", "name", "addon-ns-config")
+			log.V(1).Info("Discovery addon deployment config already doesn't exist", "name", discoveryAddonConfigName)
 			return nil
 		}
 		return err
 	}
 
 	// Delete the AddOnDeploymentConfig
-	log.Info("Removing discovery addon deployment config", "name", "addon-ns-config")
+	log.Info("Removing discovery addon deployment config", "name", discoveryAddonConfigName)
 	return r.Delete(ctx, discoveryAddonConfig)
 }
 
@@ -500,8 +531,8 @@ func (r *DiscoveryConfigController) updateSingleClusterManagementAddOn(ctx conte
 			for _, config := range placement.Configs {
 				if config.ConfigGroupResource.Group == "addon.open-cluster-management.io" &&
 					config.ConfigGroupResource.Resource == "addondeploymentconfigs" &&
-					config.ConfigReferent.Name == "addon-ns-config" &&
-					config.ConfigReferent.Namespace == "multicluster-engine" {
+					config.ConfigReferent.Name == discoveryAddonConfigName &&
+					config.ConfigReferent.Namespace == discoveryAddonConfigNamespace {
 					configExists = true
 					break
 				}
@@ -524,8 +555,8 @@ func (r *DiscoveryConfigController) updateSingleClusterManagementAddOn(ctx conte
 					Resource: "addondeploymentconfigs",
 				},
 				ConfigReferent: addonapiv1alpha1.ConfigReferent{
-					Name:      "addon-ns-config",
-					Namespace: "multicluster-engine",
+					Name:      discoveryAddonConfigName,
+					Namespace: discoveryAddonConfigNamespace,
 				},
 			}
 			addon.Spec.InstallStrategy.Placements[i].Configs = append(
@@ -585,8 +616,8 @@ func (r *DiscoveryConfigController) removeSingleClusterManagementAddOnConfig(ctx
 			for _, config := range placement.Configs {
 				if !(config.ConfigGroupResource.Group == "addon.open-cluster-management.io" &&
 					config.ConfigGroupResource.Resource == "addondeploymentconfigs" &&
-					config.ConfigReferent.Name == "addon-ns-config" &&
-					config.ConfigReferent.Namespace == "multicluster-engine") {
+					config.ConfigReferent.Name == discoveryAddonConfigName &&
+					config.ConfigReferent.Namespace == discoveryAddonConfigNamespace) {
 					updatedConfigs = append(updatedConfigs, config)
 				} else {
 					configRemoved = true
@@ -627,8 +658,8 @@ func (r *DiscoveryConfigController) updateSpecialAddOn(ctx context.Context, log 
 			if supportedConfig.ConfigGroupResource.Group == "addon.open-cluster-management.io" &&
 				supportedConfig.ConfigGroupResource.Resource == "addondeploymentconfigs" &&
 				supportedConfig.DefaultConfig != nil &&
-				supportedConfig.DefaultConfig.Name == "addon-ns-config" &&
-				supportedConfig.DefaultConfig.Namespace == "multicluster-engine" {
+				supportedConfig.DefaultConfig.Name == discoveryAddonConfigName &&
+				supportedConfig.DefaultConfig.Namespace == discoveryAddonConfigNamespace {
 				hasCorrectConfig = true
 				break
 			}
@@ -652,8 +683,8 @@ func (r *DiscoveryConfigController) updateSpecialAddOn(ctx context.Context, log 
 				Resource: "addondeploymentconfigs",
 			},
 			DefaultConfig: &addonapiv1alpha1.ConfigReferent{
-				Name:      "addon-ns-config",
-				Namespace: "multicluster-engine",
+				Name:      discoveryAddonConfigName,
+				Namespace: discoveryAddonConfigNamespace,
 			},
 		},
 	}
@@ -682,8 +713,8 @@ func (r *DiscoveryConfigController) removeSpecialAddOnConfig(ctx context.Context
 			if supportedConfig.ConfigGroupResource.Group == "addon.open-cluster-management.io" &&
 				supportedConfig.ConfigGroupResource.Resource == "addondeploymentconfigs" &&
 				supportedConfig.DefaultConfig != nil &&
-				supportedConfig.DefaultConfig.Name == "addon-ns-config" &&
-				supportedConfig.DefaultConfig.Namespace == "multicluster-engine" {
+				supportedConfig.DefaultConfig.Name == discoveryAddonConfigName &&
+				supportedConfig.DefaultConfig.Namespace == discoveryAddonConfigNamespace {
 				hasDiscoveryConfig = true
 				break
 			}
@@ -705,8 +736,8 @@ func (r *DiscoveryConfigController) removeSpecialAddOnConfig(ctx context.Context
 		if !(supportedConfig.ConfigGroupResource.Group == "addon.open-cluster-management.io" &&
 			supportedConfig.ConfigGroupResource.Resource == "addondeploymentconfigs" &&
 			supportedConfig.DefaultConfig != nil &&
-			supportedConfig.DefaultConfig.Name == "addon-ns-config" &&
-			supportedConfig.DefaultConfig.Namespace == "multicluster-engine") {
+			supportedConfig.DefaultConfig.Name == discoveryAddonConfigName &&
+			supportedConfig.DefaultConfig.Namespace == discoveryAddonConfigNamespace) {
 			updatedSupportedConfigs = append(updatedSupportedConfigs, supportedConfig)
 		}
 	}
@@ -852,12 +883,36 @@ func (r *DiscoveryConfigController) isACMInstalled(ctx context.Context) (bool, e
 
 // getConfigureMceImportValue returns the value of the configureMceImport custom variable
 func getConfigureMceImportValue(addonConfig *addonapiv1alpha1.AddOnDeploymentConfig) string {
+	value := getCustomizedVariableValue(addonConfig, "configureMceImport")
+	if value == "" {
+		return "not-set"
+	}
+	return value
+}
+
+func getCustomizedVariableValue(addonConfig *addonapiv1alpha1.AddOnDeploymentConfig, name string) string {
 	for _, variable := range addonConfig.Spec.CustomizedVariables {
-		if variable.Name == "configureMceImport" {
+		if variable.Name == name {
 			return variable.Value
 		}
 	}
-	return "not-set"
+	return ""
+}
+
+func setCustomizedVariable(addonConfig *addonapiv1alpha1.AddOnDeploymentConfig, name, value string) {
+	for i, variable := range addonConfig.Spec.CustomizedVariables {
+		if variable.Name == name {
+			addonConfig.Spec.CustomizedVariables[i].Value = value
+			return
+		}
+	}
+	addonConfig.Spec.CustomizedVariables = append(
+		addonConfig.Spec.CustomizedVariables,
+		addonapiv1alpha1.CustomizedVariable{
+			Name:  name,
+			Value: value,
+		},
+	)
 }
 
 // hasConfigureMceImportEnabled checks if the configureMceImport custom variable is set to true
@@ -886,7 +941,7 @@ func (r *DiscoveryConfigController) SetupWithManager(mgr ctrl.Manager) error {
 			// Only process hypershift-addon-deploy-config in multicluster-engine namespace
 			if addonConfig, ok := e.Object.(*addonapiv1alpha1.AddOnDeploymentConfig); ok {
 				return addonConfig.Name == "hypershift-addon-deploy-config" &&
-					addonConfig.Namespace == "multicluster-engine"
+					addonConfig.Namespace == discoveryAddonConfigNamespace
 				// Process regardless of mceHcpDiscovery value to handle both enabled/disabled states
 			}
 			return false
@@ -898,7 +953,7 @@ func (r *DiscoveryConfigController) SetupWithManager(mgr ctrl.Manager) error {
 
 			if !oldOk || !newOk ||
 				newConfig.Name != "hypershift-addon-deploy-config" ||
-				newConfig.Namespace != "multicluster-engine" {
+				newConfig.Namespace != discoveryAddonConfigNamespace {
 				return false
 			}
 
@@ -920,7 +975,7 @@ func (r *DiscoveryConfigController) SetupWithManager(mgr ctrl.Manager) error {
 			// Process deletion events for hypershift-addon-deploy-config
 			if addonConfig, ok := e.Object.(*addonapiv1alpha1.AddOnDeploymentConfig); ok {
 				return addonConfig.Name == "hypershift-addon-deploy-config" &&
-					addonConfig.Namespace == "multicluster-engine"
+					addonConfig.Namespace == discoveryAddonConfigNamespace
 			}
 			return false
 		},
