@@ -1173,7 +1173,7 @@ func (suite *AgentTestSuite) Test_agentController_deleteManagedCluster() {
 var kubeconfig0 = `apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority-data: test
+    certificate-authority-data: b3JpZ2luYWwtY2E=
     server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:7443
   name: cluster
 contexts:
@@ -1189,11 +1189,11 @@ kind: Config
 var kubeconfig1 = `apiVersion: v1
 clusters:
 - cluster:
-    certificate-authority-data: test
+    certificate-authority-data: b3JpZ2luYWwtY2E=
     server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:7443
   name: cluster
 - cluster:
-    certificate-authority-data: test
+    certificate-authority-data: b3JpZ2luYWwtY2E=
     server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:7443
   name: cluster2
 contexts:
@@ -1206,7 +1206,22 @@ current-context: admin
 kind: Config
 `
 
-func (suite *AgentTestSuite) Test_removeCertAuthDataFromKubeConfig() {
+var kubeconfigWithoutCA = `apiVersion: v1
+clusters:
+- cluster:
+    server: https://kube-apiserver.ocm-dev-1sv4l4ldnr6rd8ni12ndo4vtiq2gd7a4-sbarouti267.svc.cluster.local:7443
+  name: cluster
+contexts:
+- context:
+    cluster: cluster
+    namespace: default
+    user: admin
+  name: admin
+current-context: admin
+kind: Config
+`
+
+func (suite *AgentTestSuite) Test_appendCertAuthDataToKubeConfig() {
 	ctx := context.Background()
 
 	tlsSecret := &corev1.Secret{
@@ -1240,12 +1255,20 @@ func (suite *AgentTestSuite) Test_removeCertAuthDataFromKubeConfig() {
 			kubeconfig: []byte(kubeconfig0),
 			secretName: "tls",
 			secretNs:   "default",
-			wantCert:   "replaced-crt",
+			wantCert:   "original-ca\nreplaced-crt",
 			wantErr:    "",
 		},
 		{
 			name:       "Two cluster",
 			kubeconfig: []byte(kubeconfig1),
+			secretName: "tls",
+			secretNs:   "default",
+			wantCert:   "original-ca\nreplaced-crt",
+			wantErr:    "",
+		},
+		{
+			name:       "No existing certificate authority data",
+			kubeconfig: []byte(kubeconfigWithoutCA),
 			secretName: "tls",
 			secretNs:   "default",
 			wantCert:   "replaced-crt",
@@ -1254,7 +1277,7 @@ func (suite *AgentTestSuite) Test_removeCertAuthDataFromKubeConfig() {
 	}
 	for _, tt := range tests {
 		suite.Run(tt.name, func() {
-			got, err := suite.controller.replaceCertAuthDataInKubeConfig(ctx, tt.kubeconfig, tt.secretNs, tt.secretName)
+			got, err := suite.controller.appendCertAuthDataInKubeConfig(ctx, tt.kubeconfig, tt.secretNs, tt.secretName)
 
 			if tt.wantErr != "" {
 				if err == nil {
@@ -1268,7 +1291,7 @@ func (suite *AgentTestSuite) Test_removeCertAuthDataFromKubeConfig() {
 			suite.Nil(err, "No error loading updated kubeconfig")
 
 			for _, v := range gotConfig.Clusters {
-				suite.Equal(string(v.CertificateAuthorityData), tt.wantCert, "equals when cert is replaced")
+				suite.Equal(tt.wantCert, string(v.CertificateAuthorityData), "certificate authority data is preserved and appended")
 			}
 		})
 	}
