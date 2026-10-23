@@ -149,7 +149,7 @@ verify_acm_hub_config() {
 
         local sync_labels
         sync_labels=$(oc get addondeploymentconfig addon-ns-config -n multicluster-engine -o jsonpath='{.spec.customizedVariables[?(@.name=="enableSyncLabelsToClusterClaims")].value}' 2>/dev/null || echo "")
-        if [ "$sync_labels" = "false" ]; then
+        if [[ "$sync_labels" = "false" ]]; then
             log_success "enableSyncLabelsToClusterClaims correctly set to false"
         else
             log_error "enableSyncLabelsToClusterClaims misconfigured: expected 'false', got '$sync_labels'"
