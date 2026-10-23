@@ -87,7 +87,7 @@ func (r *DiscoveryConfigController) Reconcile(ctx context.Context, req ctrl.Requ
 	}
 
 	// Only process if in multicluster-engine namespace
-	if addonConfig.Namespace != "multicluster-engine" {
+	if addonConfig.Namespace != discoveryAddonConfigNamespace {
 		log.V(1).Info("Skipping addon deployment config not in multicluster-engine namespace", "namespace", addonConfig.Namespace)
 		return ctrl.Result{}, nil
 	}
@@ -943,7 +943,7 @@ func (r *DiscoveryConfigController) SetupWithManager(mgr ctrl.Manager) error {
 			// Only process hypershift-addon-deploy-config in multicluster-engine namespace
 			if addonConfig, ok := e.Object.(*addonapiv1alpha1.AddOnDeploymentConfig); ok {
 				return addonConfig.Name == "hypershift-addon-deploy-config" &&
-					addonConfig.Namespace == "multicluster-engine"
+					addonConfig.Namespace == discoveryAddonConfigNamespace
 				// Process regardless of mceHcpDiscovery value to handle both enabled/disabled states
 			}
 			return false
@@ -955,7 +955,7 @@ func (r *DiscoveryConfigController) SetupWithManager(mgr ctrl.Manager) error {
 
 			if !oldOk || !newOk ||
 				newConfig.Name != "hypershift-addon-deploy-config" ||
-				newConfig.Namespace != "multicluster-engine" {
+				newConfig.Namespace != discoveryAddonConfigNamespace {
 				return false
 			}
 
@@ -977,7 +977,7 @@ func (r *DiscoveryConfigController) SetupWithManager(mgr ctrl.Manager) error {
 			// Process deletion events for hypershift-addon-deploy-config
 			if addonConfig, ok := e.Object.(*addonapiv1alpha1.AddOnDeploymentConfig); ok {
 				return addonConfig.Name == "hypershift-addon-deploy-config" &&
-					addonConfig.Namespace == "multicluster-engine"
+					addonConfig.Namespace == discoveryAddonConfigNamespace
 			}
 			return false
 		},
