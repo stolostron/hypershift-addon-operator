@@ -441,11 +441,8 @@ func (r *DiscoveryConfigController) createOrUpdateDiscoveryAddonConfig(ctx conte
 		return nil
 	}
 
-	needsUpdate := existingConfig.Spec.AgentInstallNamespace != discoveryAgentInstallNS
-	if !needsUpdate {
-		syncLabelsValue := getCustomizedVariableValue(existingConfig, enableSyncLabelsToClusterClaimsName)
-		needsUpdate = syncLabelsValue != enableSyncLabelsToClusterClaimsFalse
-	}
+	needsUpdate := existingConfig.Spec.AgentInstallNamespace != discoveryAgentInstallNS ||
+		getCustomizedVariableValue(existingConfig, enableSyncLabelsToClusterClaimsName) != enableSyncLabelsToClusterClaimsFalse
 
 	if !needsUpdate {
 		log.V(1).Info("Discovery addon deployment config is up to date", "name", discoveryAddonConfigName)

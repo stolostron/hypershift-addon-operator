@@ -124,6 +124,9 @@ metadata:
   namespace: multicluster-engine
 spec:
   agentInstallNamespace: open-cluster-management-agent-addon-discovery
+  customizedVariables:
+    - name: enableSyncLabelsToClusterClaims
+      value: "false"
 EOF
     
     if [ $? -eq 0 ]; then
