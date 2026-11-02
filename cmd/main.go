@@ -24,6 +24,12 @@ import (
 func main() {
 	rand.Seed(time.Now().UTC().UnixNano())
 
+	// ACM-49899: client-go v0.35.1 enables WatchListClient by default; waiting for
+	// initial-events bookmarks can prevent informers from syncing under apiserver load.
+	if os.Getenv("KUBE_FEATURE_WatchListClient") == "" {
+		_ = os.Setenv("KUBE_FEATURE_WatchListClient", "false")
+	}
+
 	pflag.CommandLine.SetNormalizeFunc(utilflag.WordSepNormalizeFunc)
 	pflag.CommandLine.AddGoFlagSet(goflag.CommandLine)
 
