@@ -76,9 +76,14 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{Requeue: false}, err
 	}
 
-	_, hostedClusterName, _ := strings.Cut(req.Name, "klusterlet-")
+	_, managedClusterName, _ := strings.Cut(req.Name, "klusterlet-")
 
-	_, discoveredHostedClusterName, _ := strings.Cut(req.Name, "klusterlet-"+c.clusterName+"-")
+	discoveredHostedClusterName := ""
+	discoveredKlusterletPrefix := "klusterlet-" + c.clusterName + "-"
+	if !strings.EqualFold(c.clusterName, c.localClusterName) &&
+		strings.HasPrefix(req.Name, discoveredKlusterletPrefix) {
+		discoveredHostedClusterName = strings.TrimPrefix(req.Name, discoveredKlusterletPrefix)
+	}
 
 	lo := &client.ListOptions{}
 	hostedClusters := &hyperv1beta1.HostedClusterList{}
@@ -89,28 +94,12 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 		return ctrl.Result{}, err
 	}
 
-	hostedClusterObj := &hyperv1beta1.HostedCluster{}
-	// Loop over the list of HostedCluster objects and find the one with the specified name
-	for index, hc := range hostedClusters.Items {
-		if hc.Name == hostedClusterName {
-			hostedClusterObj = &hostedClusters.Items[index]
-			break
-		}
-	}
-
-	if hostedClusterObj.Name == "" && !strings.EqualFold(c.clusterName, c.localClusterName) {
-		// Loop over the list of HostedCluster objects and find the one with the specified name
-		for index, hc := range hostedClusters.Items {
-			if hc.Name == discoveredHostedClusterName {
-				hostedClusterObj = &hostedClusters.Items[index]
-				break
-			}
-		}
-	}
+	hostedClusterObj := findHostedClusterForKlusterlet(
+		hostedClusters, managedClusterName, discoveredHostedClusterName)
 
 	//Could not find hosted cluster
-	if hostedClusterObj.Name == "" {
-		c.log.Info(fmt.Sprintf("unable to find hosted cluster with name %s", hostedClusterName))
+	if hostedClusterObj == nil {
+		c.log.Info(fmt.Sprintf("unable to find hosted cluster for managed cluster %s", managedClusterName))
 		return ctrl.Result{RequeueAfter: time.Duration(2) * time.Minute}, nil
 	}
 
@@ -130,4 +119,50 @@ func (c *ExternalSecretController) Reconcile(ctx context.Context, req ctrl.Reque
 	}
 
 	return ctrl.Result{}, nil
+}
+
+// findHostedClusterForKlusterlet finds the HostedCluster represented by a hosted
+// Klusterlet. The managedcluster-name annotation is authoritative because ROSA
+// HostedClusters can have a generated name that differs from both the ManagedCluster
+// name and the Klusterlet suffix. InfraID and name matching preserve compatibility
+// with HostedClusters that predate the annotation.
+func findHostedClusterForKlusterlet(
+	hostedClusters *hyperv1beta1.HostedClusterList,
+	managedClusterName string,
+	discoveredHostedClusterName string,
+) *hyperv1beta1.HostedCluster {
+	for i := range hostedClusters.Items {
+		hc := &hostedClusters.Items[i]
+		if hc.Annotations[util.ManagedClusterAnnoKey] == managedClusterName {
+			return hc
+		}
+	}
+
+	for i := range hostedClusters.Items {
+		hc := &hostedClusters.Items[i]
+		if hc.Annotations[util.ManagedClusterAnnoKey] != "" {
+			continue
+		}
+		if hc.Spec.InfraID == managedClusterName {
+			return hc
+		}
+	}
+
+	nameCandidates := []string{managedClusterName, discoveredHostedClusterName}
+	for _, name := range nameCandidates {
+		if name == "" {
+			continue
+		}
+		for i := range hostedClusters.Items {
+			hc := &hostedClusters.Items[i]
+			if hc.Annotations[util.ManagedClusterAnnoKey] != "" {
+				continue
+			}
+			if hc.Name == name {
+				return hc
+			}
+		}
+	}
+
+	return nil
 }
