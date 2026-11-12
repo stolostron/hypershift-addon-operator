@@ -600,6 +600,42 @@ func TestDiscoveryConfigController_CreatesDiscoveryAddonConfig(t *testing.T) {
 	}, discoveryConfig)
 	assert.NoError(t, err)
 	assert.Equal(t, "open-cluster-management-agent-addon-discovery", discoveryConfig.Spec.AgentInstallNamespace)
+	assert.Equal(t, "false", getCustomizedVariableValue(discoveryConfig, "enableSyncLabelsToClusterClaims"))
+}
+
+func TestDiscoveryConfigController_UpdatesDiscoveryAddonConfigSyncLabels(t *testing.T) {
+	testScheme := runtime.NewScheme()
+	require.NoError(t, scheme.AddToScheme(testScheme))
+	require.NoError(t, addonapiv1alpha1.AddToScheme(testScheme))
+
+	existingDiscoveryConfig := &addonapiv1alpha1.AddOnDeploymentConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "addon-ns-config",
+			Namespace: "multicluster-engine",
+		},
+		Spec: addonapiv1alpha1.AddOnDeploymentConfigSpec{
+			AgentInstallNamespace: "open-cluster-management-agent-addon-discovery",
+		},
+	}
+
+	controller := &DiscoveryConfigController{
+		Client: fake.NewClientBuilder().
+			WithScheme(testScheme).
+			WithObjects(existingDiscoveryConfig).
+			Build(),
+		Log: zap.New(zap.UseDevMode(true)),
+	}
+
+	err := controller.createOrUpdateDiscoveryAddonConfig(context.TODO(), controller.Log)
+	assert.NoError(t, err)
+
+	updatedConfig := &addonapiv1alpha1.AddOnDeploymentConfig{}
+	err = controller.Get(context.TODO(), types.NamespacedName{
+		Name:      "addon-ns-config",
+		Namespace: "multicluster-engine",
+	}, updatedConfig)
+	assert.NoError(t, err)
+	assert.Equal(t, "false", getCustomizedVariableValue(updatedConfig, "enableSyncLabelsToClusterClaims"))
 }
 
 func TestDiscoveryConfigController_RemovesDiscoveryAddonConfig(t *testing.T) {
