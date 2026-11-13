@@ -32,6 +32,7 @@ type DiscoveryAgent struct {
 // SetupWithManager sets up the controller with the Manager.
 func (c *DiscoveryAgent) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named(util.DiscoveryAgentName).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		WithEventFilter(hostedClusterEventFilters()).

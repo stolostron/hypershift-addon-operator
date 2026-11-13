@@ -10,6 +10,7 @@ import (
 	"github.com/go-logr/logr"
 	hyperv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	operatorv1 "github.com/operator-framework/api/pkg/operators/v1"
+	"github.com/stolostron/hypershift-addon-operator/pkg/util"
 	agentv1 "github.com/stolostron/klusterlet-addon-controller/pkg/apis/agent/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -44,6 +45,7 @@ type AutoImportController struct {
 // SetupWithManager sets up the controller with the Manager.
 func (c *AutoImportController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
+		Named(util.AutoImportControllerName).
 		For(&hyperv1beta1.HostedCluster{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: 1}).
 		WithEventFilter(hostedClusterEventFilters()).
