@@ -1,6 +1,6 @@
 module github.com/stolostron/hypershift-addon-operator
 
-go 1.26.6
+go 1.26.10
 
 require (
 	github.com/ghodss/yaml v1.0.1-0.20190212211648-25d852aebe32
