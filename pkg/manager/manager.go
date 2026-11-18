@@ -376,7 +376,10 @@ func newRegistrationOption(kubeConfig *rest.Config, addonName, agentName string)
 	return newRegistrationOptionWithClient(kubeclient, addonName, agentName)
 }
 
-func newRegistrationOptionWithClient(kubeclient kubernetes.Interface, addonName, agentName string) (*agent.RegistrationOption, error) {
+func newRegistrationOptionWithClient(
+	kubeclient kubernetes.Interface,
+	addonName, agentName string,
+) (*agent.RegistrationOption, error) {
 	if kubeclient == nil {
 		return nil, fmt.Errorf("kubeclient must not be nil")
 	}
