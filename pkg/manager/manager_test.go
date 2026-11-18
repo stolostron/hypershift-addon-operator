@@ -129,6 +129,30 @@ func Test_newRegistrationOption_nilConfig(t *testing.T) {
 	assert.NotNil(t, err)
 }
 
+func Test_filterAuthenticatedGroups(t *testing.T) {
+	addon := &addonv1alpha1.ManagedClusterAddOn{
+		Status: addonv1alpha1.ManagedClusterAddOnStatus{
+			Registrations: []addonv1alpha1.RegistrationConfig{
+				{
+					Subject: addonv1alpha1.Subject{
+						User: "addon-agent",
+						Groups: []string{
+							"system:open-cluster-management:addon:hypershift-addon",
+							"system:authenticated",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	filtered := filterAuthenticatedGroups(addon)
+
+	assert.Equal(t, []string{"system:open-cluster-management:addon:hypershift-addon"},
+		filtered.Status.Registrations[0].Subject.Groups)
+	assert.Contains(t, addon.Status.Registrations[0].Subject.Groups, "system:authenticated")
+}
+
 func initClient() client.Client {
 	scheme := runtime.NewScheme()
 	corev1.AddToScheme(scheme)

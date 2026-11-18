@@ -254,70 +254,95 @@ func newRegistrationOption(kubeConfig *rest.Config, addonName, agentName string)
 		"update", "delete", "deletecollection", "patch",
 	}
 
+	permissionConfig := addonutil.NewRBACPermissionConfigBuilder(
+		kubeclient).
+		BindKubeClientRole(&rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{Name: roleName},
+			Rules: []rbacv1.PolicyRule{
+				{
+					APIGroups: []string{""},
+					Resources: []string{"secrets", "configmaps"},
+					Verbs: []string{
+						"get", "list", "watch",
+						"create", "delete", "update",
+					},
+				},
+				{
+					APIGroups: []string{addonAPIGroup},
+					Resources: []string{"managedclusteraddons"},
+					Verbs: []string{
+						"get", "list", "watch",
+						"update", "patch",
+					},
+				},
+				{
+					APIGroups: []string{addonAPIGroup},
+					Resources: []string{
+						"managedclusteraddons/status",
+					},
+					Verbs: []string{"patch", "update"},
+				},
+				{
+					APIGroups: []string{clusterAPIGroup},
+					Resources: []string{
+						"addonplacementscores",
+						"addonplacementscores/status",
+					},
+					Verbs: allVerbs,
+				},
+				{
+					APIGroups: []string{discoveryAPIGroup},
+					Resources: []string{
+						"discoveredclusters",
+					},
+					Verbs: allVerbs,
+				},
+			},
+		}).
+		BindKubeClientClusterRole(&rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{Name: roleName},
+			Rules: []rbacv1.PolicyRule{
+				{
+					APIGroups: []string{clusterAPIGroup},
+					Resources: []string{"managedclusters"},
+					Verbs: []string{
+						"get", "list", "watch",
+						"patch", "delete",
+					},
+				},
+			},
+		}).
+		Build()
+
 	return &agent.RegistrationOption{
 		CSRConfigurations: agent.KubeClientSignerConfigurations(
 			addonName, agentName),
 		CSRApproveCheck: addonutil.DefaultCSRApprover(agentName),
-		PermissionConfig: addonutil.NewRBACPermissionConfigBuilder(
-			kubeclient).
-			BindKubeClientRole(&rbacv1.Role{
-				ObjectMeta: metav1.ObjectMeta{Name: roleName},
-				Rules: []rbacv1.PolicyRule{
-					{
-						APIGroups: []string{""},
-						Resources: []string{"secrets", "configmaps"},
-						Verbs: []string{
-							"get", "list", "watch",
-							"create", "delete", "update",
-						},
-					},
-					{
-						APIGroups: []string{addonAPIGroup},
-						Resources: []string{"managedclusteraddons"},
-						Verbs: []string{
-							"get", "list", "watch",
-							"update", "patch",
-						},
-					},
-					{
-						APIGroups: []string{addonAPIGroup},
-						Resources: []string{
-							"managedclusteraddons/status",
-						},
-						Verbs: []string{"patch", "update"},
-					},
-					{
-						APIGroups: []string{clusterAPIGroup},
-						Resources: []string{
-							"addonplacementscores",
-							"addonplacementscores/status",
-						},
-						Verbs: allVerbs,
-					},
-					{
-						APIGroups: []string{discoveryAPIGroup},
-						Resources: []string{
-							"discoveredclusters",
-						},
-						Verbs: allVerbs,
-					},
-				},
-			}).
-			BindKubeClientClusterRole(&rbacv1.ClusterRole{
-				ObjectMeta: metav1.ObjectMeta{Name: roleName},
-				Rules: []rbacv1.PolicyRule{
-					{
-						APIGroups: []string{clusterAPIGroup},
-						Resources: []string{"managedclusters"},
-						Verbs: []string{
-							"get", "list", "watch",
-							"patch", "delete",
-						},
-					},
-				},
-			}).
-			Build(),
+		PermissionConfig: func(cluster *clusterv1.ManagedCluster, addon *addonapiv1alpha1.ManagedClusterAddOn) error {
+			return permissionConfig(cluster, filterAuthenticatedGroups(addon))
+		},
 	}, nil
+}
+
+// filterAuthenticatedGroups removes the deprecated system:authenticated group from
+// addon registration subjects before they are used to build RBAC bindings.
+func filterAuthenticatedGroups(addon *addonapiv1alpha1.ManagedClusterAddOn) *addonapiv1alpha1.ManagedClusterAddOn {
+	if addon == nil {
+		return nil
+	}
+
+	filtered := addon.DeepCopy()
+	for i := range filtered.Status.Registrations {
+		groups := make([]string, 0, len(filtered.Status.Registrations[i].Subject.Groups))
+		for _, group := range filtered.Status.Registrations[i].Subject.Groups {
+			if group != "system:authenticated" {
+				groups = append(groups, group)
+			}
+		}
+		filtered.Status.Registrations[i].Subject.Groups = groups
+	}
+
+	return filtered
 }
 
 // getValues prepare values for templates at manifests/templates
