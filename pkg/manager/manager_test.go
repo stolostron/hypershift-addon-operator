@@ -21,8 +21,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 	appsv1 "k8s.io/api/apps/v1"
+	certificatesv1 "k8s.io/api/certificates/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	kubefake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -135,6 +137,192 @@ func Test_newRegistrationOption(t *testing.T) {
 func Test_newRegistrationOption_nilConfig(t *testing.T) {
 	_, err := newRegistrationOption(nil, "hypershift-addon", "abc12")
 	assert.NotNil(t, err)
+}
+
+func Test_newRegistrationOptionWithClient_filtersAuthenticatedGroup(t *testing.T) {
+	kubeclient := kubefake.NewSimpleClientset()
+	regOpt, err := newRegistrationOptionWithClient(kubeclient, "hypershift-addon", "abc12")
+	assert.NoError(t, err)
+	assert.NotNil(t, regOpt)
+	assert.NotNil(t, regOpt.PermissionConfig)
+
+	cluster := &clusterv1.ManagedCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "local-cluster"},
+	}
+	addon := &addonv1alpha1.ManagedClusterAddOn{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hypershift-addon",
+			Namespace: "local-cluster",
+		},
+		Status: addonv1alpha1.ManagedClusterAddOnStatus{
+			Registrations: []addonv1alpha1.RegistrationConfig{
+				{
+					SignerName: certificatesv1.KubeAPIServerClientSignerName,
+					Subject: addonv1alpha1.Subject{
+						User: "system:open-cluster-management:cluster:local-cluster:addon:hypershift-addon:agent:abc12",
+						Groups: []string{
+							"system:open-cluster-management:cluster:local-cluster:addon:hypershift-addon",
+							"system:open-cluster-management:addon:hypershift-addon",
+							"system:authenticated",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	err = regOpt.PermissionConfig(cluster, addon)
+	assert.NoError(t, err)
+
+	roleName := "open-cluster-management:hypershift-addon:agent"
+	roleBinding, err := kubeclient.RbacV1().RoleBindings("local-cluster").Get(
+		context.TODO(), roleName, metav1.GetOptions{})
+	assert.NoError(t, err)
+
+	clusterRoleBinding, err := kubeclient.RbacV1().ClusterRoleBindings().Get(
+		context.TODO(), roleName, metav1.GetOptions{})
+	assert.NoError(t, err)
+
+	expectedUser := "system:open-cluster-management:cluster:local-cluster:addon:hypershift-addon:agent:abc12"
+	expectedGroup := "system:open-cluster-management:addon:hypershift-addon"
+
+	for _, binding := range []struct {
+		name     string
+		subjects []rbacv1.Subject
+	}{
+		{name: "RoleBinding", subjects: roleBinding.Subjects},
+		{name: "ClusterRoleBinding", subjects: clusterRoleBinding.Subjects},
+	} {
+		var names []string
+		for _, subject := range binding.subjects {
+			names = append(names, subject.Name)
+		}
+
+		assert.NotContains(t, names, "system:authenticated", binding.name)
+		assert.Contains(t, names, expectedUser, binding.name)
+		assert.Contains(t, names, expectedGroup, binding.name)
+	}
+}
+
+func Test_newRegistrationOptionWithClient_removesAuthenticatedFromExistingBindings(t *testing.T) {
+	const roleName = "open-cluster-management:hypershift-addon:agent"
+	clusterNS := "local-cluster"
+
+	expectedUser := "system:open-cluster-management:cluster:local-cluster:addon:hypershift-addon:agent:abc12"
+	expectedGroup := "system:open-cluster-management:addon:hypershift-addon"
+	authenticatedGroup := "system:authenticated"
+
+	kubeclient := kubefake.NewSimpleClientset(
+		&rbacv1.Role{ObjectMeta: metav1.ObjectMeta{Name: roleName, Namespace: clusterNS}},
+		&rbacv1.ClusterRole{ObjectMeta: metav1.ObjectMeta{Name: roleName}},
+		&rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: roleName, Namespace: clusterNS},
+			RoleRef:    rbacv1.RoleRef{Kind: "Role", Name: roleName, APIGroup: rbacv1.GroupName},
+			Subjects: []rbacv1.Subject{
+				{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: expectedUser},
+				{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: expectedGroup},
+				{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: authenticatedGroup},
+			},
+		},
+		&rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{Name: roleName},
+			RoleRef:    rbacv1.RoleRef{Kind: "ClusterRole", Name: roleName, APIGroup: rbacv1.GroupName},
+			Subjects: []rbacv1.Subject{
+				{Kind: rbacv1.UserKind, APIGroup: rbacv1.GroupName, Name: expectedUser},
+				{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: expectedGroup},
+				{Kind: rbacv1.GroupKind, APIGroup: rbacv1.GroupName, Name: authenticatedGroup},
+			},
+		},
+	)
+
+	regOpt, err := newRegistrationOptionWithClient(kubeclient, "hypershift-addon", "abc12")
+	assert.NoError(t, err)
+
+	addon := &addonv1alpha1.ManagedClusterAddOn{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "hypershift-addon",
+			Namespace: clusterNS,
+			UID:       "test-uid",
+		},
+		Status: addonv1alpha1.ManagedClusterAddOnStatus{
+			Registrations: []addonv1alpha1.RegistrationConfig{{
+				SignerName: certificatesv1.KubeAPIServerClientSignerName,
+				Subject: addonv1alpha1.Subject{
+					User: expectedUser,
+					Groups: []string{
+						expectedGroup,
+						authenticatedGroup,
+					},
+				},
+			}},
+		},
+	}
+
+	err = regOpt.PermissionConfig(
+		&clusterv1.ManagedCluster{ObjectMeta: metav1.ObjectMeta{Name: clusterNS}},
+		addon,
+	)
+	assert.NoError(t, err)
+
+	for _, check := range []struct {
+		name     string
+		subjects func() ([]rbacv1.Subject, error)
+	}{
+		{
+			name: "RoleBinding",
+			subjects: func() ([]rbacv1.Subject, error) {
+				rb, err := kubeclient.RbacV1().RoleBindings(clusterNS).Get(
+					context.TODO(), roleName, metav1.GetOptions{})
+				return rb.Subjects, err
+			},
+		},
+		{
+			name: "ClusterRoleBinding",
+			subjects: func() ([]rbacv1.Subject, error) {
+				crb, err := kubeclient.RbacV1().ClusterRoleBindings().Get(
+					context.TODO(), roleName, metav1.GetOptions{})
+				return crb.Subjects, err
+			},
+		},
+	} {
+		t.Run(check.name, func(t *testing.T) {
+			subjects, err := check.subjects()
+			assert.NoError(t, err)
+
+			var names []string
+			for _, subject := range subjects {
+				names = append(names, subject.Name)
+			}
+
+			assert.NotContains(t, names, authenticatedGroup)
+			assert.Contains(t, names, expectedUser)
+			assert.Contains(t, names, expectedGroup)
+		})
+	}
+}
+
+func Test_filterAuthenticatedGroups(t *testing.T) {
+	addon := &addonv1alpha1.ManagedClusterAddOn{
+		Status: addonv1alpha1.ManagedClusterAddOnStatus{
+			Registrations: []addonv1alpha1.RegistrationConfig{
+				{
+					Subject: addonv1alpha1.Subject{
+						User: "addon-agent",
+						Groups: []string{
+							"system:open-cluster-management:addon:hypershift-addon",
+							"system:authenticated",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	filtered := filterAuthenticatedGroups(addon)
+
+	assert.Equal(t, []string{"system:open-cluster-management:addon:hypershift-addon"},
+		filtered.Status.Registrations[0].Subject.Groups)
+	assert.Contains(t, addon.Status.Registrations[0].Subject.Groups, "system:authenticated")
 }
 
 func Test_getTLSProfileSpec(t *testing.T) {
