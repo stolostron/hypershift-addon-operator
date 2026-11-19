@@ -33,8 +33,8 @@ require (
 	k8s.io/client-go v0.35.2
 	k8s.io/component-base v0.35.2
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
-	open-cluster-management.io/addon-framework v1.2.1-0.20260929202110-4e19a6272683
-	open-cluster-management.io/api v1.2.0
+	open-cluster-management.io/addon-framework v1.4.0
+	open-cluster-management.io/api v1.4.0
 	sigs.k8s.io/controller-runtime v0.23.3
 )
 
@@ -221,7 +221,7 @@ require (
 	kubevirt.io/api v1.7.0 // indirect
 	kubevirt.io/containerized-data-importer-api v1.63.1 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
-	open-cluster-management.io/sdk-go v1.2.0 // indirect
+	open-cluster-management.io/sdk-go v1.4.0 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.33.0 // indirect
 	sigs.k8s.io/cluster-api v1.10.4 // indirect
 	sigs.k8s.io/cluster-api-provider-aws/v2 v2.8.2-0.20250820205306-645f38e4c152 // indirect
