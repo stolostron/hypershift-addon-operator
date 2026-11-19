@@ -47,6 +47,7 @@ import (
 	"open-cluster-management.io/addon-framework/pkg/agent"
 	addonutil "open-cluster-management.io/addon-framework/pkg/utils"
 	addonapiv1alpha1 "open-cluster-management.io/api/addon/v1alpha1"
+	addonapiv1beta1 "open-cluster-management.io/api/addon/v1beta1"
 	addonv1alpha1client "open-cluster-management.io/api/client/addon/clientset/versioned"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
 )
@@ -453,40 +454,17 @@ func newRegistrationOptionWithClient(
 		Build()
 
 	return &agent.RegistrationOption{
-		CSRConfigurations: agent.KubeClientSignerConfigurations(
+		Configurations: agent.KubeClientSignerConfigurations(
 			addonName, agentName),
-		CSRApproveCheck: addonutil.DefaultCSRApprover(agentName),
-		PermissionConfig: func(cluster *clusterv1.ManagedCluster, addon *addonapiv1alpha1.ManagedClusterAddOn) error {
-			return permissionConfig(cluster, filterAuthenticatedGroups(addon))
-		},
+		CSRApproveCheck:  addonutil.DefaultCSRApprover(agentName),
+		PermissionConfig: permissionConfig,
 	}, nil
-}
-
-// filterAuthenticatedGroups removes the deprecated system:authenticated group from
-// addon registration subjects before they are used to build RBAC bindings.
-func filterAuthenticatedGroups(addon *addonapiv1alpha1.ManagedClusterAddOn) *addonapiv1alpha1.ManagedClusterAddOn {
-	if addon == nil {
-		return nil
-	}
-
-	filtered := addon.DeepCopy()
-	for i := range filtered.Status.Registrations {
-		groups := make([]string, 0, len(filtered.Status.Registrations[i].Subject.Groups))
-		for _, group := range filtered.Status.Registrations[i].Subject.Groups {
-			if group != "system:authenticated" {
-				groups = append(groups, group)
-			}
-		}
-		filtered.Status.Registrations[i].Subject.Groups = groups
-	}
-
-	return filtered
 }
 
 // getValues prepare values for templates at manifests/templates
 func (o *override) getValueForAgentTemplate(cluster *clusterv1.ManagedCluster,
-	addon *addonapiv1alpha1.ManagedClusterAddOn) (addonfactory.Values, error) {
-	installNamespace := addon.Spec.InstallNamespace
+	addon *addonapiv1beta1.ManagedClusterAddOn) (addonfactory.Values, error) {
+	installNamespace := addon.Annotations[addonapiv1beta1.InstallNamespaceAnnotation]
 	if len(installNamespace) == 0 {
 		installNamespace = util.AgentInstallationNamespace
 	}
