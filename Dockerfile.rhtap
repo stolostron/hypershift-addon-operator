@@ -14,7 +14,7 @@ COPY ./ ./
 # Cache the go build into the the Go’s compiler cache folder so we take benefits of compiler caching across docker build calls
 RUN --mount=type=cache,target=/root/.cache/go-build \
     --mount=type=cache,target=/go/pkg/mod \
-    go build -mod=readonly -o bin/hypershift-addon cmd/main.go
+    CGO_ENABLED=1 GOEXPERIMENT=strictfipsruntime go build -mod=readonly -o bin/hypershift-addon cmd/main.go
 
 # PQC-enabled UBI9 runtime (OpenSSL DEFAULT:PQ) for ACM 5.0 / MCE 5.0.
 # The image is published on registry.redhat.io (same as backplane-operator ACM-41650);
