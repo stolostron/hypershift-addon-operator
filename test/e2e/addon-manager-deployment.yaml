@@ -41,6 +41,10 @@ rules:
   - apiGroups: ["config.openshift.io"]
     resources: ["apiservers"]
     verbs: ["get", "list", "watch"]
+  # cluster-proxy serving certs are signed by OpenShift service-ca (ACM-51997).
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get"]
   - apiGroups: [""]
     resources: ["users", "groups", "serviceaccounts"]
     verbs: ["impersonate"]

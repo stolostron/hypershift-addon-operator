@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,6 +56,11 @@ const (
 	// cluster-proxy: operator pod namespace (POD_NAMESPACE / backplane-operator).
 	clusterProxyServiceName = "cluster-proxy-addon-user"
 	clusterProxyServicePort = 9092
+
+	// OpenShift namespace-injected bundle (primary) and cluster-wide CMs (fallback).
+	openShiftServiceCANamespace       = "openshift-config-managed"
+	openShiftNamespaceServiceCAConfig = "openshift-service-ca.crt"
+	openShiftServiceCADataKey         = "service-ca.crt"
 
 	// Mount path for the Secret created by service-ca-operator (OpenShift only).
 	hcpProxyTLSDir = "/etc/hcp-proxy/tls"
@@ -181,6 +187,7 @@ type hcpProxy struct {
 	restMapper        meta.RESTMapper   // discovery-backed mapping for extra object API paths
 	operatorNamespace string
 	clusterProxyURL   string                  // resolved at startup; overridable in tests
+	serviceCAPEM      []byte                  // OpenShift service-ca root; empty on non-OCP or when RBAC/CM missing
 	profileSpec       configv1.TLSProfileSpec // cluster TLS profile applied to server + outbound clients
 	log               logr.Logger
 }
@@ -198,6 +205,11 @@ func StartHCPProxy(
 
 	clusterProxyURL := resolveClusterProxyURL(ctx, hubClient, operatorNamespace, log)
 
+	serviceCAPEM, err := loadOpenShiftServiceCAPEM(ctx, hubClient, operatorNamespace, log)
+	if err != nil {
+		return fmt.Errorf("load OpenShift service CA for cluster-proxy client: %w", err)
+	}
+
 	hubDynClient, err := dynamic.NewForConfig(hubConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create hub dynamic client: %w", err)
@@ -210,6 +222,7 @@ func StartHCPProxy(
 		restMapper:        restMapper,
 		operatorNamespace: operatorNamespace,
 		clusterProxyURL:   clusterProxyURL,
+		serviceCAPEM:      serviceCAPEM,
 		profileSpec:       profileSpec,
 		log:               log,
 	}
@@ -1261,6 +1274,77 @@ func hsNamedAPIPath(ns, resource, name string) (string, error) {
 	return base + "/" + name, nil
 }
 
+var openshiftGlobalServiceCAConfigMaps = []string{
+	"service-ca.crt",
+	"service-ca-root-ca",
+}
+
+// loadOpenShiftServiceCAPEM reads the cluster service signing CA for outbound cluster-proxy TLS.
+// Primary: namespace-injected openshift-service-ca.crt in the operator namespace.
+// Fallback: openshift-config-managed service-ca ConfigMaps (non-OCP / missing injection).
+// Missing ConfigMaps on non-OCP clusters (e.g. kind) are non-fatal and return nil PEM.
+func loadOpenShiftServiceCAPEM(
+	ctx context.Context,
+	hubClient client.Client,
+	operatorNamespace string,
+	log logr.Logger,
+) ([]byte, error) {
+	if operatorNamespace != "" {
+		cm := &corev1.ConfigMap{}
+		err := hubClient.Get(ctx, types.NamespacedName{
+			Namespace: operatorNamespace,
+			Name:      openShiftNamespaceServiceCAConfig,
+		}, cm)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return nil, fmt.Errorf("get ConfigMap %s/%s: %w",
+				operatorNamespace, openShiftNamespaceServiceCAConfig, err)
+		}
+		if err == nil {
+			if pem := []byte(cm.Data[openShiftServiceCADataKey]); len(pem) > 0 {
+				log.Info("loaded OpenShift service CA for cluster-proxy TLS client",
+					"configMap", openShiftNamespaceServiceCAConfig, "namespace", operatorNamespace)
+				return pem, nil
+			}
+		}
+	}
+
+	for _, name := range openshiftGlobalServiceCAConfigMaps {
+		cm := &corev1.ConfigMap{}
+		err := hubClient.Get(ctx, types.NamespacedName{
+			Namespace: openShiftServiceCANamespace,
+			Name:      name,
+		}, cm)
+		if err != nil {
+			if apierrors.IsNotFound(err) {
+				continue
+			}
+			return nil, fmt.Errorf("get ConfigMap %s/%s: %w", openShiftServiceCANamespace, name, err)
+		}
+		if pem := []byte(cm.Data[openShiftServiceCADataKey]); len(pem) > 0 {
+			log.Info("loaded OpenShift service CA for cluster-proxy TLS client",
+				"configMap", name, "namespace", openShiftServiceCANamespace)
+			return pem, nil
+		}
+	}
+	log.V(1).Info("OpenShift service CA ConfigMap not found; cluster-proxy client uses hub REST CA only")
+	return nil, nil
+}
+
+// applyServiceCAPEMToTLSConfig appends the OpenShift service-ca to RootCAs so HTTPS to
+// cluster-proxy-addon-user (service-ca serving cert) verifies on hub clusters.
+func applyServiceCAPEMToTLSConfig(tlsCfg *tls.Config, serviceCAPEM []byte) error {
+	if len(serviceCAPEM) == 0 || tlsCfg.InsecureSkipVerify {
+		return nil
+	}
+	if tlsCfg.RootCAs == nil {
+		tlsCfg.RootCAs = x509.NewCertPool()
+	}
+	if !tlsCfg.RootCAs.AppendCertsFromPEM(serviceCAPEM) {
+		return errors.New("failed to parse OpenShift service CA PEM")
+	}
+	return nil
+}
+
 // buildHTTPClient builds an *http.Client using the hub rest.Config for mTLS/auth
 // and the cluster TLS profile for MinVersion + CipherSuites. This is the canonical
 // way to build outbound HTTP clients so no TLS version is hardcoded.
@@ -1274,6 +1358,10 @@ func (p *hcpProxy) buildHTTPClient(timeout time.Duration) (*http.Client, error) 
 	// No version is hardcoded here — settings come from apiservers.config.openshift.io/cluster.
 	tlsConfigFn, _ := tlspkg.NewTLSConfigFromProfile(p.profileSpec)
 	tlsConfigFn(tlsCfg)
+
+	if err := applyServiceCAPEMToTLSConfig(tlsCfg, p.serviceCAPEM); err != nil {
+		return nil, fmt.Errorf("apply OpenShift service CA to cluster-proxy TLS config: %w", err)
+	}
 
 	// Local dev override: when cluster-proxy is reached via kubectl port-forward the
 	// server cert SAN won't match "localhost", so allow skipping TLS verification.

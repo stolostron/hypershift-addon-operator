@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	mcev1 "github.com/stolostron/backplane-operator/api/v1"
@@ -33,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
@@ -3276,4 +3278,131 @@ func versionRoutePath(hostingCluster string) string {
 		return endpoint
 	}
 	return endpoint + "?hostingCluster=" + hostingCluster
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenNamespaceInjectedCA_ItShouldPreferOperatorNamespace(t *testing.T) {
+	ca, err := generateSelfSignedCert("service-ca-test")
+	require.NoError(t, err)
+	caPEM, _, err := tlsCertToPEM(ca)
+	require.NoError(t, err)
+
+	nsCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      openShiftNamespaceServiceCAConfig,
+			Namespace: "multicluster-engine",
+		},
+		Data: map[string]string{openShiftServiceCADataKey: string(caPEM)},
+	}
+	globalCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service-ca.crt",
+			Namespace: openShiftServiceCANamespace,
+		},
+		Data: map[string]string{openShiftServiceCADataKey: "should-not-use"},
+	}
+	p := newTestProxy(t, nsCM, globalCM)
+
+	pem, err := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	require.NoError(t, err)
+	assert.Equal(t, caPEM, pem)
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenOnlyGlobalCA_ItShouldFallback(t *testing.T) {
+	ca, err := generateSelfSignedCert("service-ca-test")
+	require.NoError(t, err)
+	caPEM, _, err := tlsCertToPEM(ca)
+	require.NoError(t, err)
+
+	globalCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service-ca.crt",
+			Namespace: openShiftServiceCANamespace,
+		},
+		Data: map[string]string{openShiftServiceCADataKey: string(caPEM)},
+	}
+	p := newTestProxy(t, globalCM)
+
+	pem, err := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	require.NoError(t, err)
+	assert.Equal(t, caPEM, pem)
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenConfigMapMissing_ItShouldReturnNil(t *testing.T) {
+	p := newTestProxy(t)
+	pem, err := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	require.NoError(t, err)
+	assert.Nil(t, pem)
+}
+
+func testCAAndServerCert(t *testing.T, hostnames ...string) (caPEM []byte, serverCert tls.Certificate) {
+	t.Helper()
+	const lifetime = 24 * time.Hour
+	caConfig, err := libgocrypto.MakeSelfSignedCAConfigForDuration("test-service-ca", lifetime)
+	require.NoError(t, err)
+	ca := &libgocrypto.CA{Config: caConfig, SerialGenerator: &libgocrypto.RandomSerialGenerator{}}
+	caPEM, _, err = caConfig.GetPEMBytes()
+	require.NoError(t, err)
+
+	serverConfig, err := ca.MakeServerCert(sets.New[string](hostnames...), lifetime)
+	require.NoError(t, err)
+	certPEM, keyPEM, err := serverConfig.GetPEMBytes()
+	require.NoError(t, err)
+	serverCert, err = tls.X509KeyPair(certPEM, keyPEM)
+	require.NoError(t, err)
+	return caPEM, serverCert
+}
+
+func Test_applyServiceCAPEMToTLSConfig_WhenPEMPresent_ItShouldAppendToRootCAs(t *testing.T) {
+	serviceCAPEM, tlsCert := testCAAndServerCert(t, "127.0.0.1", "cluster-proxy-addon-user.multicluster-engine.svc")
+
+	tlsCfg := &tls.Config{}
+	require.NoError(t, applyServiceCAPEMToTLSConfig(tlsCfg, serviceCAPEM))
+	require.NotNil(t, tlsCfg.RootCAs)
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{tlsCert}, MinVersion: tls.VersionTLS12}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	client := &http.Client{
+		Transport: &http.Transport{TLSClientConfig: tlsCfg.Clone()},
+		Timeout:   5 * time.Second,
+	}
+	resp, err := client.Get(srv.URL)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+func Test_buildHTTPClient_WhenServiceCAPEMSet_ItShouldVerifyClusterProxyStyleServer(t *testing.T) {
+	serviceCAPEM, tlsCert := testCAAndServerCert(t, "127.0.0.1")
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{tlsCert}, MinVersion: tls.VersionTLS12}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	hubSrv := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(hubSrv.Close)
+
+	p := newTestProxy(t)
+	p.hubConfig = &rest.Config{
+		Host:            hubSrv.URL,
+		TLSClientConfig: rest.TLSClientConfig{Insecure: true},
+	}
+	p.serviceCAPEM = serviceCAPEM
+	client, err := p.buildHTTPClient(5 * time.Second)
+	require.NoError(t, err)
+
+	// cluster-proxy is not the hub REST host; call the TLS server directly with the built transport.
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	require.NoError(t, err)
+	resp, err := client.Transport.RoundTrip(req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }

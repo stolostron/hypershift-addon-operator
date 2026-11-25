@@ -47,6 +47,10 @@ Currently required for the HCP proxy:
   resources: ["apiservers"]
   verbs: ["get", "list", "watch"]
 - apiGroups: [""]
+  resources: ["configmaps"]
+  verbs: ["get"]
+  # HCP proxy: primary openshift-service-ca.crt in operator NS; fallback openshift-config-managed (ACM-51997).
+- apiGroups: [""]
   resources: ["users", "groups", "serviceaccounts"]
   verbs: ["impersonate"]
 - apiGroups: ["authentication.k8s.io"]
