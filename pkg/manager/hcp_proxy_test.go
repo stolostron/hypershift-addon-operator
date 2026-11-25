@@ -3085,7 +3085,7 @@ func Test_StartHCPProxy_WhenContextCancelled_ItShouldShutdownCleanly(t *testing.
 	zapLog, _ := zap.NewDevelopment()
 	log := zapr.NewLogger(zapLog)
 	scheme := runtime.NewScheme()
-	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, corev1.AddToScheme(scheme), "corev1 required for service-CA ConfigMap reads in StartHCPProxy")
 	hubClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	hubConfig := &rest.Config{
 		Host:            "https://127.0.0.1:1",
@@ -3389,6 +3389,7 @@ func Test_loadOpenShiftServiceCAPEM_WhenGetFails_ItShouldReturnNil(t *testing.T)
 	assert.Nil(t, pem, "transient ConfigMap read errors should not block returning nil PEM")
 }
 
+// testCAAndServerCert uses library-go/pkg/crypto (not stdlib x509.CreateCertificate) per ACM TLS compliance.
 func testCAAndServerCert(t *testing.T, hostnames ...string) (caPEM []byte, serverCert tls.Certificate) {
 	t.Helper()
 	const lifetime = 24 * time.Hour

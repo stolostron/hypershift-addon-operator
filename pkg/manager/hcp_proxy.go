@@ -205,6 +205,7 @@ func StartHCPProxy(
 
 	clusterProxyURL := resolveClusterProxyURL(ctx, hubClient, operatorNamespace, log)
 
+	// Startup snapshot for logging; buildHTTPClient re-reads ConfigMaps per outbound request.
 	serviceCAPEM := loadOpenShiftServiceCAPEM(ctx, hubClient, operatorNamespace, log)
 
 	hubDynClient, err := dynamic.NewForConfig(hubConfig)
@@ -1353,7 +1354,11 @@ func applyServiceCAPEMToTLSConfig(tlsCfg *tls.Config, serviceCAPEM []byte) error
 		return nil
 	}
 	if tlsCfg.RootCAs == nil {
-		tlsCfg.RootCAs = x509.NewCertPool()
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		tlsCfg.RootCAs = pool
 	}
 	if !tlsCfg.RootCAs.AppendCertsFromPEM(serviceCAPEM) {
 		return errors.New("failed to parse OpenShift service CA PEM")
