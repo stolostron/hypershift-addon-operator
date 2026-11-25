@@ -3082,7 +3082,9 @@ func Test_StartHCPProxy_WhenContextCancelled_ItShouldShutdownCleanly(t *testing.
 	profile, _ := tlspkg.GetTLSProfileSpec(nil)
 	zapLog, _ := zap.NewDevelopment()
 	log := zapr.NewLogger(zapLog)
-	hubClient := fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	hubClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	hubConfig := &rest.Config{
 		Host:            "https://127.0.0.1:1",
 		TLSClientConfig: rest.TLSClientConfig{Insecure: true},
