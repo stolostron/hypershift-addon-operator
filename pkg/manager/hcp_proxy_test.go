@@ -3409,7 +3409,8 @@ func Test_applyServiceCAPEMToTLSConfig_WhenPEMPresent_ItShouldAppendToRootCAs(t 
 	resp, err := client.Get(srv.URL)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
-	assert.Equal(t, http.StatusOK, resp.StatusCode, "client with appended service CA should verify server signed by that CA")
+	assert.Equal(t, http.StatusOK, resp.StatusCode,
+		"client with appended service CA should verify server signed by that CA")
 }
 
 func Test_buildHTTPClient_WhenServiceCAPEMSet_ItShouldVerifyClusterProxyStyleServer(t *testing.T) {
