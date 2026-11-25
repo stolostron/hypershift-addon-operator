@@ -40,7 +40,9 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 // recordingLogSink captures errors passed to log.Error for assertions.
@@ -3304,9 +3306,8 @@ func Test_loadOpenShiftServiceCAPEM_WhenNamespaceInjectedCA_ItShouldPreferOperat
 	}
 	p := newTestProxy(t, nsCM, globalCM)
 
-	pem, err := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
-	require.NoError(t, err)
-	assert.Equal(t, caPEM, pem)
+	pem := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	assert.Equal(t, caPEM, pem, "should prefer operator-namespace openshift-service-ca.crt over global fallback")
 }
 
 func Test_loadOpenShiftServiceCAPEM_WhenOnlyGlobalCA_ItShouldFallback(t *testing.T) {
@@ -3324,16 +3325,49 @@ func Test_loadOpenShiftServiceCAPEM_WhenOnlyGlobalCA_ItShouldFallback(t *testing
 	}
 	p := newTestProxy(t, globalCM)
 
-	pem, err := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	pem := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	assert.Equal(t, caPEM, pem, "should load service CA from openshift-config-managed when operator injection is absent")
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenServiceCABundleConfigMap_ItShouldReadBundleKey(t *testing.T) {
+	ca, err := generateSelfSignedCert("service-ca-test")
 	require.NoError(t, err)
-	assert.Equal(t, caPEM, pem)
+	caPEM, _, err := tlsCertToPEM(ca)
+	require.NoError(t, err)
+
+	bundleCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service-ca-bundle",
+			Namespace: openShiftServiceCANamespace,
+		},
+		Data: map[string]string{"service-ca-bundle.pem": string(caPEM)},
+	}
+	p := newTestProxy(t, bundleCM)
+
+	pem := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	assert.Equal(t, caPEM, pem, "should read service-ca-bundle.pem from service-ca-bundle ConfigMap")
 }
 
 func Test_loadOpenShiftServiceCAPEM_WhenConfigMapMissing_ItShouldReturnNil(t *testing.T) {
 	p := newTestProxy(t)
-	pem, err := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
-	require.NoError(t, err)
-	assert.Nil(t, pem)
+	pem := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	assert.Nil(t, pem, "missing service CA ConfigMaps should return nil PEM without error")
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenGetFails_ItShouldReturnNil(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	hubClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+				return errors.New("transient apiserver error")
+			},
+		}).
+		Build()
+
+	pem := loadOpenShiftServiceCAPEM(context.Background(), hubClient, "multicluster-engine", logr.Discard())
+	assert.Nil(t, pem, "transient ConfigMap read errors should not block returning nil PEM")
 }
 
 func testCAAndServerCert(t *testing.T, hostnames ...string) (caPEM []byte, serverCert tls.Certificate) {
@@ -3375,7 +3409,7 @@ func Test_applyServiceCAPEMToTLSConfig_WhenPEMPresent_ItShouldAppendToRootCAs(t 
 	resp, err := client.Get(srv.URL)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, http.StatusOK, resp.StatusCode, "client with appended service CA should verify server signed by that CA")
 }
 
 func Test_buildHTTPClient_WhenServiceCAPEMSet_ItShouldVerifyClusterProxyStyleServer(t *testing.T) {
@@ -3388,13 +3422,17 @@ func Test_buildHTTPClient_WhenServiceCAPEMSet_ItShouldVerifyClusterProxyStyleSer
 	srv.StartTLS()
 	t.Cleanup(srv.Close)
 
-	hubSrv := httptest.NewServer(http.NotFoundHandler())
+	// HTTPS hub with a trusted CA — avoid InsecureSkipVerify (would skip service-CA trust on the shared transport).
+	hubCAPEM, hubTLSCert := testCAAndServerCert(t, "127.0.0.1")
+	hubSrv := httptest.NewUnstartedServer(http.NotFoundHandler())
+	hubSrv.TLS = &tls.Config{Certificates: []tls.Certificate{hubTLSCert}, MinVersion: tls.VersionTLS12}
+	hubSrv.StartTLS()
 	t.Cleanup(hubSrv.Close)
 
 	p := newTestProxy(t)
 	p.hubConfig = &rest.Config{
-		Host:            hubSrv.URL,
-		TLSClientConfig: rest.TLSClientConfig{Insecure: true},
+		Host: hubSrv.URL,
+		TLSClientConfig: rest.TLSClientConfig{CAData: hubCAPEM},
 	}
 	p.serviceCAPEM = serviceCAPEM
 	client, err := p.buildHTTPClient(5 * time.Second)
@@ -3404,7 +3442,7 @@ func Test_buildHTTPClient_WhenServiceCAPEMSet_ItShouldVerifyClusterProxyStyleSer
 	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
 	require.NoError(t, err)
 	resp, err := client.Transport.RoundTrip(req)
-	require.NoError(t, err)
+	require.NoError(t, err, "buildHTTPClient transport should verify cluster-proxy-style cert using service CA PEM")
 	require.NoError(t, resp.Body.Close())
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }

@@ -44,6 +44,11 @@ rules:
   # cluster-proxy serving certs are signed by OpenShift service-ca (ACM-51997).
   - apiGroups: [""]
     resources: ["configmaps"]
+    resourceNames:
+      - openshift-service-ca.crt
+      - service-ca.crt
+      - service-ca-root-ca
+      - service-ca-bundle
     verbs: ["get"]
   - apiGroups: [""]
     resources: ["users", "groups", "serviceaccounts"]

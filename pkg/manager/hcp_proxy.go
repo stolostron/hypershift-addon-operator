@@ -205,10 +205,7 @@ func StartHCPProxy(
 
 	clusterProxyURL := resolveClusterProxyURL(ctx, hubClient, operatorNamespace, log)
 
-	serviceCAPEM, err := loadOpenShiftServiceCAPEM(ctx, hubClient, operatorNamespace, log)
-	if err != nil {
-		return fmt.Errorf("load OpenShift service CA for cluster-proxy client: %w", err)
-	}
+	serviceCAPEM := loadOpenShiftServiceCAPEM(ctx, hubClient, operatorNamespace, log)
 
 	hubDynClient, err := dynamic.NewForConfig(hubConfig)
 	if err != nil {
@@ -1277,34 +1274,51 @@ func hsNamedAPIPath(ns, resource, name string) (string, error) {
 var openshiftGlobalServiceCAConfigMaps = []string{
 	"service-ca.crt",
 	"service-ca-root-ca",
+	"service-ca-bundle",
+}
+
+// Data keys used across OpenShift service-CA ConfigMaps (4.16+ service-ca operator).
+var openShiftServiceCADataKeys = []string{
+	openShiftServiceCADataKey,
+	"ca-bundle.crt",
+	"service-ca-bundle.pem",
+}
+
+func serviceCAPEMFromConfigMap(cm *corev1.ConfigMap) []byte {
+	for _, key := range openShiftServiceCADataKeys {
+		if pem := []byte(cm.Data[key]); len(pem) > 0 {
+			return pem
+		}
+	}
+	return nil
 }
 
 // loadOpenShiftServiceCAPEM reads the cluster service signing CA for outbound cluster-proxy TLS.
 // Primary: namespace-injected openshift-service-ca.crt in the operator namespace.
 // Fallback: openshift-config-managed service-ca ConfigMaps (non-OCP / missing injection).
 // Missing ConfigMaps on non-OCP clusters (e.g. kind) are non-fatal and return nil PEM.
+// API errors on individual ConfigMap reads are logged and skipped so the HCP listener still starts.
 func loadOpenShiftServiceCAPEM(
 	ctx context.Context,
 	hubClient client.Client,
 	operatorNamespace string,
 	log logr.Logger,
-) ([]byte, error) {
+) []byte {
 	if operatorNamespace != "" {
 		cm := &corev1.ConfigMap{}
 		err := hubClient.Get(ctx, types.NamespacedName{
 			Namespace: operatorNamespace,
 			Name:      openShiftNamespaceServiceCAConfig,
 		}, cm)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return nil, fmt.Errorf("get ConfigMap %s/%s: %w",
-				operatorNamespace, openShiftNamespaceServiceCAConfig, err)
-		}
-		if err == nil {
-			if pem := []byte(cm.Data[openShiftServiceCADataKey]); len(pem) > 0 {
-				log.Info("loaded OpenShift service CA for cluster-proxy TLS client",
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				log.Error(err, "failed to read operator namespace service CA ConfigMap; trying fallbacks",
 					"configMap", openShiftNamespaceServiceCAConfig, "namespace", operatorNamespace)
-				return pem, nil
 			}
+		} else if pem := serviceCAPEMFromConfigMap(cm); len(pem) > 0 {
+			log.Info("loaded OpenShift service CA for cluster-proxy TLS client",
+				"configMap", openShiftNamespaceServiceCAConfig, "namespace", operatorNamespace)
+			return pem
 		}
 	}
 
@@ -1315,19 +1329,20 @@ func loadOpenShiftServiceCAPEM(
 			Name:      name,
 		}, cm)
 		if err != nil {
-			if apierrors.IsNotFound(err) {
-				continue
+			if !apierrors.IsNotFound(err) {
+				log.Error(err, "failed to read global service CA ConfigMap",
+					"configMap", name, "namespace", openShiftServiceCANamespace)
 			}
-			return nil, fmt.Errorf("get ConfigMap %s/%s: %w", openShiftServiceCANamespace, name, err)
+			continue
 		}
-		if pem := []byte(cm.Data[openShiftServiceCADataKey]); len(pem) > 0 {
+		if pem := serviceCAPEMFromConfigMap(cm); len(pem) > 0 {
 			log.Info("loaded OpenShift service CA for cluster-proxy TLS client",
 				"configMap", name, "namespace", openShiftServiceCANamespace)
-			return pem, nil
+			return pem
 		}
 	}
 	log.V(1).Info("OpenShift service CA ConfigMap not found; cluster-proxy client uses hub REST CA only")
-	return nil, nil
+	return nil
 }
 
 // applyServiceCAPEMToTLSConfig appends the OpenShift service-ca to RootCAs so HTTPS to
