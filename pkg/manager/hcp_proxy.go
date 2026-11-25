@@ -642,7 +642,7 @@ func versionAPIPath() string {
 
 func (p *hcpProxy) handleVersion(w http.ResponseWriter, r *http.Request, hostingCluster string) {
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
@@ -772,7 +772,7 @@ func (p *hcpProxy) handleFinalizers(w http.ResponseWriter, r *http.Request, ns, 
 	}
 
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
@@ -1273,6 +1273,7 @@ func hsNamedAPIPath(ns, resource, name string) (string, error) {
 
 var openshiftGlobalServiceCAConfigMaps = []string{
 	"service-ca.crt",
+	"service-ca",
 	"service-ca-root-ca",
 	"service-ca-bundle",
 }
@@ -1363,7 +1364,7 @@ func applyServiceCAPEMToTLSConfig(tlsCfg *tls.Config, serviceCAPEM []byte) error
 // buildHTTPClient builds an *http.Client using the hub rest.Config for mTLS/auth
 // and the cluster TLS profile for MinVersion + CipherSuites. This is the canonical
 // way to build outbound HTTP clients so no TLS version is hardcoded.
-func (p *hcpProxy) buildHTTPClient(timeout time.Duration) (*http.Client, error) {
+func (p *hcpProxy) buildHTTPClient(ctx context.Context, timeout time.Duration) (*http.Client, error) {
 	// Build TLS config from rest.Config (CA cert, client cert, server name).
 	tlsCfg, err := rest.TLSConfigFor(p.hubConfig)
 	if err != nil {
@@ -1374,7 +1375,14 @@ func (p *hcpProxy) buildHTTPClient(timeout time.Duration) (*http.Client, error) 
 	tlsConfigFn, _ := tlspkg.NewTLSConfigFromProfile(p.profileSpec)
 	tlsConfigFn(tlsCfg)
 
-	if err := applyServiceCAPEMToTLSConfig(tlsCfg, p.serviceCAPEM); err != nil {
+	serviceCAPEM := p.serviceCAPEM
+	if p.hubClient != nil {
+		if pem := loadOpenShiftServiceCAPEM(ctx, p.hubClient, p.operatorNamespace, p.log); len(pem) > 0 {
+			serviceCAPEM = pem
+		}
+	}
+
+	if err := applyServiceCAPEMToTLSConfig(tlsCfg, serviceCAPEM); err != nil {
 		return nil, fmt.Errorf("apply OpenShift service CA to cluster-proxy TLS config: %w", err)
 	}
 
@@ -1405,8 +1413,8 @@ func (p *hcpProxy) buildHTTPClient(timeout time.Duration) (*http.Client, error) 
 
 // spokeHTTPClient builds an http.Client that routes through cluster-proxy
 // with Impersonate-User/Group headers for the caller.
-func (p *hcpProxy) spokeHTTPClient(username string, groups []string) (*http.Client, error) {
-	c, err := p.buildHTTPClient(30 * time.Second)
+func (p *hcpProxy) spokeHTTPClient(ctx context.Context, username string, groups []string) (*http.Client, error) {
+	c, err := p.buildHTTPClient(ctx, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("%s%w", errMsgFailedSpokeClient, err)
 	}
@@ -1476,7 +1484,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	)
 
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.log.Error(err, "failed to build spoke client", "spoke", spokeName)
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
@@ -1627,7 +1635,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 // a failure is returned to the caller so it can be retried safely.
 func (p *hcpProxy) handleDelete(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
@@ -1844,7 +1852,7 @@ func (p *hcpProxy) handlePatchResources(w http.ResponseWriter, r *http.Request, 
 	}
 
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
@@ -1927,7 +1935,7 @@ func (p *hcpProxy) putOnSpoke(
 // Resources created via this proxy carry the label hcp.ocm.io/created-via=hcp-from-hub.
 func (p *hcpProxy) handleGetResources(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
