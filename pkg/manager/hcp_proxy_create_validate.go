@@ -46,7 +46,7 @@ type k8sVersionInfo struct {
 //	    &arch=amd64&releaseImage={image}&releaseStream={stream}
 func (p *hcpProxy) handleValidateHostedCluster(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.log.Error(err, "failed to build spoke client")
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)

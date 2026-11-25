@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -55,6 +56,11 @@ const (
 	// cluster-proxy: operator pod namespace (POD_NAMESPACE / backplane-operator).
 	clusterProxyServiceName = "cluster-proxy-addon-user"
 	clusterProxyServicePort = 9092
+
+	// OpenShift namespace-injected bundle (primary) and cluster-wide CMs (fallback).
+	openShiftServiceCANamespace       = "openshift-config-managed"
+	openShiftNamespaceServiceCAConfig = "openshift-service-ca.crt"
+	openShiftServiceCADataKey         = "service-ca.crt"
 
 	// Mount path for the Secret created by service-ca-operator (OpenShift only).
 	hcpProxyTLSDir = "/etc/hcp-proxy/tls"
@@ -181,6 +187,7 @@ type hcpProxy struct {
 	restMapper        meta.RESTMapper   // discovery-backed mapping for extra object API paths
 	operatorNamespace string
 	clusterProxyURL   string                  // resolved at startup; overridable in tests
+	serviceCAPEM      []byte                  // OpenShift service-ca root; empty on non-OCP or when RBAC/CM missing
 	profileSpec       configv1.TLSProfileSpec // cluster TLS profile applied to server + outbound clients
 	log               logr.Logger
 }
@@ -198,6 +205,9 @@ func StartHCPProxy(
 
 	clusterProxyURL := resolveClusterProxyURL(ctx, hubClient, operatorNamespace, log)
 
+	// Startup snapshot for logging; buildHTTPClient re-reads ConfigMaps per outbound request.
+	serviceCAPEM := loadOpenShiftServiceCAPEM(ctx, hubClient, operatorNamespace, log)
+
 	hubDynClient, err := dynamic.NewForConfig(hubConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create hub dynamic client: %w", err)
@@ -210,6 +220,7 @@ func StartHCPProxy(
 		restMapper:        restMapper,
 		operatorNamespace: operatorNamespace,
 		clusterProxyURL:   clusterProxyURL,
+		serviceCAPEM:      serviceCAPEM,
 		profileSpec:       profileSpec,
 		log:               log,
 	}
@@ -632,7 +643,7 @@ func versionAPIPath() string {
 
 func (p *hcpProxy) handleVersion(w http.ResponseWriter, r *http.Request, hostingCluster string) {
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
@@ -762,7 +773,7 @@ func (p *hcpProxy) handleFinalizers(w http.ResponseWriter, r *http.Request, ns, 
 	}
 
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
@@ -1261,10 +1272,104 @@ func hsNamedAPIPath(ns, resource, name string) (string, error) {
 	return base + "/" + name, nil
 }
 
+var openshiftGlobalServiceCAConfigMaps = []string{
+	"service-ca.crt",
+	"service-ca",
+	"service-ca-root-ca",
+	"service-ca-bundle",
+}
+
+// Data keys used across OpenShift service-CA ConfigMaps (4.16+ service-ca operator).
+var openShiftServiceCADataKeys = []string{
+	openShiftServiceCADataKey,
+	"ca-bundle.crt",
+	"service-ca-bundle.pem",
+}
+
+func serviceCAPEMFromConfigMap(cm *corev1.ConfigMap) []byte {
+	for _, key := range openShiftServiceCADataKeys {
+		if pem := []byte(cm.Data[key]); len(pem) > 0 {
+			return pem
+		}
+	}
+	return nil
+}
+
+// loadOpenShiftServiceCAPEM reads the cluster service signing CA for outbound cluster-proxy TLS.
+// Primary: namespace-injected openshift-service-ca.crt in the operator namespace.
+// Fallback: openshift-config-managed service-ca ConfigMaps (non-OCP / missing injection).
+// Missing ConfigMaps on non-OCP clusters (e.g. kind) are non-fatal and return nil PEM.
+// API errors on individual ConfigMap reads are logged and skipped so the HCP listener still starts.
+func loadOpenShiftServiceCAPEM(
+	ctx context.Context,
+	hubClient client.Client,
+	operatorNamespace string,
+	log logr.Logger,
+) []byte {
+	if operatorNamespace != "" {
+		cm := &corev1.ConfigMap{}
+		err := hubClient.Get(ctx, types.NamespacedName{
+			Namespace: operatorNamespace,
+			Name:      openShiftNamespaceServiceCAConfig,
+		}, cm)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				log.Error(err, "failed to read operator namespace service CA ConfigMap; trying fallbacks",
+					"configMap", openShiftNamespaceServiceCAConfig, "namespace", operatorNamespace)
+			}
+		} else if pem := serviceCAPEMFromConfigMap(cm); len(pem) > 0 {
+			log.Info("loaded OpenShift service CA for cluster-proxy TLS client",
+				"configMap", openShiftNamespaceServiceCAConfig, "namespace", operatorNamespace)
+			return pem
+		}
+	}
+
+	for _, name := range openshiftGlobalServiceCAConfigMaps {
+		cm := &corev1.ConfigMap{}
+		err := hubClient.Get(ctx, types.NamespacedName{
+			Namespace: openShiftServiceCANamespace,
+			Name:      name,
+		}, cm)
+		if err != nil {
+			if !apierrors.IsNotFound(err) {
+				log.Error(err, "failed to read global service CA ConfigMap",
+					"configMap", name, "namespace", openShiftServiceCANamespace)
+			}
+			continue
+		}
+		if pem := serviceCAPEMFromConfigMap(cm); len(pem) > 0 {
+			log.Info("loaded OpenShift service CA for cluster-proxy TLS client",
+				"configMap", name, "namespace", openShiftServiceCANamespace)
+			return pem
+		}
+	}
+	log.V(1).Info("OpenShift service CA ConfigMap not found; cluster-proxy client uses hub REST CA only")
+	return nil
+}
+
+// applyServiceCAPEMToTLSConfig appends the OpenShift service-ca to RootCAs so HTTPS to
+// cluster-proxy-addon-user (service-ca serving cert) verifies on hub clusters.
+func applyServiceCAPEMToTLSConfig(tlsCfg *tls.Config, serviceCAPEM []byte) error {
+	if len(serviceCAPEM) == 0 || tlsCfg.InsecureSkipVerify {
+		return nil
+	}
+	if tlsCfg.RootCAs == nil {
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		tlsCfg.RootCAs = pool
+	}
+	if !tlsCfg.RootCAs.AppendCertsFromPEM(serviceCAPEM) {
+		return errors.New("failed to parse OpenShift service CA PEM")
+	}
+	return nil
+}
+
 // buildHTTPClient builds an *http.Client using the hub rest.Config for mTLS/auth
 // and the cluster TLS profile for MinVersion + CipherSuites. This is the canonical
 // way to build outbound HTTP clients so no TLS version is hardcoded.
-func (p *hcpProxy) buildHTTPClient(timeout time.Duration) (*http.Client, error) {
+func (p *hcpProxy) buildHTTPClient(ctx context.Context, timeout time.Duration) (*http.Client, error) {
 	// Build TLS config from rest.Config (CA cert, client cert, server name).
 	tlsCfg, err := rest.TLSConfigFor(p.hubConfig)
 	if err != nil {
@@ -1274,6 +1379,17 @@ func (p *hcpProxy) buildHTTPClient(timeout time.Duration) (*http.Client, error) 
 	// No version is hardcoded here — settings come from apiservers.config.openshift.io/cluster.
 	tlsConfigFn, _ := tlspkg.NewTLSConfigFromProfile(p.profileSpec)
 	tlsConfigFn(tlsCfg)
+
+	serviceCAPEM := p.serviceCAPEM
+	if p.hubClient != nil {
+		if pem := loadOpenShiftServiceCAPEM(ctx, p.hubClient, p.operatorNamespace, p.log); len(pem) > 0 {
+			serviceCAPEM = pem
+		}
+	}
+
+	if err := applyServiceCAPEMToTLSConfig(tlsCfg, serviceCAPEM); err != nil {
+		return nil, fmt.Errorf("apply OpenShift service CA to cluster-proxy TLS config: %w", err)
+	}
 
 	// Local dev override: when cluster-proxy is reached via kubectl port-forward the
 	// server cert SAN won't match "localhost", so allow skipping TLS verification.
@@ -1302,8 +1418,8 @@ func (p *hcpProxy) buildHTTPClient(timeout time.Duration) (*http.Client, error) 
 
 // spokeHTTPClient builds an http.Client that routes through cluster-proxy
 // with Impersonate-User/Group headers for the caller.
-func (p *hcpProxy) spokeHTTPClient(username string, groups []string) (*http.Client, error) {
-	c, err := p.buildHTTPClient(30 * time.Second)
+func (p *hcpProxy) spokeHTTPClient(ctx context.Context, username string, groups []string) (*http.Client, error) {
+	c, err := p.buildHTTPClient(ctx, 30*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("%s%w", errMsgFailedSpokeClient, err)
 	}
@@ -1373,7 +1489,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 	)
 
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.log.Error(err, "failed to build spoke client", "spoke", spokeName)
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
@@ -1524,7 +1640,7 @@ func (p *hcpProxy) handleCreate(w http.ResponseWriter, r *http.Request, ns, spok
 // a failure is returned to the caller so it can be retried safely.
 func (p *hcpProxy) handleDelete(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
@@ -1741,7 +1857,7 @@ func (p *hcpProxy) handlePatchResources(w http.ResponseWriter, r *http.Request, 
 	}
 
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return
@@ -1824,7 +1940,7 @@ func (p *hcpProxy) putOnSpoke(
 // Resources created via this proxy carry the label hcp.ocm.io/created-via=hcp-from-hub.
 func (p *hcpProxy) handleGetResources(w http.ResponseWriter, r *http.Request, ns, name, spokeName string) {
 	username, groups := whoIsTheCaller(r)
-	hcpClient, err := p.spokeHTTPClient(username, groups)
+	hcpClient, err := p.spokeHTTPClient(r.Context(), username, groups)
 	if err != nil {
 		p.writeJSONError(w, errMsgFailedSpokeClient+err.Error(), http.StatusInternalServerError)
 		return

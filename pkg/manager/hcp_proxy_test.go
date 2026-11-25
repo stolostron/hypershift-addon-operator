@@ -22,6 +22,7 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zapr"
+	libgocrypto "github.com/openshift/library-go/pkg/crypto"
 	tlspkg "github.com/openshift/controller-runtime-common/pkg/tls"
 	hypershiftv1beta1 "github.com/openshift/hypershift/api/hypershift/v1beta1"
 	mcev1 "github.com/stolostron/backplane-operator/api/v1"
@@ -33,12 +34,15 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
 // recordingLogSink captures errors passed to log.Error for assertions.
@@ -2828,7 +2832,7 @@ func Test_createOrUpdateSecretOnSpoke_WhenConflict_ItShouldPut(t *testing.T) {
 	defer spokeSrv.Close()
 
 	p := newTestProxyWithSpokeURL(t, spokeSrv.URL)
-	client, err := p.spokeHTTPClient("alice", nil)
+	client, err := p.spokeHTTPClient(context.Background(), "alice", nil)
 	require.NoError(t, err)
 
 	secret := &corev1.Secret{
@@ -2850,7 +2854,7 @@ func Test_createOrUpdateSecretOnSpoke_WhenCreateSucceeds_ItShouldNotPut(t *testi
 	defer spokeSrv.Close()
 
 	p := newTestProxyWithSpokeURL(t, spokeSrv.URL)
-	client, err := p.spokeHTTPClient("alice", nil)
+	client, err := p.spokeHTTPClient(context.Background(), "alice", nil)
 	require.NoError(t, err)
 
 	secret := &corev1.Secret{
@@ -2950,7 +2954,7 @@ func Test_createOnSpoke_WhenSpokeReturns409_ItShouldReturnSpokeConflictError(t *
 	defer spokeSrv.Close()
 
 	p := newTestProxyWithSpokeURL(t, spokeSrv.URL)
-	client, err := p.spokeHTTPClient("alice", nil)
+	client, err := p.spokeHTTPClient(context.Background(), "alice", nil)
 	require.NoError(t, err)
 
 	err = p.createOnSpoke(context.Background(), client, "spoke-1", "clusters", resourceHostedClusters,
@@ -3033,7 +3037,7 @@ func Test_putOnSpoke_WhenSpokeReturnsError_ItShouldReturnError(t *testing.T) {
 	defer spokeSrv.Close()
 
 	p := newTestProxyWithSpokeURL(t, spokeSrv.URL)
-	client, err := p.spokeHTTPClient("alice", nil)
+	client, err := p.spokeHTTPClient(context.Background(), "alice", nil)
 	require.NoError(t, err)
 
 	err = p.putOnSpoke(context.Background(), client, "spoke-1",
@@ -3080,7 +3084,9 @@ func Test_StartHCPProxy_WhenContextCancelled_ItShouldShutdownCleanly(t *testing.
 	profile, _ := tlspkg.GetTLSProfileSpec(nil)
 	zapLog, _ := zap.NewDevelopment()
 	log := zapr.NewLogger(zapLog)
-	hubClient := fake.NewClientBuilder().WithScheme(runtime.NewScheme()).Build()
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme), "corev1 required for service-CA ConfigMap reads in StartHCPProxy")
+	hubClient := fake.NewClientBuilder().WithScheme(scheme).Build()
 	hubConfig := &rest.Config{
 		Host:            "https://127.0.0.1:1",
 		TLSClientConfig: rest.TLSClientConfig{Insecure: true},
@@ -3276,4 +3282,222 @@ func versionRoutePath(hostingCluster string) string {
 		return endpoint
 	}
 	return endpoint + "?hostingCluster=" + hostingCluster
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenNamespaceInjectedCA_ItShouldPreferOperatorNamespace(t *testing.T) {
+	ca, err := generateSelfSignedCert("service-ca-test")
+	require.NoError(t, err, "generateSelfSignedCert for operator-namespace CA fixture")
+	caPEM, _, err := tlsCertToPEM(ca)
+	require.NoError(t, err, "encode operator-namespace CA PEM")
+
+	nsCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      openShiftNamespaceServiceCAConfig,
+			Namespace: "multicluster-engine",
+		},
+		Data: map[string]string{openShiftServiceCADataKey: string(caPEM)},
+	}
+	globalCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service-ca.crt",
+			Namespace: openShiftServiceCANamespace,
+		},
+		Data: map[string]string{openShiftServiceCADataKey: "should-not-use"},
+	}
+	p := newTestProxy(t, nsCM, globalCM)
+
+	pem := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	assert.Equal(t, caPEM, pem, "should prefer operator-namespace openshift-service-ca.crt over global fallback")
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenOnlyGlobalCA_ItShouldFallback(t *testing.T) {
+	ca, err := generateSelfSignedCert("service-ca-test")
+	require.NoError(t, err, "generateSelfSignedCert for global fallback CA fixture")
+	caPEM, _, err := tlsCertToPEM(ca)
+	require.NoError(t, err, "encode global fallback CA PEM")
+
+	globalCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service-ca.crt",
+			Namespace: openShiftServiceCANamespace,
+		},
+		Data: map[string]string{openShiftServiceCADataKey: string(caPEM)},
+	}
+	p := newTestProxy(t, globalCM)
+
+	pem := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	assert.Equal(t, caPEM, pem, "should load service CA from openshift-config-managed when operator injection is absent")
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenServiceCAPlatformConfigMap_ItShouldReadBundle(t *testing.T) {
+	ca, err := generateSelfSignedCert("service-ca-test")
+	require.NoError(t, err, "generateSelfSignedCert for platform service-ca CM fixture")
+	caPEM, _, err := tlsCertToPEM(ca)
+	require.NoError(t, err, "encode platform service-ca PEM")
+
+	platformCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service-ca",
+			Namespace: openShiftServiceCANamespace,
+		},
+		Data: map[string]string{openShiftServiceCADataKey: string(caPEM)},
+	}
+	p := newTestProxy(t, platformCM)
+
+	pem := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	assert.Equal(t, caPEM, pem, "should read service-ca.crt from openshift-config-managed/service-ca")
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenServiceCABundleConfigMap_ItShouldReadBundleKey(t *testing.T) {
+	ca, err := generateSelfSignedCert("service-ca-test")
+	require.NoError(t, err, "generateSelfSignedCert for service-ca-bundle CM fixture")
+	caPEM, _, err := tlsCertToPEM(ca)
+	require.NoError(t, err, "encode service-ca-bundle PEM")
+
+	bundleCM := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "service-ca-bundle",
+			Namespace: openShiftServiceCANamespace,
+		},
+		Data: map[string]string{"service-ca-bundle.pem": string(caPEM)},
+	}
+	p := newTestProxy(t, bundleCM)
+
+	pem := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	assert.Equal(t, caPEM, pem, "should read service-ca-bundle.pem from service-ca-bundle ConfigMap")
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenConfigMapMissing_ItShouldReturnNil(t *testing.T) {
+	p := newTestProxy(t)
+	pem := loadOpenShiftServiceCAPEM(context.Background(), p.hubClient, "multicluster-engine", p.log)
+	assert.Nil(t, pem, "missing service CA ConfigMaps should return nil PEM without error")
+}
+
+func Test_loadOpenShiftServiceCAPEM_WhenGetFails_ItShouldReturnNil(t *testing.T) {
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme), "corev1 scheme required for ConfigMap client interceptor test")
+	hubClient := fake.NewClientBuilder().
+		WithScheme(scheme).
+		WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(context.Context, client.WithWatch, client.ObjectKey, client.Object, ...client.GetOption) error {
+				return errors.New("transient apiserver error")
+			},
+		}).
+		Build()
+
+	pem := loadOpenShiftServiceCAPEM(context.Background(), hubClient, "multicluster-engine", logr.Discard())
+	assert.Nil(t, pem, "transient ConfigMap read errors should not block returning nil PEM")
+}
+
+// testCAAndServerCert uses library-go/pkg/crypto (not stdlib x509.CreateCertificate) per ACM TLS compliance.
+func testCAAndServerCert(t *testing.T, hostnames ...string) (caPEM []byte, serverCert tls.Certificate) {
+	t.Helper()
+	const lifetime = 24 * time.Hour
+	caConfig, err := libgocrypto.MakeSelfSignedCAConfigForDuration("test-service-ca", lifetime)
+	require.NoError(t, err, "libgocrypto test CA config (repo TLS compliance)")
+	ca := &libgocrypto.CA{Config: caConfig, SerialGenerator: &libgocrypto.RandomSerialGenerator{}}
+	caPEM, _, err = caConfig.GetPEMBytes()
+	require.NoError(t, err, "encode test CA PEM")
+
+	serverConfig, err := ca.MakeServerCert(sets.New[string](hostnames...), lifetime)
+	require.NoError(t, err, "issue test server cert from CA")
+	certPEM, keyPEM, err := serverConfig.GetPEMBytes()
+	require.NoError(t, err, "encode test server cert PEM")
+	serverCert, err = tls.X509KeyPair(certPEM, keyPEM)
+	require.NoError(t, err, "load test server TLS certificate")
+	return caPEM, serverCert
+}
+
+func Test_applyServiceCAPEMToTLSConfig_WhenPEMPresent_ItShouldAppendToRootCAs(t *testing.T) {
+	serviceCAPEM, tlsCert := testCAAndServerCert(t, "127.0.0.1", "cluster-proxy-addon-user.multicluster-engine.svc")
+
+	tlsCfg := &tls.Config{}
+	require.NoError(t, applyServiceCAPEMToTLSConfig(tlsCfg, serviceCAPEM),
+		"applyServiceCAPEMToTLSConfig should accept valid service CA PEM")
+	require.NotNil(t, tlsCfg.RootCAs, "RootCAs pool should be allocated after applying service CA")
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{tlsCert}, MinVersion: tls.VersionTLS12}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	client := &http.Client{
+		Transport: &http.Transport{TLSClientConfig: tlsCfg.Clone()},
+		Timeout:   5 * time.Second,
+	}
+	resp, err := client.Get(srv.URL)
+	require.NoError(t, err, "TLS client with service CA in RootCAs should complete handshake")
+	require.NoError(t, resp.Body.Close(), "close response body")
+	assert.Equal(t, http.StatusOK, resp.StatusCode,
+		"client with appended service CA should verify server signed by that CA")
+}
+
+func Test_buildHTTPClient_WhenServiceCAPEMSet_ItShouldVerifyClusterProxyStyleServer(t *testing.T) {
+	serviceCAPEM, tlsCert := testCAAndServerCert(t, "127.0.0.1")
+
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{tlsCert}, MinVersion: tls.VersionTLS12}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	// HTTPS hub with a trusted CA — avoid InsecureSkipVerify (would skip service-CA trust on the shared transport).
+	hubCAPEM, hubTLSCert := testCAAndServerCert(t, "127.0.0.1")
+	hubSrv := httptest.NewUnstartedServer(http.NotFoundHandler())
+	hubSrv.TLS = &tls.Config{Certificates: []tls.Certificate{hubTLSCert}, MinVersion: tls.VersionTLS12}
+	hubSrv.StartTLS()
+	t.Cleanup(hubSrv.Close)
+
+	p := newTestProxy(t)
+	p.hubConfig = &rest.Config{
+		Host: hubSrv.URL,
+		TLSClientConfig: rest.TLSClientConfig{CAData: hubCAPEM},
+	}
+	p.serviceCAPEM = serviceCAPEM
+	t.Setenv("CLUSTER_PROXY_INSECURE", "")
+	client, err := p.buildHTTPClient(context.Background(), 5*time.Second)
+	require.NoError(t, err, "buildHTTPClient with hub CA and service CA PEM")
+
+	// cluster-proxy is not the hub REST host; call the TLS server directly with the built transport.
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	require.NoError(t, err, "build cluster-proxy-style GET request")
+	resp, err := client.Transport.RoundTrip(req)
+	require.NoError(t, err, "buildHTTPClient transport should verify cluster-proxy-style cert using service CA PEM")
+	require.NoError(t, resp.Body.Close(), "close response body")
+	assert.Equal(t, http.StatusOK, resp.StatusCode,
+		"RoundTrip should succeed when service CA trusts cluster-proxy serving cert")
+}
+
+func Test_buildHTTPClient_WhenServiceCAPEMMissing_ItShouldFailTLSVerify(t *testing.T) {
+	_, tlsCert := testCAAndServerCert(t, "127.0.0.1")
+
+	srv := httptest.NewUnstartedServer(http.NotFoundHandler())
+	srv.TLS = &tls.Config{Certificates: []tls.Certificate{tlsCert}, MinVersion: tls.VersionTLS12}
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	hubCAPEM, hubTLSCert := testCAAndServerCert(t, "127.0.0.1")
+	hubSrv := httptest.NewUnstartedServer(http.NotFoundHandler())
+	hubSrv.TLS = &tls.Config{Certificates: []tls.Certificate{hubTLSCert}, MinVersion: tls.VersionTLS12}
+	hubSrv.StartTLS()
+	t.Cleanup(hubSrv.Close)
+
+	p := newTestProxy(t)
+	p.hubConfig = &rest.Config{
+		Host:            hubSrv.URL,
+		TLSClientConfig: rest.TLSClientConfig{CAData: hubCAPEM},
+	}
+	p.serviceCAPEM = nil
+	t.Setenv("CLUSTER_PROXY_INSECURE", "")
+
+	client, err := p.buildHTTPClient(context.Background(), 5*time.Second)
+	require.NoError(t, err, "buildHTTPClient without service CA should still construct client")
+
+	req, err := http.NewRequest(http.MethodGet, srv.URL, nil)
+	require.NoError(t, err, "build GET for service-CA-signed server")
+	_, err = client.Transport.RoundTrip(req)
+	require.Error(t, err, "without service CA PEM, TLS verify to cluster-proxy-style server must fail")
 }
